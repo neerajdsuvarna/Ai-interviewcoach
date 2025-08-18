@@ -1,0 +1,75 @@
+import { Routes, Route } from 'react-router-dom';
+import Landing from './pages/Landing';
+import Signup from './pages/SignUp';
+import Login from './pages/Login';
+import OAuthCallback from './components/OAuthCallback';
+import UploadPage from './pages/UploadPage';
+import ProfilePage from './pages/ProfilePage';
+import ProtectedRoute from './components/ProtectedRoute';
+import TestPage from './pages/TestPage';
+import QuestionsPage from './pages/QuestionPage';
+import InterviewPage from './pages/InterviewPage';
+// import AuthDebug from './components/AuthDebug'; // Add this temporarily
+import './index.css';
+// import Counter from './components/Counter';
+import EmailVerificationCallback from './components/EmailVerificationCallback';
+
+// Add this route
+
+function App() {
+  return (
+    <>
+      {/* <AuthDebug /> Add this temporarily for debugging */}
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
+        <Route path="/auth/callback" element={<EmailVerificationCallback />} />
+{/*         <Route path="/counter" element={<Counter />} /> */}
+        <Route 
+          path="/upload" 
+          element={
+            <ProtectedRoute>
+              <UploadPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/profile" 
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/test" 
+          element={
+            <ProtectedRoute>
+              <TestPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/questions" 
+          element={
+            <ProtectedRoute>
+              <QuestionsPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/interview" 
+          element={
+            <ProtectedRoute>
+              <InterviewPage />
+            </ProtectedRoute>
+          } 
+        />
+      </Routes>
+    </>
+  );
+}
+
+export default App;
