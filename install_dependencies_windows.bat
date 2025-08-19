@@ -12,13 +12,11 @@ echo ============================================
 echo [SECTION] Select PyTorch Installation Type
 echo ============================================
 echo 1 - CUDA (For NVIDIA GPUs)
-echo 2 - MPS (For Apple Silicon M1/M2 GPUs)
-echo 3 - CPU Only
-set /p choice=Enter your choice (1/2/3): 
+echo 2 - CPU Only
+set /p choice=Enter your choice (1/2): 
 
 if "%choice%"=="1" goto check_cuda_version
-if "%choice%"=="2" goto install_mps
-if "%choice%"=="3" goto install_cpu
+if "%choice%"=="2" goto install_cpu
 
 :check_cuda_version
 echo.
@@ -69,16 +67,6 @@ pip install faster-whisper
 
 pip install onnxruntime-gpu
 
-goto continue_installation
-
-:install_mps
-echo.
-echo ============================================
-echo [SECTION] Installing PyTorch (MPS - Apple Silicon)
-echo ============================================
-pip install torch==2.5.1 torchvision torchaudio
-pip install faster-whisper
-pip install onnxruntime
 goto continue_installation
 
 :install_cpu
@@ -207,6 +195,7 @@ echo ============================================
 python -m pip install gdown
 pip install python-docx
 pip install PyPDF2  
+pip install supabase
 
 echo.
 echo [INFO] Running model_download.py with matched Python interpreter...

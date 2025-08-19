@@ -136,87 +136,51 @@ export default function QuestionsPage() {
   const [filterStrength, setFilterStrength] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isPaymentLoading, setIsPaymentLoading] = useState(false);
-  // NEW: Database state
+  // Database state
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // NEW: show who's signed in
-  const [sbUser, setSbUser] = useState(null);
-  const [userLoading, setUserLoading] = useState(true);
-
-  // NEW: track payment + debug
-  const [paymentId, setPaymentId] = useState(null);
-  const [paymentStatus, setPaymentStatus] = useState(null);
-  const [paymentDebug, setPaymentDebug] = useState([]);
-  const [signatureOk, setSignatureOk] = useState(null);
-
-  // NEW: load current Supabase user once
+  // Fetch questions from database
   useEffect(() => {
-    console.log('🔍 Loading Supabase user...');
-    
-    // Get initial user
-    const getInitialUser = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      console.log('👤 Initial user data:', user);
-      console.log('❌ Error:', error);
-      setSbUser(user || null);
-      setUserLoading(false);
-    };
-    
-    getInitialUser();
+    const fetchQuestions = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log(' Auth state changed:', event, session?.user?.email);
-        setSbUser(session?.user || null);
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-    // NEW: Fetch questions from database
-    useEffect(() => {
-      const fetchQuestions = async () => {
-        try {
-          setLoading(true);
-          setError(null);
-  
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
-            throw new Error('No active session');
-          }
-  
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const response = await fetch(`${supabaseUrl}/functions/v1/questions`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-  
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `Failed to fetch questions: ${response.status}`);
-          }
-  
-          const result = await response.json();
-          console.log('[DEBUG] Fetched questions:', result);
-          setQuestions(result.data || []);
-  
-        } catch (error) {
-          console.error('Error fetching questions:', error);
-          setError(error.message);
-        } finally {
-          setLoading(false);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error('No active session');
         }
-      };
-  
-      fetchQuestions();
-    }, []);
+
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const response = await fetch(`${supabaseUrl}/functions/v1/questions`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `Failed to fetch questions: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('[DEBUG] Fetched questions:', result);
+        setQuestions(result.data || []);
+
+      } catch (error) {
+        console.error('Error fetching questions:', error);
+        setError(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQuestions();
+  }, []);
 
   // Group questions by question_text to show all strength levels together
   const groupedQuestions = questions.reduce((acc, item) => {
@@ -265,43 +229,15 @@ export default function QuestionsPage() {
         return;
       }
 
-      // Get access token for API calls
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        console.error("No access token available");
-        return;
-      }
-
-      // Step 1: Create payment intent in our database
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-      const paymentIntentResponse = await fetch(`${apiBaseUrl}/create-payment-intent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          amount: 9.99, // Set your payment amount
-          interview_id: null // Optional: pass interview_id if available
-        })
-      });
-
-      if (!paymentIntentResponse.ok) {
-        throw new Error('Failed to create payment intent');
-      }
-
-      const paymentIntentData = await paymentIntentResponse.json();
-      console.log('Payment intent created:', paymentIntentData);
-
-      // Step 2: Redirect to Dodo checkout with our transaction ID
-      const redirectUrl = encodeURIComponent(`${window.location.origin}/interview`);
-      const checkoutUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${redirectUrl}&metadata[user_id]=${encodeURIComponent(user.id)}&metadata[email]=${encodeURIComponent(user.email)}&metadata[transaction_id]=${encodeURIComponent(paymentIntentData.transaction_id)}`;
-
-      // Store transaction ID for status checking
-      setPaymentId(paymentIntentData.transaction_id);
+      // Generate a unique transaction ID
+      const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      // Redirect to checkout
-      window.location.href = checkoutUrl;
+      // Create the Dodo payment URL with redirect to PaymentStatus page
+      const redirectUrl = encodeURIComponent(`${window.location.origin}/payment-status`);
+      const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${redirectUrl}&metadata[user_id]=${encodeURIComponent(user.id)}&metadata[email]=${encodeURIComponent(user.email)}&metadata[transaction_id]=${encodeURIComponent(transactionId)}`;
+      
+      // Redirect to Dodo payment page
+      window.location.href = dodoPaymentUrl;
 
     } catch (error) {
       console.error('Payment initiation failed:', error);
@@ -364,7 +300,7 @@ export default function QuestionsPage() {
               Review generated questions and sample answers for your interview preparation
             </p>
             
-            {/* Payment Button - OPTIMAL LOCATION */}
+            {/* Payment Button */}
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -383,45 +319,7 @@ export default function QuestionsPage() {
                 <FiCreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
                 {isPaymentLoading ? 'Processing...' : 'Pay Now'}
               </button>
-
-              {/* Logged in Supabase user */}
-              <div className="mt-4 text-sm text-[var(--color-text-secondary)]">
-                {userLoading ? (
-                  <div className="text-[var(--color-text-secondary)]">Loading user...</div>
-                ) : sbUser ? (
-                  <div className="inline-flex flex-col items-start gap-1 rounded-lg border border-[var(--color-border)] px-3 py-2 bg-[var(--color-card)]">
-                    <span>Signed in as:</span>
-                    <code className="text-xs opacity-80">
-                      {sbUser.email} · user_id: {sbUser.id}
-                    </code>
-                  </div>
-                ) : (
-                  <div className="text-[var(--color-text-secondary)]">Not signed in</div>
-                )}
-              </div>
             </motion.div>
-
-            {/* Payment Debug Panel */}
-            {(paymentId || paymentStatus || paymentDebug.length > 0) && (
-              <div className="mt-6 w-full max-w-4xl mx-auto text-left bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4">
-                <div className="text-sm mb-2">
-                  <strong>Payment ID:</strong> {paymentId || '—'}
-                </div>
-                <div className="text-sm mb-2">
-                  <strong>Status:</strong> {paymentStatus || 'created/processing'}
-                </div>
-                <div className="text-sm mb-2">
-                  <strong>Signature match:</strong>{' '}
-                  {signatureOk === null ? 'pending' : signatureOk ? 'true' : 'false'}
-                </div>
-                <div className="text-sm">
-                  <strong>Debug log:</strong>
-                  <pre className="mt-2 text-xs whitespace-pre-wrap leading-relaxed">
-                    {paymentDebug.join('\n')}
-                  </pre>
-                </div>
-              </div>
-            )}
           </motion.div>
 
           {/* Filters */}
@@ -612,3 +510,4 @@ export default function QuestionsPage() {
     </>
   );
 }
+

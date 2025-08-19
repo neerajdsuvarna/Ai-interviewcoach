@@ -9,6 +9,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import TestPage from './pages/TestPage';
 import QuestionsPage from './pages/QuestionPage';
 import InterviewPage from './pages/InterviewPage';
+import PaymentStatus from './pages/PaymentsStatus';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
 // import Counter from './components/Counter';
@@ -64,6 +65,14 @@ function App() {
           element={
             <ProtectedRoute>
               <InterviewPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/payment-status" 
+          element={
+            <ProtectedRoute>
+              <PaymentStatus />
             </ProtectedRoute>
           } 
         />

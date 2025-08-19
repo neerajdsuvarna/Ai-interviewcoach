@@ -8,6 +8,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, PUT, GET, OPTIONS', // Add PUT and GET
 }
 
 interface Database {
@@ -99,6 +100,12 @@ serve(async (req) => {
     switch (req.method) {
       case 'POST':
         return await handleCreatePayment(supabaseClient, req, user)
+      
+      case 'PUT':
+        return await handleUpdatePayment(supabaseClient, req, user)
+      
+      case 'GET':
+        return await handleGetPayment(supabaseClient, req, user)
       
       default:
         return new Response(
@@ -254,6 +261,205 @@ async function handleCreatePayment(supabaseClient: any, req: Request, user: any)
     return new Response(
       JSON.stringify({ 
         error: 'Failed to create payment', 
+        message: error.message 
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+}
+
+async function handleUpdatePayment(supabaseClient: any, req: Request, user: any) {
+  try {
+    const body = await req.json()
+    const { transaction_id, user_id } = body
+
+    // Validate required fields
+    if (!transaction_id) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Bad request', 
+          message: 'transaction_id is required' 
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // ✅ SOLUTION: Create service role client to bypass RLS
+    const supabaseServiceClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    // ✅ SOLUTION: Use service role to find payment (bypasses RLS)
+    const { data: existingPayment, error: fetchError } = await supabaseServiceClient
+      .from('payments')
+      .select('*')
+      .eq('transaction_id', transaction_id)
+      .single()
+
+    if (fetchError || !existingPayment) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Not found', 
+          message: 'Payment not found with this transaction_id' 
+        }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // ✅ SOLUTION: Use service role to update payment (bypasses RLS)
+    const { data: updatedPayment, error: updateError } = await supabaseServiceClient
+      .from('payments')
+      .update({ 
+        user_id: user.id 
+      })
+      .eq('transaction_id', transaction_id)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Database error:', updateError)
+      return new Response(
+        JSON.stringify({ 
+          error: 'Database error', 
+          message: updateError.message 
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: updatedPayment,
+        message: 'Payment updated successfully'
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  } catch (error) {
+    console.error('Error updating payment:', error)
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to update payment', 
+        message: error.message 
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  }
+}
+
+async function handleGetPayment(supabaseClient: any, req: Request, user: any) {
+  try {
+    const url = new URL(req.url)
+    const transaction_id = url.searchParams.get('transaction_id')
+    const get_all = url.searchParams.get('get_all')
+
+    // If get_all parameter is present, return all payments for the user
+    if (get_all === 'true') {
+      console.log('Getting all payments for user:', user.id)
+      
+      const { data: payments, error } = await supabaseClient
+        .from('payments')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('paid_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching payments:', error)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Database error', 
+            message: error.message 
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        )
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: payments || [],
+          message: 'Payments retrieved successfully',
+          count: payments?.length || 0
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // Original logic for getting single payment by transaction_id
+    if (!transaction_id) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Bad request', 
+          message: 'transaction_id parameter is required when not getting all payments' 
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // Get the payment by transaction_id
+    const { data: payment, error } = await supabaseClient
+      .from('payments')
+      .select('*')
+      .eq('transaction_id', transaction_id)
+      .single()
+
+    if (error || !payment) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Not found', 
+          message: 'Payment not found with this transaction_id' 
+        }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: payment,
+        message: 'Payment retrieved successfully'
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    )
+  } catch (error) {
+    console.error('Error getting payment:', error)
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to get payment', 
         message: error.message 
       }),
       {

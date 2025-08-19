@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
 import { 
@@ -15,7 +15,14 @@ import {
   FiBell,
   FiChevronRight,
   FiMenu,
-  FiX as FiClose
+  FiX as FiClose,
+  FiDollarSign,
+  FiClock,
+  FiCheckCircle,
+  FiXCircle,
+  FiLoader,
+  FiHash,
+  FiRefreshCw
 } from 'react-icons/fi';
 import Navbar from '../components/Navbar';
 
@@ -153,34 +160,302 @@ const ProfileSection = ({ user, profileData, setProfileData, isEditing, setIsEdi
   );
 };
 
-// Component for Payments Section
+// New Payment History Section Component
 const PaymentsSection = () => {
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchPaymentHistory();
+  }, []);
+
+  const fetchPaymentHistory = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get user session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        setError('Authentication required');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch all payments for the user using the edge function
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/payments?get_all=true`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        setPayments(result.data || []);
+      } else {
+        setError(result.message || 'Failed to fetch payment history');
+      }
+    } catch (error) {
+      console.error('Error fetching payment history:', error);
+      setError('Failed to load payment history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchPaymentHistory();
+    setRefreshing(false);
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'succeeded':
+      case 'success':
+        return <FiCheckCircle className="w-5 h-5 text-green-500" />;
+      case 'failed':
+        return <FiXCircle className="w-5 h-5 text-red-500" />;
+      case 'pending':
+      case 'processing':
+        return <FiClock className="w-5 h-5 text-yellow-500" />;
+      default:
+        return <FiDollarSign className="w-5 h-5 text-gray-500" />;
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'succeeded':
+      case 'success':
+        return 'text-green-600 bg-green-100';
+      case 'failed':
+        return 'text-red-600 bg-red-100';
+      case 'pending':
+      case 'processing':
+        return 'text-yellow-600 bg-yellow-100';
+      default:
+        return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatAmount = (amount) => {
+    // Convert from paise to rupees
+    return `₹${(amount / 100).toFixed(2)}`;
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    // You could add a toast notification here
+  };
+
+  // Calculate summary statistics
+  const totalPayments = payments.length;
+  const successfulPayments = payments.filter(p => p.payment_status === 'succeeded' || p.payment_status === 'success').length;
+  const totalAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
-          Payment Information
-        </h2>
-        <button className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-input-bg)] rounded-lg transition">
-          <FiCreditCard size={16} />
-          <span>Add Payment Method</span>
+        <div>
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+            Payment History
+          </h2>
+          <p className="text-[var(--color-text-secondary)] mt-1">
+            View and manage your payment transactions
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-opacity-90 transition-colors disabled:opacity-50"
+        >
+          <FiRefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
         </button>
       </div>
 
-      <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6">
-        <div className="text-center py-8">
-          <FiCreditCard size={48} className="mx-auto text-[var(--color-text-secondary)] mb-4" />
-          <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
-            No Payment Methods
-          </h3>
-          <p className="text-[var(--color-text-secondary)] mb-4">
-            Add a payment method to access premium features
-          </p>
-          <button className="px-6 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-[var(--color-primary-hover)] transition">
-            Add Payment Method
-          </button>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4">
+          <div className="flex items-center space-x-3">
+            <FiCreditCard className="w-6 h-6 text-[var(--color-primary)]" />
+            <div>
+              <div className="text-2xl font-bold text-[var(--color-text-primary)]">{totalPayments}</div>
+              <div className="text-sm text-[var(--color-text-secondary)]">Total Payments</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4">
+          <div className="flex items-center space-x-3">
+            <FiCheckCircle className="w-6 h-6 text-green-500" />
+            <div>
+              <div className="text-2xl font-bold text-[var(--color-text-primary)]">{successfulPayments}</div>
+              <div className="text-sm text-[var(--color-text-secondary)]">Successful</div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-4">
+          <div className="flex items-center space-x-3">
+            <FiDollarSign className="w-6 h-6 text-[var(--color-primary)]" />
+            <div>
+              <div className="text-2xl font-bold text-[var(--color-text-primary)]">{formatAmount(totalAmount)}</div>
+              <div className="text-sm text-[var(--color-text-secondary)]">Total Spent</div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="p-4 bg-red-100 border border-red-300 rounded-lg">
+          <p className="text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* Payment List */}
+      {loading ? (
+        <div className="text-center py-12">
+          <FiLoader className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-4 animate-spin" />
+          <p className="text-[var(--color-text-secondary)]">Loading payment history...</p>
+        </div>
+      ) : payments.length === 0 ? (
+        <div className="text-center py-12">
+          <FiDollarSign className="w-16 h-16 text-[var(--color-text-secondary)] mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
+            No payments found
+          </h3>
+          <p className="text-[var(--color-text-secondary)]">
+            You haven't made any payments yet.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {payments.map((payment) => (
+            <div
+              key={payment.id}
+              className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-6 hover:shadow-md transition-shadow"
+            >
+              {/* Main Payment Info */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-4">
+                  {getStatusIcon(payment.payment_status)}
+                  <div>
+                    <h3 className="font-semibold text-[var(--color-text-primary)] text-lg">
+                      {payment.provider?.toUpperCase()} Payment
+                    </h3>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      {formatDate(payment.paid_at)}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-[var(--color-text-primary)]">
+                    {formatAmount(payment.amount)}
+                  </div>
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(payment.payment_status)}`}>
+                    {payment.payment_status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Payment IDs Section */}
+              <div className="bg-[var(--color-bg)] rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-[var(--color-text-primary)] mb-3 flex items-center">
+                  <FiHash className="w-4 h-4 mr-2" />
+                  Payment Identifiers
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Payment ID (Dodo's ID) */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      Payment ID (Dodo)
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <code className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {payment.transaction_id}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(payment.transaction_id)}
+                        className="px-2 py-2 text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] transition-colors"
+                        title="Copy Payment ID"
+                      >
+                        <FiCreditCard className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      External payment processor ID
+                    </p>
+                  </div>
+
+                  {/* Transaction ID (Internal) */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      Transaction ID (Internal)
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <code className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {payment.id}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(payment.id)}
+                        className="px-2 py-2 text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] transition-colors"
+                        title="Copy Transaction ID"
+                      >
+                        <FiHash className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      Internal system reference
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                    Interview ID
+                  </label>
+                  <div className="bg-[var(--color-bg)] px-3 py-2 rounded border border-[var(--color-border)]">
+                    <code className="font-mono text-[var(--color-text-primary)]">
+                      {payment.interview_id || 'Not assigned'}
+                    </code>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                    Payment Provider
+                  </label>
+                  <div className="bg-[var(--color-bg)] px-3 py-2 rounded border border-[var(--color-border)]">
+                    <span className="text-[var(--color-text-primary)] capitalize">
+                      {payment.provider || 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -270,6 +545,31 @@ const SettingsSection = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// Add this component for the Payment History link
+const PaymentHistoryLink = () => {
+  const navigate = useNavigate();
+  
+  return (
+    <button
+      onClick={() => navigate('/payment-history')}
+      className="flex items-center justify-between w-full p-4 text-left hover:bg-[var(--color-input-bg)] rounded-lg transition-colors"
+    >
+      <div className="flex items-center space-x-3">
+        <FiCreditCard className="w-5 h-5 text-[var(--color-primary)]" />
+        <div>
+          <h3 className="font-medium text-[var(--color-text-primary)]">
+            Payment History
+          </h3>
+          <p className="text-sm text-[var(--color-text-secondary)]">
+            View all your payment transactions
+          </p>
+        </div>
+      </div>
+      <FiChevronRight className="w-5 h-5 text-[var(--color-text-secondary)]" />
+    </button>
   );
 };
 

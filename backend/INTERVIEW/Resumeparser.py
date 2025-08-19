@@ -369,6 +369,14 @@ def extract_json_array(text):
 
 def generate_core_questions(structured_resume, job_title, job_description, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
     def generate_questions_by_level(level, count, weight, retries=2):
+        # Map the level to the correct database constraint values
+        level_mapping = {
+            'beginner': 'easy',
+            'medium': 'medium', 
+            'hard': 'hard'
+        }
+        db_level = level_mapping.get(level, level)
+        
         for attempt in range(retries):
             prompt = f"""
         You are an expert AI interviewer preparing questions for a candidate applying for the role of **{job_title}**.
@@ -438,7 +446,7 @@ def generate_answers_for_existing_questions(structured_resume, job_title, job_de
             if row["strength"]:  # Skip rows that already have answers
                 continue
             print(f"[DEBUG] Generating answers for {row['question_id']} [{row['level']}]: {row['question'][:80]}...")        
-            for strength in ["weak", "medium", "strong"]:
+            for strength in ["weak", "medium", "strong"]:  # These map to beginner, intermediate, expert in read_questions_from_csv
                 prompt = f"""
 You are an expert interviewer.
 
@@ -802,10 +810,30 @@ def read_questions_from_csv(csv_file_path):
         with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
+                # Map CSV values to database constraint values
+                level_mapping = {
+                    'beginner': 'easy',
+                    'medium': 'medium', 
+                    'hard': 'hard'
+                }
+                
+                strength_mapping = {
+                    'weak': 'beginner',
+                    'medium': 'intermediate',
+                    'strong': 'expert'
+                }
+                
+                # Get the mapped values, with fallbacks
+                difficulty_category = level_mapping.get(row['level'], 'medium')
+                difficulty_experience = strength_mapping.get(row['strength'], 'beginner')
+                
+                # Debug logging
+                print(f"[DEBUG] Mapping CSV values: level='{row['level']}' -> difficulty_category='{difficulty_category}', strength='{row['strength']}' -> difficulty_experience='{difficulty_experience}'")
+                
                 question_data = {
                     "question_text": row['question'],
-                    "difficulty_category": row['level'],  # beginner, medium, hard
-                    "difficulty_experience": row['strength']  # weak, medium, strong
+                    "difficulty_category": difficulty_category,  # easy, medium, hard
+                    "difficulty_experience": difficulty_experience  # beginner, intermediate, expert
                 }
                 
                 # Include answer if available
