@@ -38,7 +38,8 @@ from PIL import Image, UnidentifiedImageError
 #  Load environment variables from .env
 # ─────────────────────────────────────────────────────
 
-load_dotenv(dotenv_path=os.path.join("common", ".env"))
+# Load environment variables from root .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # Ensure INTERVIEW folder is in Python path
 INTERVIEW_PATH = os.path.join(os.path.dirname(__file__), "INTERVIEW")
 if INTERVIEW_PATH not in sys.path:
@@ -77,6 +78,97 @@ from INTERVIEW.Interview_manager import InterviewManager
 # ─────────────────────────────────────────────────────
 
 tts_model_loaded = False
+
+# Load the Faster Whisper model for speech-to-text
+whisper_model = None
+def initialize_whisper_model():
+    """Initialize the Whisper model for speech-to-text transcription"""
+    global whisper_model
+    if whisper_model is None:
+        print("[INFO] Loading Whisper model for speech-to-text...")
+        try:
+            whisper_model = WhisperModel("base", device=device)
+            print("[DONE] Whisper model loaded successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to load Whisper model: {e}")
+            whisper_model = None
+
+# Initialize Whisper model at startup
+initialize_whisper_model()
+
+# ─────────────────────────────────────────────────────
+# Audio Processing Functions
+# ─────────────────────────────────────────────────────
+
+def convert_to_wav(input_path):
+    """Convert audio file to WAV format for processing"""
+    wav_path = input_path + "_converted.wav"
+    try:
+        subprocess.run([
+            "ffmpeg", "-y", "-i", input_path, "-ar", "16000", "-ac", "1", wav_path
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return wav_path
+    except subprocess.CalledProcessError:
+        print("[ERROR] FFmpeg conversion failed.")
+        return None
+
+def is_blank_audio(audio_path, rms_threshold=0.005):
+    """Check if audio file is blank/silent"""
+    try:
+        audio, sample_rate = sf.read(audio_path)
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)  # convert to mono
+        rms = np.sqrt(np.mean(audio**2))
+        print(f"[DEBUG] RMS Energy: {rms}")
+        return rms < rms_threshold
+    except Exception as e:
+        print(f"[ERROR] Failed to read audio: {e}")
+        return False
+
+def process_audio_file(file):
+    """Process uploaded audio file and return transcription"""
+    if whisper_model is None:
+        print("[ERROR] Whisper model not loaded")
+        return {"success": False, "error": "Speech recognition model not available"}
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_file:
+        original_path = temp_file.name
+        file.save(original_path)
+
+    wav_path = None
+    try:
+        wav_path = convert_to_wav(original_path)
+        if not wav_path or not os.path.exists(wav_path):
+            print("[ERROR] FFmpeg conversion failed or file missing.")
+            return {"success": False, "error": "Audio conversion failed"}
+
+        if is_blank_audio(wav_path):
+            print("[INFO] Blank audio detected — skipping transcription.")
+            return {"success": True, "transcription": ""}
+
+        segments, info = whisper_model.transcribe(
+            wav_path,
+            beam_size=5,
+            language="en",
+            task="transcribe"
+        )
+
+        transcription = " ".join([segment.text for segment in segments])
+        print(f"[INFO] Transcription completed: {transcription[:50]}...")
+        
+        return {"success": True, "transcription": transcription}
+
+    except Exception as e:
+        print(f"[ERROR] Transcription failed: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        # Clean up temporary files
+        for path in [original_path, wav_path]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    print(f"[WARNING] Failed to clean up {path}: {e}")
 def initialize_xtts_model(model_dir):
     """Loads XTTS model from given directory if not already loaded."""
     global tts_model_loaded
@@ -402,6 +494,68 @@ def generate_questions():
         return jsonify({
             "success": False,
             "message": f"Internal server error: {str(e)}"
+        }), 500
+
+# ─────────────────────────────────────────────────────
+# Audio Recording and Transcription API
+# ─────────────────────────────────────────────────────
+
+@app.route('/api/transcribe-audio', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def transcribe_audio():
+    """Transcribe uploaded audio file from interview recording"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+    
+    print(f"[DEBUG] Received {request.method} request to /api/transcribe-audio")
+    
+    try:
+        # Get file from request
+        if 'audio' not in request.files:
+            print("[ERROR] No 'audio' key in request.files")
+            return jsonify({
+                "success": False,
+                "message": "No audio file uploaded"
+            }), 400
+        
+        file = request.files['audio']
+        if file.filename == '':
+            print("[ERROR] Empty filename")
+            return jsonify({
+                "success": False,
+                "message": "No audio file selected"
+            }), 400
+        
+        print(f"[DEBUG] Received audio file: {file.filename}")
+        
+        # Process the audio file
+        result = process_audio_file(file)
+        
+        if not result.get('success'):
+            return jsonify({
+                "success": False,
+                "message": f"Transcription failed: {result.get('error', 'Unknown error')}"
+            }), 500
+        
+        transcription = result.get('transcription', '')
+        
+        return jsonify({
+            "success": True,
+            "message": "Audio transcribed successfully",
+            "data": {
+                "transcription": transcription,
+                "word_count": len(transcription.split()) if transcription else 0
+            }
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] General error in transcribe_audio: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Failed to process audio: {str(e)}"
         }), 500
 
 if __name__ == '__main__': 

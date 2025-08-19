@@ -12,7 +12,6 @@ import InterviewPage from './pages/InterviewPage';
 import PaymentStatus from './pages/PaymentsStatus';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
-// import Counter from './components/Counter';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
 
 // Add this route
@@ -27,7 +26,6 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/auth/callback" element={<EmailVerificationCallback />} />
-{/*         <Route path="/counter" element={<Counter />} /> */}
         <Route 
           path="/upload" 
           element={

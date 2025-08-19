@@ -11,7 +11,7 @@ const OAuthCallback = () => {
 
       if (data?.session) {
         // You are now logged in
-        navigate('/'); // or wherever you want to take the user
+        navigate('/upload'); // or wherever you want to take the user
       } else {
         // No session found, maybe an error occurred
         navigate('/login');

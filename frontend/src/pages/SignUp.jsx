@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate, Link } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
-import { FiEye, FiEyeOff, FiMail } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiMail, FiCheckCircle, FiLoader } from 'react-icons/fi';
 import Navbar from '../components/Navbar';
+import { isValidEmail, formatErrorMessage, resendVerificationEmail } from '../utils/emailVerificationUtils';
+import { useSimpleVerificationStatus } from '../hooks/useSimpleVerificationStatus';
 
 function Signup() {
   const navigate = useNavigate();
@@ -18,20 +20,29 @@ function Signup() {
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [showVerificationMessage, setShowVerificationMessage] = useState(false);
 
+  // Use the simplified verification status hook (big tech approach)
+  const { isChecking, checkVerificationStatus } = useSimpleVerificationStatus(email, showVerificationMessage);
+
   const handleSignup = async (e) => {
     e.preventDefault();
     setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
 
-    if (password.length < 8) {
-      setErrorMsg('Password must be at least 8 characters long.');
+    if (!fullName.trim()) {
+      setErrorMsg('Full name is required.');
       setLoading(false);
       return;
     }
 
-    if (!fullName.trim()) {
-      setErrorMsg('Full name is required.');
+    if (!isValidEmail(email)) {
+      setErrorMsg('Please enter a valid email address.');
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMsg('Password must be at least 8 characters long.');
       setLoading(false);
       return;
     }
@@ -43,19 +54,16 @@ function Signup() {
         options: {
           data: {
             full_name: fullName.trim()
-          }
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
 
       if (error) {
-        if (error.status === 400 && error.message.includes('already registered')) {
-          setErrorMsg('This email is already in use. Try logging in instead.');
-        } else {
-          setErrorMsg(error.message);
-        }
+        setErrorMsg(formatErrorMessage(error));
       } else {
         setShowVerificationMessage(true);
-        setSuccessMsg('Account created successfully! Please check your email to verify your account.');
+        setSuccessMsg('Account created successfully! Please check your email to verify your account and complete the signup process.');
       }
     } catch (err) {
       console.error(err);
@@ -73,77 +81,110 @@ function Signup() {
     setLoading(true);
     setErrorMsg('');
     
-    try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: email
-      });
+    const result = await resendVerificationEmail(email);
+    
+    if (result.success) {
+      setSuccessMsg('Verification email sent again! Please check your inbox.');
+    } else {
+      setErrorMsg(result.error);
+    }
+    
+    setLoading(false);
+  };
 
-      if (error) {
-        setErrorMsg(error.message);
-      } else {
-        setSuccessMsg('Verification email sent again! Please check your inbox.');
-      }
-    } catch (err) {
-      console.error(err);
-      setErrorMsg('Failed to resend verification email. Please try again.');
-    } finally {
-      setLoading(false);
+  const handleManualCheck = async () => {
+    setErrorMsg('');
+    const isVerified = await checkVerificationStatus();
+    if (isVerified) {
+      setSuccessMsg('Email verified successfully! Redirecting to upload page...');
+      setTimeout(() => {
+        navigate('/upload');
+      }, 2000);
+    } else {
+      setErrorMsg('Email not verified yet. Please check your email and click the verification link.');
     }
   };
 
   if (showVerificationMessage) {
+    const getStatusIcon = () => {
+      return isChecking ? (
+        <FiLoader className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-spin" />
+      ) : (
+        <FiMail className="w-16 h-16 text-[var(--color-primary)] mx-auto mb-4" />
+      );
+    };
+
     return (
       <>
         <Navbar />
         <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)] px-4 py-8 sm:px-6 lg:px-8">
           <div className="w-full max-w-md bg-[var(--color-card)] text-[var(--color-text-primary)] p-8 rounded-2xl shadow-lg border border-[var(--color-border)] text-center">
-            <div className="mb-6">
-              <FiMail className="w-16 h-16 text-[var(--color-primary)] mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-[var(--color-primary)] mb-2">
-                Verify Your Email
-              </h2>
-              <p className="text-[var(--color-text-secondary)]">
-                We've sent a verification link to:
-              </p>
-              <p className="font-semibold text-[var(--color-text-primary)] mt-2">
-                {email}
-              </p>
-            </div>
+                         <div className="mb-6">
+               {getStatusIcon()}
+               <h2 className="text-2xl font-bold mb-2 text-[var(--color-primary)]">
+                 Check Your Email
+               </h2>
+               <p className="text-[var(--color-text-secondary)]">
+                 We've sent a verification link to:
+               </p>
+               <p className="font-semibold text-[var(--color-text-primary)] mt-2">
+                 {email}
+               </p>
+               {isChecking && (
+                 <p className="text-sm text-blue-500 mt-2">
+                   Checking verification status...
+                 </p>
+               )}
+             </div>
 
             {errorMsg && <p className="text-[var(--color-error)] text-sm mb-4">{errorMsg}</p>}
             {successMsg && <p className="text-green-500 text-sm mb-4">{successMsg}</p>}
 
-            <div className="space-y-4">
-              <button
-                onClick={handleResendVerification}
-                disabled={loading}
-                className={`w-full py-2 px-4 font-semibold rounded text-white transition ${
-                  loading
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-[var(--color-primary)] hover:opacity-90'
-                }`}
-              >
-                {loading ? 'Sending...' : 'Resend Verification Email'}
-              </button>
+                         <div className="space-y-4">
+               <button
+                 onClick={handleResendVerification}
+                 disabled={loading}
+                 className={`w-full py-2 px-4 font-semibold rounded text-white transition ${
+                   loading
+                     ? 'bg-gray-400 cursor-not-allowed'
+                     : 'bg-[var(--color-primary)] hover:opacity-90'
+                 }`}
+               >
+                 {loading ? 'Sending...' : 'Resend Verification Email'}
+               </button>
 
-              <button
-                onClick={() => navigate('/login')}
-                className="w-full py-2 px-4 font-semibold rounded border border-[var(--color-border)] text-[var(--color-text-primary)] hover:bg-[var(--color-input-bg)] transition"
-              >
-                Go to Login
-              </button>
-            </div>
+               <button
+                 onClick={handleManualCheck}
+                 disabled={isChecking}
+                 className={`w-full py-2 px-4 font-semibold rounded border border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white transition ${
+                   isChecking ? 'opacity-50 cursor-not-allowed' : ''
+                 }`}
+               >
+                 {isChecking ? 'Checking...' : 'Check Verification Status'}
+               </button>
 
-            <p className="mt-6 text-sm text-[var(--color-text-secondary)]">
-              Didn't receive the email? Check your spam folder or{' '}
-              <button
-                onClick={handleResendVerification}
-                className="text-[var(--color-primary)] hover:underline"
-              >
-                try again
-              </button>
-            </p>
+               <button
+                 onClick={() => navigate('/login')}
+                 className="w-full py-2 px-4 font-semibold rounded border border-[var(--color-border)] text-[var(--color-text-primary)] hover:bg-[var(--color-input-bg)] transition"
+               >
+                 Go to Login
+               </button>
+             </div>
+
+                         <div className="mt-6 space-y-3">
+               <p className="text-sm text-[var(--color-text-secondary)]">
+                 Didn't receive the email? Check your spam folder or{' '}
+                 <button
+                   onClick={handleResendVerification}
+                   className="text-[var(--color-primary)] hover:underline"
+                 >
+                   try again
+                 </button>
+               </p>
+               <p className="text-xs text-[var(--color-text-secondary)]">
+                 After verification, you'll be automatically logged in and redirected to the upload page to start using InterviewCoach.
+               </p>
+             </div>
           </div>
         </div>
       </>

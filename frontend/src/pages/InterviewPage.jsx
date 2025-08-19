@@ -1,14 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, User } from 'lucide-react';
+import { PhoneOff } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import Navbar from '@/components/Navbar';
 import ChatWindow from '@/components/interview/ChatWindow';
 
 function InterviewPage() {
   const { isDark } = useTheme();
-  const [isRecording, setIsRecording] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [conversation, setConversation] = useState([
     {
       id: 1,
@@ -32,7 +30,7 @@ function InterviewPage() {
             height: { ideal: 1080 },
             facingMode: 'user'
           }, 
-          audio: true 
+          audio: false // No audio needed for video only
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -52,42 +50,14 @@ function InterviewPage() {
     };
   }, []);
 
-  const toggleRecording = async () => {
-    if (isRecording) {
-      // Stop recording
-      setIsRecording(false);
-      setIsLoading(true);
-      
-      // Simulate processing time
-      setTimeout(() => {
-        // Add candidate's response to conversation
-        const newMessage = {
-          id: conversation.length + 1,
-          speaker: 'candidate',
-          message: 'Thank you, Mr. Chen. I\'m a senior software engineer with 6 years of experience in full-stack development. I\'ve led multiple projects at my current company, including a microservices architecture that improved system performance by 40%. I\'m particularly excited about TechCorp\'s innovative approach to AI integration and the opportunity to work on cutting-edge technology.',
-          timestamp: new Date().toLocaleTimeString()
-        };
-        
-        setConversation(prev => [...prev, newMessage]);
-        
-        // Simulate interviewer's follow-up question
-        setTimeout(() => {
-          const followUp = {
-            id: conversation.length + 2,
-            speaker: 'interviewer',
-            message: 'Impressive background. Can you walk me through a challenging technical problem you solved recently? I\'d like to understand your problem-solving approach.',
-            timestamp: new Date().toLocaleTimeString()
-          };
-          setConversation(prev => [...prev, followUp]);
-          setIsLoading(false);
-        }, 2000);
-        
-        setIsLoading(false);
-      }, 3000);
-    } else {
-      // Start recording
-      setIsRecording(true);
+  const endInterview = () => {
+    // Stop camera stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
     }
+    
+    // Navigate back or show end screen
+    window.history.back();
   };
 
   return (
@@ -95,10 +65,45 @@ function InterviewPage() {
       <Navbar />
       
       <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
-        <div className="flex h-screen">
+        {/* Top Bar with End Interview Button */}
+        <div 
+          className="flex items-center justify-between px-4 lg:px-6 py-3 border-b"
+          style={{ 
+            backgroundColor: 'var(--color-card)',
+            borderColor: 'var(--color-border)' 
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <h1 
+                className="text-lg lg:text-xl font-bold tracking-tight"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                AI Interview Session
+              </h1>
+              
+              {/* Session Status */}
+              {/* <div className="flex items-center gap-1 bg-green-500/90 backdrop-blur-sm text-white px-2 py-1 rounded-full text-xs font-semibold shadow-md border border-green-400/30">
+                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+                <span className="tracking-wide">ACTIVE</span>
+              </div> */}
+            </div>
+          </div>
+
+          {/* End Interview Button */}
+          <button
+            onClick={endInterview}
+            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+          >
+            <PhoneOff size={16} />
+            <span className="hidden sm:inline">End Interview</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col lg:flex-row h-[80vh] lg:h-[85vh]">
           {/* Left - Interviewer Video */}
           <div 
-            className="w-1/3 border-r p-6" 
+            className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6" 
             style={{ 
               backgroundColor: 'var(--color-card)', 
               borderColor: 'var(--color-border)' 
@@ -107,7 +112,7 @@ function InterviewPage() {
             <div className="h-full flex flex-col">
               {/* Interviewer Video Container */}
               <div 
-                className="flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
+                className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
                 style={{ borderColor: 'var(--color-border)' }}
               >
                 {/* Interviewer Image */}
@@ -118,16 +123,16 @@ function InterviewPage() {
                 />
                 
                 {/* Interviewer Info Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                  <h3 className="text-white font-semibold text-base">Michael Chen</h3>
-                  <p className="text-gray-300 text-sm">Senior Engineering Manager</p>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
+                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Michael Chen</h3>
+                  <p className="text-gray-200 text-sm md:text-base font-medium">Senior Engineering Manager</p>
                 </div>
 
                 {/* Live Indicator */}
                 <div className="absolute top-4 left-4">
-                  <div className="flex items-center gap-1 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
-                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
-                    Live
+                  <div className="flex items-center gap-2 bg-green-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-green-400/30">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    <span className="tracking-wide">LIVE</span>
                   </div>
                 </div>
               </div>
@@ -136,7 +141,7 @@ function InterviewPage() {
 
           {/* Middle - User Camera */}
           <div 
-            className="w-1/3 border-r p-6" 
+            className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6" 
             style={{ 
               backgroundColor: 'var(--color-card)', 
               borderColor: 'var(--color-border)' 
@@ -145,31 +150,16 @@ function InterviewPage() {
             <div className="h-full flex flex-col">
               {/* User Video Container */}
               <div 
-                className="flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
+                className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
                 style={{ borderColor: 'var(--color-border)' }}
               >
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted={isMuted}
-                  className="w-full h-full object-cover"
-                />
-                
-                {/* Recording Indicator */}
-                {isRecording && (
-                  <motion.div
-                    className="absolute top-4 right-4"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                  >
-                    <div className="flex items-center gap-2 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg">
-                      <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                      Recording...
-                    </div>
-                  </motion.div>
-                )}
+                                 <video
+                   ref={videoRef}
+                   autoPlay
+                   playsInline
+                   muted={true}
+                   className="w-full h-full object-cover"
+                                   />
 
                 {/* Processing State */}
                 {isLoading && (
@@ -199,19 +189,19 @@ function InterviewPage() {
                 )}
                 
                 {/* User Camera Label */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                  <h3 className="text-white font-semibold text-base">Your Camera</h3>
-                  <p className="text-gray-300 text-sm">Live Feed</p>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
+                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Your Camera</h3>
+                  <p className="text-gray-200 text-sm md:text-base font-medium">Live Feed</p>
                 </div>
 
                 {/* Connection Status */}
                 <div className="absolute top-4 left-4">
                   <div 
-                    className="flex items-center gap-1 text-white px-2 py-1 rounded-full text-xs font-medium"
+                    className="flex items-center gap-2 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-white/20 backdrop-blur-sm"
                     style={{ backgroundColor: 'var(--color-primary)' }}
                   >
-                    <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                    Connected
+                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                    <span className="tracking-wide">CONNECTED</span>
                   </div>
                 </div>
               </div>
@@ -220,16 +210,14 @@ function InterviewPage() {
 
           {/* Right - Chat Conversation */}
           <div 
-            className="w-1/3"
+            className="w-full lg:w-1/3"
             style={{ backgroundColor: 'var(--color-card)' }}
           >
             <ChatWindow
               conversation={conversation}
-              isRecording={isRecording}
+              setConversation={setConversation}
               isLoading={isLoading}
-              onToggleRecording={toggleRecording}
-              onToggleMute={() => {}} // Empty function since we removed mute functionality
-              isMuted={isMuted}
+              setIsLoading={setIsLoading}
             />
           </div>
         </div>

@@ -1,11 +1,174 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Mic, MicOff } from 'lucide-react';
+import { uploadFile } from '../../api';
 
-function ChatWindow({ conversation, isRecording, isLoading, onToggleRecording, onToggleMute, isMuted }) {
+
+function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) {
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null);
+
+  // Cleanup function to stop media stream when component unmounts
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      // Stop recording
+      console.log('🛑 Stopping recording...');
+      setIsRecording(false);
+      setIsLoading(true);
+      
+      try {
+        // Stop the media recorder
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+        
+        // Wait for the recording to finish
+        await new Promise((resolve) => {
+          if (mediaRecorderRef.current) {
+            mediaRecorderRef.current.onstop = resolve;
+          } else {
+            resolve();
+          }
+        });
+        
+        // Create audio blob from chunks
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        audioChunksRef.current = []; // Reset chunks
+        
+        // Stop the media stream
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        
+        console.log('🎵 Audio recording completed, blob size:', audioBlob.size, 'bytes');
+        
+        // Send audio to backend for transcription
+        console.log('📤 Sending audio to backend for transcription...');
+        try {
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+          
+          const result = await uploadFile('/api/transcribe-audio', formData);
+          
+          console.log('📥 Backend response:', result);
+          
+          if (result.success) {
+            const transcription = result.data.transcription;
+            
+            if (transcription && transcription.trim()) {
+              // Add candidate's response to conversation
+              const newMessage = {
+                id: conversation.length + 1,
+                speaker: 'candidate',
+                message: transcription,
+                timestamp: new Date().toLocaleTimeString()
+              };
+              
+              setConversation(prev => [...prev, newMessage]);
+              
+              // Simulate interviewer's follow-up question
+              setTimeout(() => {
+                const followUp = {
+                  id: conversation.length + 2,
+                  speaker: 'interviewer',
+                  message: 'Thank you for that response. Can you tell me more about your experience with team leadership and how you handle challenging situations?',
+                  timestamp: new Date().toLocaleTimeString()
+                };
+                setConversation(prev => [...prev, followUp]);
+                setIsLoading(false);
+              }, 2000);
+            } else {
+              // No speech detected
+              const newMessage = {
+                id: conversation.length + 1,
+                speaker: 'candidate',
+                message: '[No speech detected]',
+                timestamp: new Date().toLocaleTimeString()
+              };
+              setConversation(prev => [...prev, newMessage]);
+              setIsLoading(false);
+            }
+          } else {
+            console.error('❌ Transcription failed:', result.message);
+            // Add error message to conversation
+            const errorMessage = {
+              id: conversation.length + 1,
+              speaker: 'system',
+              message: `Transcription failed: ${result.message || 'Unknown error'}`,
+              timestamp: new Date().toLocaleTimeString()
+            };
+            setConversation(prev => [...prev, errorMessage]);
+            setIsLoading(false);
+          }
+          
+        } catch (error) {
+          console.error('❌ Error sending audio to backend:', error);
+          // Add error message to conversation
+          const errorMessage = {
+            id: conversation.length + 1,
+            speaker: 'system',
+            message: `Error processing audio: ${error.message}`,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setConversation(prev => [...prev, errorMessage]);
+          setIsLoading(false);
+        }
+        
+      } catch (error) {
+        console.error('❌ Error processing audio:', error);
+        setIsLoading(false);
+      }
+      
+    } else {
+      // Start recording
+      console.log('🎙️ Starting recording...');
+      try {
+        // Get user media stream
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: true,
+          video: false
+        });
+        
+        // Store stream reference for cleanup
+        streamRef.current = stream;
+        
+        // Create a new MediaRecorder
+        mediaRecorderRef.current = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
+        
+        // Set up event handlers
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        
+        // Start recording
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+        console.log('✅ Recording started successfully');
+        
+      } catch (error) {
+        console.error('❌ Error starting recording:', error);
+      }
+    }
+  };
+
   return (
     <div 
-      className="h-full flex flex-col p-6"
+      className="h-full flex flex-col p-4 lg:p-6"
       style={{ 
         backgroundColor: 'var(--color-card)',
         borderLeft: '1px solid var(--color-border)'
@@ -14,45 +177,28 @@ function ChatWindow({ conversation, isRecording, isLoading, onToggleRecording, o
       {/* Header with Title and Mic Button */}
       <div className="flex items-center justify-between mb-4">
         <h2 
-          className="text-lg font-semibold"
+          className="text-xl md:text-2xl font-bold tracking-tight"
           style={{ color: 'var(--color-text-primary)' }}
         >
           Interview Conversation
         </h2>
         
-        {/* Mic Button at Top */}
+        {/* Single Recording Button */}
         <div className="flex items-center gap-3">
           <button
-            onClick={onToggleMute}
-            className={`p-2 rounded-full transition-all ${
-              isMuted 
-                ? 'border border-red-200' 
-                : 'border border-gray-200 hover:opacity-80'
-            }`}
-            style={{ 
-              backgroundColor: isMuted ? 'rgba(239, 68, 68, 0.1)' : 'var(--color-input-bg)',
-              color: isMuted ? '#ef4444' : 'var(--color-text-secondary)'
-            }}
-          >
-            {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-          </button>
-
-          <button
-            onClick={onToggleRecording}
-            className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-medium transition-all shadow-lg ${
+            onClick={toggleRecording}
+            className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 ${
               isRecording 
-                ? 'hover:opacity-80' 
-                : 'hover:opacity-80'
+                ? 'bg-red-500 hover:bg-red-600' 
+                : 'bg-blue-500 hover:bg-blue-600'
             }`}
-            style={{ 
-              backgroundColor: isRecording ? '#ef4444' : 'var(--color-primary)'
-            }}
+            title={isRecording ? 'Stop Recording' : 'Start Recording'}
           >
-            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+            {isRecording ? <MicOff size={24} /> : <Mic size={24} />}
           </button>
         </div>
       </div>
-      
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2">
         <AnimatePresence>
@@ -64,51 +210,40 @@ function ChatWindow({ conversation, isRecording, isLoading, onToggleRecording, o
               transition={{ duration: 0.3 }}
               className={`flex ${message.speaker === 'interviewer' ? 'justify-start' : 'justify-end'}`}
             >
-              <div
-                className={`max-w-[85%] p-4 rounded-lg ${
-                  message.speaker === 'interviewer'
-                    ? 'border'
-                    : 'border'
-                }`}
-                style={{
-                  backgroundColor: message.speaker === 'interviewer' 
-                    ? 'var(--color-input-bg)' 
-                    : 'var(--color-primary)',
-                  color: message.speaker === 'interviewer' 
-                    ? 'var(--color-text-primary)' 
-                    : 'white',
-                  borderColor: message.speaker === 'interviewer' 
-                    ? 'var(--color-border)' 
-                    : 'var(--color-primary)'
-                }}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span 
-                    className={`text-xs font-medium px-2 py-1 rounded-full ${
-                      message.speaker === 'interviewer'
-                        ? ''
-                        : 'bg-white/20'
-                    }`}
-                    style={{
-                      backgroundColor: message.speaker === 'interviewer' 
-                        ? 'var(--color-border)' 
-                        : 'rgba(255, 255, 255, 0.2)',
-                      color: message.speaker === 'interviewer' 
-                        ? 'var(--color-text-secondary)' 
-                        : 'white'
-                    }}
-                  >
-                    {message.speaker === 'interviewer' ? 'Interviewer' : 'You'}
-                  </span>
-                  <span 
-                    className="text-xs"
-                    style={{ color: 'var(--color-text-secondary)' }}
-                  >
-                    {message.timestamp}
-                  </span>
-                </div>
-                <p className="text-sm leading-relaxed">{message.message}</p>
-              </div>
+<div
+  className={`max-w-[85%] p-5 rounded-2xl shadow-lg ${
+    message.speaker === 'interviewer'
+      ? 'border border-[var(--color-border)]'
+      : 'border border-[var(--color-primary)]'
+  }`}
+  style={{
+    backgroundColor: message.speaker === 'interviewer' 
+      ? 'var(--color-input-bg)' 
+      : 'var(--color-primary)',
+    color: message.speaker === 'interviewer' 
+      ? 'var(--color-text-primary)' 
+      : 'white',
+  }}
+>
+  <div className="flex items-center gap-3 mb-3">
+    <span 
+      className={`text-xs font-bold px-3 py-1 rounded-full tracking-wide ${
+        message.speaker === 'interviewer'
+          ? 'bg-[var(--color-border)] text-[var(--color-text-secondary)]'
+          : 'bg-white/20 text-white'
+      }`}
+    >
+      {message.speaker === 'interviewer' ? 'INTERVIEWER' : 'YOU'}
+    </span>
+    <span 
+      className="text-xs font-medium opacity-70"
+      style={{ color: 'var(--color-text-secondary)' }}
+    >
+      {message.timestamp}
+    </span>
+  </div>
+  <p className="text-sm md:text-base leading-relaxed font-medium">{message.message}</p>
+</div>
             </motion.div>
           ))}
         </AnimatePresence>
@@ -180,7 +315,7 @@ function ChatWindow({ conversation, isRecording, isLoading, onToggleRecording, o
         >
           {isRecording 
             ? 'Click to stop recording and submit your response'
-            : 'Click the microphone to begin your response'
+            : 'Click to start recording your response'
           }
         </p>
       </div>

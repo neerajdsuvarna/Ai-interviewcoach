@@ -14,7 +14,7 @@ export default function TestAuth() {
     setTestResult(null);
 
     try {
-      const result = await apiCall('/test');
+      const result = await apiCall('/api/test');
       setTestResult(result);
     } catch (err) {
       setError(err.message);
@@ -29,7 +29,7 @@ export default function TestAuth() {
     setTestResult(null);
 
     try {
-      const result = await apiCall('/health');
+      const result = await apiCall('/api/health');
       setTestResult(result);
     } catch (err) {
       setError(err.message);
