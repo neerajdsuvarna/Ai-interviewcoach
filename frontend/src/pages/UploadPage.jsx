@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import Navbar from '../components/Navbar';
@@ -22,6 +22,7 @@ function UploadPage() {
   const [jobDescription, setJobDescription] = useState('');
   const [parsingJobDesc, setParsingJobDesc] = useState(false);
   const [jobDescParsed, setJobDescParsed] = useState(false);
+  const [clearCounter, setClearCounter] = useState(0);
 
   const handleClearAll = () => {
     setResume(null);
@@ -31,6 +32,7 @@ function UploadPage() {
     setJobTitle('');
     setJobDescription('');
     setJobDescParsed(false);
+    setClearCounter(prev => prev + 1); // Increment counter to force re-render
   };
 
   const handleJobDescUpload = async (file) => {
@@ -244,7 +246,18 @@ function UploadPage() {
       console.log('[DEBUG] Job Description ID:', jdId);
       console.log('[DEBUG] Questions saved:', questionsSaveResult.data.length);
       
-      alert('Resume, job description, and questions generated successfully!');
+      // Get the question set number from the saved questions
+      const savedQuestionSet = questionsSaveResult.data[0]?.question_set || 'unknown';
+      
+      // Count unique questions by grouping by question_text
+      const uniqueQuestions = questionsSaveResult.data.reduce((acc, item) => {
+        if (!acc.has(item.question_text)) {
+          acc.add(item.question_text);
+        }
+        return acc;
+      }, new Set());
+      
+      alert(`Resume, job description, and questions generated successfully!\n\nQuestion Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`);
       navigate('/questions');
 
     } catch (error) {
@@ -300,6 +313,44 @@ function UploadPage() {
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       
+      // First, get the current highest question set number for this user
+      const getCurrentQuestionSetsResponse = await fetch(`${supabaseUrl}/functions/v1/questions`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!getCurrentQuestionSetsResponse.ok) {
+        const errorData = await getCurrentQuestionSetsResponse.json();
+        throw new Error(errorData.message || `Failed to get current question sets: ${getCurrentQuestionSetsResponse.status}`);
+      }
+
+      const currentQuestionSetsResult = await getCurrentQuestionSetsResponse.json();
+      const allQuestions = currentQuestionSetsResult.data || [];
+      
+      // Find the highest question set number
+      const existingQuestionSets = allQuestions.map(q => q.question_set).filter(set => set !== null && set !== undefined);
+      
+      if (existingQuestionSets.length === 0) {
+        console.log('[DEBUG] No existing question sets found, starting with set 1');
+        var nextQuestionSet = 1;
+      } else {
+        const maxSet = Math.max(...existingQuestionSets);
+        nextQuestionSet = maxSet + 1;
+        console.log('[DEBUG] Found existing sets, max is', maxSet, 'next will be', nextQuestionSet);
+      }
+      
+      console.log('[DEBUG] Current question sets:', existingQuestionSets);
+      console.log('[DEBUG] Next question set will be:', nextQuestionSet);
+      console.log('[DEBUG] Total questions found:', allQuestions.length);
+      console.log('[DEBUG] Questions by set:', existingQuestionSets.reduce((acc, set) => {
+        acc[set] = (acc[set] || 0) + 1;
+        return acc;
+      }, {}));
+      
+      // Now save the new questions with the incremented question set number
       const response = await fetch(`${supabaseUrl}/functions/v1/questions`, {
         method: 'POST',
         headers: {
@@ -310,7 +361,7 @@ function UploadPage() {
           resume_id: resumeId,
           jd_id: jdId,
           questions: questions,
-          question_set: 1  // First set of questions
+          question_set: nextQuestionSet
         })
       });
 
@@ -329,10 +380,36 @@ function UploadPage() {
   // Check if generate questions button should be enabled
   const canGenerateQuestions = resume && jobTitle.trim() && jobDescription.trim() && jobDescParsed && !loading && !parsingJobDesc;
 
+  // Check if there's unsaved work that should trigger navigation warnings
+  const hasUnsavedWork = resume || jobDesc || jobTitle.trim() || jobDescription.trim() || loading || parsingJobDesc;
+
+  // Handle beforeunload event (page refresh/close)
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedWork) {
+        // Standard way to show browser's default "Leave Site?" dialog
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasUnsavedWork]);
+
+  // Note: Back/forward navigation protection removed to use only standard browser dialog
+  // The beforeunload event below handles page refresh/close with standard browser dialog
+
+
+
   return (
     <>
       <Navbar />
-        <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-4 py-8 sm:py-12 md:py-16 flex justify-center">
+      <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-4 py-8 sm:py-12 md:py-16 flex justify-center">
         <div className="w-full max-w-3xl bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-6 sm:p-8 md:p-10">
           <div className="text-center mb-10">
             <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-[var(--color-primary)] mb-4">
@@ -351,6 +428,7 @@ function UploadPage() {
             >
             <form onSubmit={handleGenerateQuestions} className="space-y-8">
             <UploadBox
+              key={`resume-${clearCounter}`}
               label="Resume"
               accept=".pdf,.doc,.docx"
               file={resume}
@@ -364,7 +442,8 @@ function UploadPage() {
             />
 
             <UploadBox
-                label="Job Description File (Optional - will auto-populate fields)"
+                key={`jobdesc-${clearCounter}`}
+                label="Job Description File"
                 accept=".pdf,.txt,.doc,.docx"
               file={jobDesc}
                 setFile={handleJobDescUpload}
@@ -392,7 +471,7 @@ function UploadPage() {
                     <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
                       <FiCheck className="w-5 h-5 text-green-600 dark:text-green-400" />
                       <span className="text-green-800 dark:text-green-200 font-medium">
-                        Job description parsed successfully! You can edit the fields below.
+                        Job description parsed successfully!
                       </span>
                     </div>
 
@@ -419,7 +498,7 @@ function UploadPage() {
                       <textarea
                         value={jobDescription}
                         onChange={(e) => setJobDescription(e.target.value)}
-                        placeholder="Paste the job description here or upload a file to auto-populate..."
+                        placeholder="Paste the job description here or upload a file to parse the job description..."
                         rows={6}
                         className="w-full px-4 py-3 border border-[var(--color-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition resize-none"
                         required
@@ -434,10 +513,15 @@ function UploadPage() {
                 <button
                 type="button"
                 onClick={handleClearAll}
-                className="flex items-center gap-2 py-2 px-4 text-base text-[var(--color-error)] border border-[var(--color-error)] rounded-xl hover:bg-[var(--color-error-bg)] transition"
+                disabled={parsingJobDesc || loading}
+                className={`flex items-center gap-2 py-2 px-4 text-base border rounded-xl transition ${
+                  parsingJobDesc || loading
+                    ? 'text-gray-400 border-gray-300 dark:text-gray-500 dark:border-gray-600 cursor-not-allowed opacity-50'
+                    : 'text-[var(--color-error)] border-[var(--color-error)] hover:bg-[var(--color-error-bg)]'
+                }`}
                 >
                 <FiTrash2 className="w-5 h-5" />
-                Clear All Files
+                {parsingJobDesc ? 'Parsing...' : 'Clear All Files'}
                 </button>
               </div>
             )}
@@ -450,10 +534,10 @@ function UploadPage() {
                 {loading ? (
                   <>
                     <FiLoader className="w-5 h-5 animate-spin" />
-                    Saving to Database...
+                    Generating Questions...
                   </>
                 ) : (
-                  'Save Resume & Job Description'
+                  'Generate Interview Questions'
                 )}
                 </button>
           </form>
