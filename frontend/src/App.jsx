@@ -9,6 +9,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import TestPage from './pages/TestPage';
 import QuestionsPage from './pages/QuestionPage';
 import InterviewPage from './pages/InterviewPage';
+import InterviewFeedbackPage from './pages/InterviewFeedbackPage';
 import PaymentStatus from './pages/PaymentsStatus';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
@@ -63,6 +64,14 @@ function App() {
           element={
             <ProtectedRoute>
               <InterviewPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/interview-feedback" 
+          element={
+            <ProtectedRoute>
+              <InterviewFeedbackPage />
             </ProtectedRoute>
           } 
         />

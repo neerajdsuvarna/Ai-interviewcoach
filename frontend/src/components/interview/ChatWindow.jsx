@@ -19,12 +19,18 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
     };
   }, []);
 
+  // Debug loading state changes
+  useEffect(() => {
+    console.log('🔄 Loading state changed to:', isLoading);
+  }, [isLoading]);
+
   const toggleRecording = async () => {
     if (isRecording) {
       // Stop recording
       console.log('🛑 Stopping recording...');
       setIsRecording(false);
       setIsLoading(true);
+      console.log('🔄 Loading state set to true');
       
       try {
         // Stop the media recorder
@@ -66,32 +72,36 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           if (result.success) {
             const transcription = result.data.transcription;
             
-            if (transcription && transcription.trim()) {
-              // Add candidate's response to conversation
-              const newMessage = {
-                id: conversation.length + 1,
-                speaker: 'candidate',
-                message: transcription,
-                timestamp: new Date().toLocaleTimeString()
-              };
-              
-              setConversation(prev => [...prev, newMessage]);
-              
-              // Simulate interviewer's follow-up question
-              setTimeout(() => {
-                const followUp = {
-                  id: conversation.length + 2,
-                  speaker: 'interviewer',
-                  message: 'Thank you for that response. Can you tell me more about your experience with team leadership and how you handle challenging situations?',
-                  timestamp: new Date().toLocaleTimeString()
-                };
-                setConversation(prev => [...prev, followUp]);
-                setIsLoading(false);
-              }, 2000);
+                         if (transcription && transcription.trim()) {
+               // Add candidate's response to conversation
+               const newMessage = {
+                 id: Date.now(), // Use timestamp as unique ID
+                 speaker: 'candidate',
+                 message: transcription,
+                 timestamp: new Date().toLocaleTimeString()
+               };
+               
+               setConversation(prev => [...prev, newMessage]);
+               console.log('✅ Candidate message added, setting loading to false');
+               setIsLoading(false); // Stop loading immediately after user message appears
+               
+               // Simulate interviewer's follow-up question
+               setTimeout(() => {
+                 console.log('🔄 Adding interviewer follow-up question...');
+                 const followUp = {
+                   id: Date.now() + 1, // Use timestamp + 1 as unique ID
+                   speaker: 'interviewer',
+                   message: 'Thank you for that response. Can you tell me more about your experience with team leadership and how you handle challenging situations?',
+                   timestamp: new Date().toLocaleTimeString()
+                 };
+                 setConversation(prev => [...prev, followUp]);
+                 console.log('✅ Interviewer message added');
+               }, 2000);
             } else {
               // No speech detected
+              console.log('⚠️ No speech detected');
               const newMessage = {
-                id: conversation.length + 1,
+                id: Date.now(), // Use timestamp as unique ID
                 speaker: 'candidate',
                 message: '[No speech detected]',
                 timestamp: new Date().toLocaleTimeString()
@@ -103,7 +113,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             console.error('❌ Transcription failed:', result.message);
             // Add error message to conversation
             const errorMessage = {
-              id: conversation.length + 1,
+              id: Date.now(), // Use timestamp as unique ID
               speaker: 'system',
               message: `Transcription failed: ${result.message || 'Unknown error'}`,
               timestamp: new Date().toLocaleTimeString()
@@ -116,7 +126,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           console.error('❌ Error sending audio to backend:', error);
           // Add error message to conversation
           const errorMessage = {
-            id: conversation.length + 1,
+            id: Date.now(), // Use timestamp as unique ID
             speaker: 'system',
             message: `Error processing audio: ${error.message}`,
             timestamp: new Date().toLocaleTimeString()
@@ -185,6 +195,14 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         
         {/* Single Recording Button */}
         <div className="flex items-center gap-3">
+          {/* Recording Status Indicator */}
+          {isRecording && (
+            <div className="flex items-center gap-2 bg-red-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-red-400/30">
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              <span className="tracking-wide">RECORDING</span>
+            </div>
+          )}
+          
           <button
             onClick={toggleRecording}
             className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 ${
@@ -210,40 +228,40 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
               transition={{ duration: 0.3 }}
               className={`flex ${message.speaker === 'interviewer' ? 'justify-start' : 'justify-end'}`}
             >
-<div
-  className={`max-w-[85%] p-5 rounded-2xl shadow-lg ${
-    message.speaker === 'interviewer'
-      ? 'border border-[var(--color-border)]'
-      : 'border border-[var(--color-primary)]'
-  }`}
-  style={{
-    backgroundColor: message.speaker === 'interviewer' 
-      ? 'var(--color-input-bg)' 
-      : 'var(--color-primary)',
-    color: message.speaker === 'interviewer' 
-      ? 'var(--color-text-primary)' 
-      : 'white',
-  }}
->
-  <div className="flex items-center gap-3 mb-3">
-    <span 
-      className={`text-xs font-bold px-3 py-1 rounded-full tracking-wide ${
-        message.speaker === 'interviewer'
-          ? 'bg-[var(--color-border)] text-[var(--color-text-secondary)]'
-          : 'bg-white/20 text-white'
-      }`}
-    >
-      {message.speaker === 'interviewer' ? 'INTERVIEWER' : 'YOU'}
-    </span>
-    <span 
-      className="text-xs font-medium opacity-70"
-      style={{ color: 'var(--color-text-secondary)' }}
-    >
-      {message.timestamp}
-    </span>
-  </div>
-  <p className="text-sm md:text-base leading-relaxed font-medium">{message.message}</p>
-</div>
+              <div
+                className={`max-w-[85%] p-5 rounded-2xl shadow-lg ${
+                  message.speaker === 'interviewer'
+                    ? 'border border-[var(--color-border)]'
+                    : 'border border-[var(--color-primary)]'
+                }`}
+                style={{
+                  backgroundColor: message.speaker === 'interviewer' 
+                    ? 'var(--color-input-bg)' 
+                    : 'var(--color-primary)',
+                  color: message.speaker === 'interviewer' 
+                    ? 'var(--color-text-primary)' 
+                    : 'white',
+                }}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <span 
+                    className={`text-xs font-bold px-3 py-1 rounded-full tracking-wide ${
+                      message.speaker === 'interviewer'
+                        ? 'bg-[var(--color-border)] text-[var(--color-text-secondary)]'
+                        : 'bg-white/20 text-white'
+                    }`}
+                  >
+                    {message.speaker === 'interviewer' ? 'INTERVIEWER' : 'YOU'}
+                  </span>
+                  <span 
+                    className="text-xs font-medium opacity-70"
+                    style={{ color: message.speaker === 'interviewer' ? 'var(--color-text-secondary)' : 'rgba(255,255,255,0.7)' }}
+                  >
+                    {message.timestamp}
+                  </span>
+                </div>
+                <p className="text-sm md:text-base leading-relaxed font-medium">{message.message}</p>
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>
@@ -251,50 +269,53 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         {/* Loading indicator for new messages */}
         {isLoading && (
           <motion.div
+            key="loading-indicator"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex justify-start"
+            exit={{ opacity: 0, y: -20 }}
+            className="flex justify-end"
           >
             <div 
               className="max-w-[85%] p-4 rounded-lg border"
               style={{ 
-                backgroundColor: 'var(--color-input-bg)',
-                borderColor: 'var(--color-border)'
+                backgroundColor: 'var(--color-primary)',
+                borderColor: 'var(--color-primary)',
+                color: 'white'
               }}
             >
               <div className="flex items-center gap-2 mb-2">
                 <span 
-                  className="text-xs font-medium px-2 py-1 rounded-full"
+                  className="text-xs font-bold px-3 py-1 rounded-full tracking-wide"
                   style={{ 
-                    backgroundColor: 'var(--color-border)',
-                    color: 'var(--color-text-secondary)'
+                    backgroundColor: 'rgba(255,255,255,0.2)',
+                    color: 'white'
                   }}
                 >
-                  Interviewer
+                  YOU
                 </span>
                 <span 
                   className="text-xs"
-                  style={{ color: 'var(--color-text-secondary)' }}
+                  style={{ color: 'rgba(255,255,255,0.8)' }}
                 >
-                  Typing...
+                  Processing audio...
                 </span>
               </div>
               <div className="flex space-x-1">
                 <div 
                   className="w-2 h-2 rounded-full animate-bounce"
-                  style={{ backgroundColor: 'var(--color-text-secondary)' }}
+                  style={{ backgroundColor: 'rgba(255,255,255,0.8)' }}
                 ></div>
                 <div 
                   className="w-2 h-2 rounded-full animate-bounce" 
                   style={{ 
-                    backgroundColor: 'var(--color-text-secondary)',
+                    backgroundColor: 'rgba(255,255,255,0.8)',
                     animationDelay: '0.1s' 
                   }}
                 ></div>
                 <div 
                   className="w-2 h-2 rounded-full animate-bounce" 
                   style={{ 
-                    backgroundColor: 'var(--color-text-secondary)',
+                    backgroundColor: 'rgba(255,255,255,0.8)',
                     animationDelay: '0.2s' 
                   }}
                 ></div>

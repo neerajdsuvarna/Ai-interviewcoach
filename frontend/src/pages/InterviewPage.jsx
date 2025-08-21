@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { PhoneOff } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import Navbar from '@/components/Navbar';
@@ -7,6 +8,7 @@ import ChatWindow from '@/components/interview/ChatWindow';
 
 function InterviewPage() {
   const { isDark } = useTheme();
+  const navigate = useNavigate();
   const [conversation, setConversation] = useState([
     {
       id: 1,
@@ -56,8 +58,10 @@ function InterviewPage() {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
     
-    // Navigate back or show end screen
-    window.history.back();
+    // Navigate to feedback page with a mock interview ID
+    // In a real implementation, this would be the actual interview ID from the backend
+    const mockInterviewId = 'mock-interview-id-' + Date.now();
+    navigate(`/interview-feedback?interview_id=${mockInterviewId}`);
   };
 
   return (
