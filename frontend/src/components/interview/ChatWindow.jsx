@@ -1,14 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff } from 'lucide-react';
-import { uploadFile } from '../../api';
-
+import { uploadFile, apiPost } from '../../api';
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
+  const messagesEndRef = useRef(null);
+
+  // Auto-scroll to bottom when new messages are added
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [conversation]);
 
   // Cleanup function to stop media stream when component unmounts
   useEffect(() => {
@@ -23,6 +32,53 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
   useEffect(() => {
     console.log('🔄 Loading state changed to:', isLoading);
   }, [isLoading]);
+
+  // Function to call Interview Manager API
+  const callInterviewManager = async (userInput) => {
+    try {
+      console.log('🤖 Calling Interview Manager API with:', userInput);
+      
+      const response = await apiPost('/api/generate-response', {
+        message: userInput, // Changed from user_input to message
+        model_name: 'llama3', // You can make this configurable
+        candidate_name: 'default' // You can make this configurable
+      });
+
+      console.log('📥 Interview Manager response:', response);
+
+      if (response.success) {
+        const interviewerMessage = {
+          id: Date.now() + 1,
+          speaker: 'interviewer',
+          message: response.data.response,
+          timestamp: new Date().toLocaleTimeString()
+        };
+        
+        setConversation(prev => [...prev, interviewerMessage]);
+        console.log('✅ Interviewer response added');
+      } else {
+        console.error('❌ Interview Manager API failed:', response.message);
+        // Add error message to conversation
+        const errorMessage = {
+          id: Date.now() + 1,
+          speaker: 'system',
+          message: `Interview response failed: ${response.message || 'Unknown error'}`,
+          timestamp: new Date().toLocaleTimeString()
+        };
+        setConversation(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('❌ Error calling Interview Manager API:', error);
+      // Add error message to conversation
+      const errorMessage = {
+        id: Date.now() + 1,
+        speaker: 'system',
+        message: `Error getting interview response: ${error.message}`,
+        timestamp: new Date().toLocaleTimeString()
+      };
+      setConversation(prev => [...prev, errorMessage]);
+    }
+  };
 
   const toggleRecording = async () => {
     if (isRecording) {
@@ -72,31 +128,22 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           if (result.success) {
             const transcription = result.data.transcription;
             
-                         if (transcription && transcription.trim()) {
-               // Add candidate's response to conversation
-               const newMessage = {
-                 id: Date.now(), // Use timestamp as unique ID
-                 speaker: 'candidate',
-                 message: transcription,
-                 timestamp: new Date().toLocaleTimeString()
-               };
-               
-               setConversation(prev => [...prev, newMessage]);
-               console.log('✅ Candidate message added, setting loading to false');
-               setIsLoading(false); // Stop loading immediately after user message appears
-               
-               // Simulate interviewer's follow-up question
-               setTimeout(() => {
-                 console.log('🔄 Adding interviewer follow-up question...');
-                 const followUp = {
-                   id: Date.now() + 1, // Use timestamp + 1 as unique ID
-                   speaker: 'interviewer',
-                   message: 'Thank you for that response. Can you tell me more about your experience with team leadership and how you handle challenging situations?',
-                   timestamp: new Date().toLocaleTimeString()
-                 };
-                 setConversation(prev => [...prev, followUp]);
-                 console.log('✅ Interviewer message added');
-               }, 2000);
+            if (transcription && transcription.trim()) {
+              // Add candidate's response to conversation
+              const newMessage = {
+                id: Date.now(), // Use timestamp as unique ID
+                speaker: 'candidate',
+                message: transcription,
+                timestamp: new Date().toLocaleTimeString()
+              };
+              
+              setConversation(prev => [...prev, newMessage]);
+              console.log('✅ Candidate message added');
+              setIsLoading(false); // Stop loading immediately after user message appears
+              
+              // Call Interview Manager API to get the next question/response
+              await callInterviewManager(transcription);
+              
             } else {
               // No speech detected
               console.log('⚠️ No speech detected');
@@ -168,10 +215,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         // Start recording
         mediaRecorderRef.current.start();
         setIsRecording(true);
-        console.log('✅ Recording started successfully');
+        console.log('✅ Recording started');
         
       } catch (error) {
         console.error('❌ Error starting recording:', error);
+        alert('Failed to start recording. Please check microphone permissions.');
       }
     }
   };
@@ -323,6 +371,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             </div>
           </motion.div>
         )}
+        
+        {/* Auto-scroll anchor */}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Instructions */}

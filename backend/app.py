@@ -65,7 +65,7 @@ TTS_MODEL_SCRIPT = os.path.abspath(os.path.join(BASE_DIR, os.getenv("TTS_MODEL_S
 
 from common.NLP_model import NLPModel, Status
 from common.GPU_Check import get_device
-from TTS.Scripts.TTS_LOAD_MODEL import load_model, run_tts
+# from TTS.Scripts.TTS_LOAD_MODEL import load_model, run_tts
 from flask_cors import CORS
 from common.auth import verify_supabase_token, optional_auth  # Import the decorator
 
@@ -87,8 +87,10 @@ def initialize_whisper_model():
     if whisper_model is None:
         print("[INFO] Loading Whisper model for speech-to-text...")
         try:
-            whisper_model = WhisperModel("base", device=device)
-            print("[DONE] Whisper model loaded successfully")
+            # Check if device is MPS and fall back to CPU for Whisper
+            whisper_device = "cpu" if device == "mps" else device
+            whisper_model = WhisperModel("base", device=whisper_device)
+            print(f"[DONE] Whisper model loaded on {whisper_device} (original device was {device})")
         except Exception as e:
             print(f"[ERROR] Failed to load Whisper model: {e}")
             whisper_model = None
@@ -556,6 +558,111 @@ def transcribe_audio():
         return jsonify({
             "success": False,
             "message": f"Failed to process audio: {str(e)}"
+        }), 500
+
+@app.route('/api/generate-response', methods=['POST'])
+@verify_supabase_token
+def generate_response():
+    """Generate interview response from user input"""
+    try:
+        # Get data from request
+        data = request.get_json()
+        user_input = data.get('message', '').strip()
+        model_name = data.get('model_name', '').strip()
+        candidate_name = data.get('candidate_name', '').strip()
+        
+        if not user_input:
+            return jsonify({
+                "success": False,
+                "message": "Missing required field: message"
+            }), 400
+        
+        print(f"[DEBUG] Generating response for model: {model_name}, candidate: {candidate_name}")
+        print(f"[DEBUG] User input: {user_input}")
+        
+        # Get username from auth
+        username = request.user.get('email', 'default_user')
+        
+        # Create a default config path for testing
+        if model_name == 'default' or candidate_name == 'default':
+            # Use a simple default configuration
+            config_path = os.path.join(os.path.dirname(__file__), "INTERVIEW", "interview_config.json")
+            
+            # Ensure the config file exists
+            if not os.path.exists(config_path):
+                # Create a default config
+                default_config = {
+                    "job_title": "Software Developer",
+                    "job_description": "We're seeking a talented software developer to join our team. The ideal candidate should have experience in modern programming languages and frameworks.",
+                    "interview_style": "conversational",
+                    "custom_questions": [
+                        "Can you tell me about your experience with React?",
+                        "How do you handle debugging complex issues?",
+                        "What's your approach to learning new technologies?"
+                    ],
+                    "core_questions": [
+                        "Tell me about your background and experience.",
+                        "What interests you about this position?",
+                        "Can you describe a challenging project you worked on?"
+                    ],
+                    "icebreakers": [
+                        "What's your favorite programming language and why?",
+                        "How do you stay updated with technology trends?",
+                        "What's the most interesting project you've worked on?"
+                    ],
+                    "time_limit_minutes": 30
+                }
+                
+                os.makedirs(os.path.dirname(config_path), exist_ok=True)
+                with open(config_path, 'w') as f:
+                    json.dump(default_config, f, indent=2)
+                print(f"[DEBUG] Created default config at: {config_path}")
+        else:
+            # Use the existing logic for specific models/candidates
+            safe_model = secure_filename(model_name)
+            safe_candidate = secure_filename(candidate_name)
+            
+            # Resolve candidate folder and config
+            candidate_folder, config_path, source, model_folder = resolve_candidate_folder(
+                safe_model, safe_candidate, username, resolve_model_path
+            )
+            
+            if not model_folder or not os.path.exists(config_path):
+                return jsonify({
+                    "success": False,
+                    "message": "Interview config not found"
+                }), 404
+        
+        # Create or get InterviewManager instance
+        instance_key = f"{model_name}:{candidate_name}:{username}"
+        if instance_key not in interview_instances:
+            print(f"[INFO] Creating new InterviewManager instance for: {instance_key}")
+            interview_instances[instance_key] = InterviewManager(config_path=config_path)
+        
+        manager = interview_instances[instance_key]
+        
+        # Generate response using the manager
+        response = manager.receive_input(user_input)
+        
+        print(f"[DEBUG] Interview response: {response}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Response generated successfully",
+            "data": {
+                "response": response.get("message", "Sorry, something went wrong."),
+                "stage": response.get("stage", "unknown"),
+                "interview_done": response.get("interview_done", False)
+            }
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Exception in generate_response: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Internal server error: {str(e)}"
         }), 500
 
 if __name__ == '__main__': 

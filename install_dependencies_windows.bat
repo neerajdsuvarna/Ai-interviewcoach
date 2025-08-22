@@ -80,56 +80,56 @@ pip install onnxruntime
 goto continue_installation
 
 :continue_installation
-echo.
-echo ============================================
-echo [SECTION] Installing LIPSYNC
-echo ============================================
-pip install lipsync
+@REM echo.
+@REM echo ============================================
+@REM echo [SECTION] Installing LIPSYNC
+@REM echo ============================================
+@REM pip install lipsync
 
-echo.
-echo ============================================
-echo [SECTION] Installing TTS Additional Dependencies
-echo ============================================
-pip install pyyaml
-pip install regex
-pip install einops
-pip install spacy
-pip install trainer
-pip install matplotlib
+@REM echo.
+@REM echo ============================================
+@REM echo [SECTION] Installing TTS Additional Dependencies
+@REM echo ============================================
+@REM pip install pyyaml
+@REM pip install regex
+@REM pip install einops
+@REM pip install spacy
+@REM pip install trainer
+@REM pip install matplotlib
 
-echo.
-echo ============================================
-echo [SECTION] Installing TTS Local Package in Editable Mode
-echo ============================================
-pushd "%~dp0backend/TTS"
-pip install --no-deps -e .
-popd
+@REM echo.
+@REM echo ============================================
+@REM echo [SECTION] Installing TTS Local Package in Editable Mode
+@REM echo ============================================
+@REM pushd "%~dp0backend/TTS"
+@REM pip install --no-deps -e .
+@REM popd
 
-echo.
-echo ============================================
-echo [SECTION] Installing Specific Packages (No Dependencies)
-echo ============================================
-pip install --no-deps tokenizers==0.15.2 transformers==4.36.2
+@REM echo.
+@REM echo ============================================
+@REM echo [SECTION] Installing Specific Packages (No Dependencies)
+@REM echo ============================================
+@REM pip install --no-deps tokenizers==0.15.2 transformers==4.36.2
 
-echo.
-echo ============================================
-echo [SECTION] Installing More TTS Dependencies
-echo ============================================
-pip install pandas
-pip install safetensors
-pip install pypinyin
-pip install hangul-Romanize
-pip install num2words
-pip install mutagen
+@REM echo.
+@REM echo ============================================
+@REM echo [SECTION] Installing More TTS Dependencies
+@REM echo ============================================
+@REM pip install pandas
+@REM pip install safetensors
+@REM pip install pypinyin
+@REM pip install hangul-Romanize
+@REM pip install num2words
+@REM pip install mutagen
 
-echo.
-echo ============================================
-echo [SECTION] Installing UVR Dependencies
-echo ============================================
-pip install pydub
-pip install ml_collections  
-pip install beartype
-pip install rotary-embedding-torch
+@REM echo.
+@REM echo ============================================
+@REM echo [SECTION] Installing UVR Dependencies
+@REM echo ============================================
+@REM pip install pydub
+@REM pip install ml_collections  
+@REM pip install beartype
+@REM pip install rotary-embedding-torch
 
 echo.
 echo ============================================
@@ -196,6 +196,7 @@ python -m pip install gdown
 pip install python-docx
 pip install PyPDF2  
 pip install supabase
+pip install piper-tts
 
 echo.
 echo [INFO] Running model_download.py with matched Python interpreter...
@@ -203,8 +204,8 @@ echo [INFO] Running model_download.py with matched Python interpreter...
 for /f "delims=" %%i in ('where python') do set "PYTHON=%%i" & goto breakloop
 :breakloop
 
-echo [INFO] Using Python: %PYTHON%
-"%PYTHON%" "%~dp0backend/model_download.py"
+@REM echo [INFO] Using Python: %PYTHON%
+@REM "%PYTHON%" "%~dp0backend/model_download.py"
 
 echo.
 echo ============================================

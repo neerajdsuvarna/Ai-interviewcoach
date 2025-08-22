@@ -76,7 +76,7 @@ class InterviewManager:
         self.max_resume_followup_retries = 3
 
         # Custom Questions
-        self.custom_qna_done = False
+        self.custom_qna_done = True
         self.required_questions = config.get("custom_questions", [])
         self.current_custom_question = ""
         self.last_custom_response = ""
