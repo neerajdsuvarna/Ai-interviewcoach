@@ -19,6 +19,7 @@ interface Database {
           user_id: string
           resume_id: string
           jd_id: string
+          status: string  // ✅ ADD: status field
           scheduled_at: string
           created_at: string
           updated_at: string
@@ -28,6 +29,7 @@ interface Database {
           user_id: string
           resume_id: string
           jd_id: string
+          status?: string  // ✅ ADD: status field
           scheduled_at?: string
           created_at?: string
           updated_at?: string
@@ -37,6 +39,7 @@ interface Database {
           user_id?: string
           resume_id?: string
           jd_id?: string
+          status?: string  // ✅ ADD: status field
           scheduled_at?: string
           created_at?: string
           updated_at?: string
@@ -49,12 +52,14 @@ interface Database {
 interface InterviewRequest {
   resume_id: string
   jd_id: string
+  status?: string  // ✅ ADD: status field
   scheduled_at?: string
 }
 
 interface UpdateInterviewRequest {
   resume_id?: string
   jd_id?: string
+  status?: string  // ✅ ADD: status field
   scheduled_at?: string
 }
 
@@ -449,12 +454,13 @@ async function handleCreateInterview(supabaseClient: any, req: Request, user: an
 async function handleUpdateInterview(supabaseClient: any, req: Request, user: any, interviewId: string) {
   try {
     const body = await req.json()
-    const { resume_id, jd_id, scheduled_at }: UpdateInterviewRequest = body
+    const { resume_id, jd_id, status, scheduled_at }: UpdateInterviewRequest = body  // ✅ ADD: status
 
     // Build update object with only provided fields
     const updateData: any = {}
     if (resume_id !== undefined) updateData.resume_id = resume_id.trim()
     if (jd_id !== undefined) updateData.jd_id = jd_id.trim()
+    if (status !== undefined) updateData.status = status.trim()  // ✅ ADD: status handling
     if (scheduled_at !== undefined) {
       // Validate ISO date string if provided
       try {

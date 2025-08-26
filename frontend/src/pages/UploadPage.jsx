@@ -258,7 +258,7 @@ function UploadPage() {
       }, new Set());
       
       alert(`Resume, job description, and questions generated successfully!\n\nQuestion Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`);
-      navigate('/questions');
+      navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}`);
 
     } catch (error) {
       console.error('Error in complete workflow:', error);

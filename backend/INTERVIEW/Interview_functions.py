@@ -497,11 +497,30 @@ def analyze_individual_responses(evaluation_log, model="llama3"):
         """
         try:
             result = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
-            parsed = json.loads(result["message"]["content"])
+            response_text = result["message"]["content"].strip()
+            
+            # Try to extract JSON from the response
+            try:
+                # First, try to parse the whole response
+                parsed = json.loads(response_text)
+            except json.JSONDecodeError:
+                # If that fails, try to extract JSON from the response
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+                
+                if json_start != -1 and json_end != 0:
+                    json_text = response_text[json_start:json_end]
+                    parsed = json.loads(json_text)
+                else:
+                    # If no JSON found, use default values
+                    raise Exception("No JSON found in response")
+            
             item["knowledge_rating"] = parsed.get("knowledge_rating", 5)
             item["emotion"] = parsed.get("emotion", "neutral")
+            
         except Exception as e:
-            print(f"[ERROR] analyze_individual_responses failed: {e}")
+            print(f"[ERROR] analyze_individual_responses failed for question '{q[:50]}...': {e}")
+            print(f"[DEBUG] Response text: {response_text if 'response_text' in locals() else 'No response'}")
             item["knowledge_rating"] = 5
             item["emotion"] = "unknown"
 
@@ -513,8 +532,20 @@ def analyze_individual_responses(evaluation_log, model="llama3"):
 def generate_final_summary_review(job_title, conversation_history, analyzed_log, model="llama3"):
     log("generate_final_summary_review")
 
+    # Calculate overall statistics for context
+    total_responses = len(analyzed_log)
+    if total_responses > 0:
+        avg_knowledge_rating = sum(item.get('knowledge_rating', 5) for item in analyzed_log) / total_responses
+        weak_responses = sum(1 for item in analyzed_log if item.get('evaluation') in ['weak', 'confused'])
+        strong_responses = sum(1 for item in analyzed_log if item.get('evaluation') in ['strong', 'good'])
+        nervous_responses = sum(1 for item in analyzed_log if item.get('emotion') == 'nervous')
+        unsure_responses = sum(1 for item in analyzed_log if item.get('emotion') == 'unsure')
+    else:
+        avg_knowledge_rating = 5
+        weak_responses = strong_responses = nervous_responses = unsure_responses = 0
+
     prompt = f"""
-    You are an expert interview evaluator. Based on the following interaction:
+    You are an expert interview evaluator. Based on the following interaction, provide a comprehensive evaluation:
 
     Job Title: {job_title}
 
@@ -524,17 +555,138 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
     And here is the evaluated log:
     {json.dumps(analyzed_log, indent=2)}
 
-    Please write a short 2–3 sentence summary evaluating the candidate's overall fit for this job. Consider:
-    - Knowledge and clarity across questions
-    - Emotional tone (confidence, nervousness, etc.)
-    - Communication effectiveness
+    EVALUATION STATISTICS:
+    - Total Responses: {total_responses}
+    - Average Knowledge Rating: {avg_knowledge_rating:.1f}/10
+    - Weak Responses: {weak_responses}
+    - Strong Responses: {strong_responses}
+    - Nervous Responses: {nervous_responses}
+    - Unsure Responses: {unsure_responses}
 
-    End the summary with a clear tone about whether they are a **strong**, **average**, or **weak** fit.
+    Please provide a comprehensive evaluation in JSON format with three sections:
+
+    1. SUMMARY: Write a short 2–3 sentence summary evaluating the candidate's overall fit for this job. Consider:
+       - Knowledge and clarity across questions
+       - Emotional tone (confidence, nervousness, etc.)
+       - Communication effectiveness
+       End the summary with a clear tone about whether they are a **strong**, **average**, or **weak** fit.
+
+    2. KEY STRENGTHS: List 6-8 specific strengths the candidate demonstrated during the interview. Focus on:
+       - Technical knowledge and skills (mention specific ratings if above 6/10)
+       - Communication abilities
+       - Problem-solving approach
+       - Professional demeanor
+       - Relevant experience
+
+    3. IMPROVEMENT AREAS: List 6-8 specific areas where the candidate could improve. Focus on:
+       - Technical gaps or weaknesses (mention specific ratings if below 5/10)
+       - Communication issues
+       - Problem-solving limitations
+       - Professional development needs
+       - Skill gaps for the role
+
+    Format your response as JSON:
+    {{
+        "summary": "Your 2-3 sentence summary here...",
+        "key_strengths": "1. [Specific strength 1]\\n2. [Specific strength 2]\\n3. [Specific strength 3]",
+        "improvement_areas": "1. [Specific area 1]\\n2. [Specific area 2]\\n3. [Specific area 3]",
+        "overall_rating": {avg_knowledge_rating:.1f}
+    }}
+
+    Be specific, constructive, and relevant to the {job_title} position. Base your analysis on the actual conversation and evaluation data provided.
     """
 
     try:
         result = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
-        return result["message"]["content"].strip()
+        response_text = result["message"]["content"].strip()
+        
+        print(f"[DEBUG] AI Response for comprehensive evaluation: {response_text}")
+        
+        # Try to parse JSON response
+        try:
+            # First, try to extract JSON from the response
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            
+            if json_start != -1 and json_end != 0:
+                json_text = response_text[json_start:json_end]
+                print(f"[DEBUG] Extracted JSON text: {json_text}")
+                parsed_response = json.loads(json_text)
+                print(f"[DEBUG] Successfully parsed JSON: {parsed_response}")
+                
+                return {
+                    'summary': parsed_response.get('summary', ''),
+                    'key_strengths': parsed_response.get('key_strengths', ''),
+                    'improvement_areas': parsed_response.get('improvement_areas', ''),
+                    'overall_rating': parsed_response.get('overall_rating', avg_knowledge_rating)
+                }
+            else:
+                # If no JSON brackets found, try parsing the whole response
+                parsed_response = json.loads(response_text)
+                return {
+                    'summary': parsed_response.get('summary', ''),
+                    'key_strengths': parsed_response.get('key_strengths', ''),
+                    'improvement_areas': parsed_response.get('improvement_areas', ''),
+                    'overall_rating': parsed_response.get('overall_rating', avg_knowledge_rating)
+                }
+                
+        except json.JSONDecodeError as json_error:
+            print(f"[WARNING] JSON parsing failed: {json_error}")
+            print(f"[WARNING] Raw response: {response_text}")
+            
+            # Fallback: Create analysis from evaluation log with proper ratings
+            if total_responses > 0:
+                # Create summary based on performance
+                if avg_knowledge_rating >= 7:
+                    summary = f"Based on the evaluated log, this candidate demonstrates strong knowledge and understanding of {job_title} concepts with an average rating of {avg_knowledge_rating:.1f}/10. Their responses show confidence and technical competence. Overall, I would rate this candidate as **strong** fit for the {job_title} position."
+                elif avg_knowledge_rating >= 5:
+                    summary = f"Based on the evaluated log, this candidate shows mixed performance with an average rating of {avg_knowledge_rating:.1f}/10. They demonstrate some understanding but have areas for improvement. Overall, I would rate this candidate as **average** fit for the {job_title} position."
+                else:
+                    summary = f"Based on the evaluated log, this candidate appears to be struggling with demonstrating their knowledge and understanding of {job_title} concepts with an average rating of {avg_knowledge_rating:.1f}/10. Their responses consistently indicate a lack of confidence and clarity. Overall, I would rate this candidate as **weak** fit for the {job_title} position."
+                
+                # Create specific strengths based on actual performance
+                key_strengths = []
+                if avg_knowledge_rating >= 6:
+                    key_strengths.append(f"1. Demonstrated good technical knowledge (Average rating: {avg_knowledge_rating:.1f}/10)")
+                if strong_responses > 0:
+                    key_strengths.append(f"2. Showed strong responses in {strong_responses} out of {total_responses} questions")
+                key_strengths.append("3. Participated actively in the interview process")
+                key_strengths.append("4. Maintained professional demeanor throughout")
+                
+                # Create specific improvement areas based on actual performance
+                improvement_areas = []
+                if avg_knowledge_rating < 6:
+                    improvement_areas.append(f"1. Technical knowledge needs improvement (Current average: {avg_knowledge_rating:.1f}/10)")
+                if weak_responses > 0:
+                    improvement_areas.append(f"2. Struggled with {weak_responses} out of {total_responses} questions")
+                if nervous_responses > 0:
+                    improvement_areas.append(f"3. Confidence issues (Nervous in {nervous_responses} responses)")
+                if unsure_responses > 0:
+                    improvement_areas.append(f"4. Decision-making needs improvement (Unsure in {unsure_responses} responses)")
+                improvement_areas.append("5. Communication skills and detailed explanations need enhancement")
+            else:
+                summary = f"Interview evaluation completed for {job_title} position. Detailed analysis available in transcript and evaluation data."
+                key_strengths = ["1. Participated in the interview process"]
+                improvement_areas = ["1. Technical knowledge and communication skills need development"]
+            
+            return {
+                'summary': summary,
+                'key_strengths': '\n'.join(key_strengths),
+                'improvement_areas': '\n'.join(improvement_areas),
+                'overall_rating': avg_knowledge_rating
+            }
+            
     except Exception as e:
         print(f"[ERROR] generate_final_summary_review failed: {e}")
-        return "Summary evaluation failed due to an error."
+        import traceback
+        traceback.print_exc()
+        
+        # Ultimate fallback
+        return {
+            'summary': f"Interview evaluation completed for {job_title} position. Detailed analysis available in transcript and evaluation data.",
+            'key_strengths': 'Strengths analysis failed due to an error.',
+            'improvement_areas': 'Improvement areas analysis failed due to an error.',
+            'overall_rating': avg_knowledge_rating
+        }
+
+

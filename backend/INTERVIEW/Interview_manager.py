@@ -19,6 +19,7 @@ from Interview_functions import (
     generate_model_answer,
     assess_candidate_has_question,
     generate_candidate_qna_response
+    # ✅ REMOVED: generate_key_strengths_and_improvements - no longer needed
 )
 
 
@@ -113,6 +114,16 @@ class InterviewManager:
             self.start_time = time.time()
             print("[DEBUG] Interview timer started.")
 
+        # ✅ NEW: Handle manual interview end command
+        if user_input.strip().upper() == "END_INTERVIEW":
+            print("[INFO] Manual interview end requested by user")
+            self.stage = "wrapup_evaluation"
+            return {
+                "stage": "manual_end",
+                "message": "Thank you for completing the interview. Let me provide you with a comprehensive evaluation.",
+                **self.handle_wrapup_evaluation()  # ✅ This already includes "interview_done": True
+            }
+
         # Check time limit
         if self.is_time_exceeded():
             self.stage = "wrapup_evaluation"
@@ -120,7 +131,7 @@ class InterviewManager:
             return {
                 "stage": "timeout",
                 "message": "We've reached the time limit for this interview. Let's wrap up.",
-                **self.handle_wrapup_evaluation()
+                **self.handle_wrapup_evaluation()  # ✅ This already includes "interview_done": True
             }
 
         if not self.intro_done:
@@ -648,32 +659,42 @@ class InterviewManager:
 
         from Interview_functions import (
             analyze_individual_responses,
-            generate_final_summary_review
+            generate_final_summary_review  # ✅ Only need this one function now
         )
 
         print("Interview Assistant: Thank you! Let me summarize your interview.")
 
+        # 1. Analyze individual responses
         detailed_log = analyze_individual_responses(self.evaluation_log, model=self.model)
-        summary = generate_final_summary_review(
+        
+        # 2. Generate comprehensive evaluation (summary + strengths + improvements)
+        evaluation_result = generate_final_summary_review(
             self.job_title,
             self.conversation_history,
             detailed_log,
             model=self.model
         )
-
-        # Save results
-        with open("transcript.json", "w") as f:
-            json.dump(self.conversation_history, f, indent=2)
-        with open("evaluations.json", "w") as f:
-            json.dump(detailed_log, f, indent=2)
-        with open("final_summary.txt", "w") as f:
-            f.write(summary)
-
-        print(f"\nFinal Evaluation:\n{summary}")
-        print("[INFO] Transcript, evaluations, and summary saved.")
+        
+        # ✅ Store all data for backend database storage
+        self.final_summary = evaluation_result['summary']
+        self.final_evaluation_log = detailed_log
+        self.key_strengths = evaluation_result['key_strengths']
+        self.improvement_areas = evaluation_result['improvement_areas']
+        self.overall_rating = evaluation_result['overall_rating']  # ✅ Add overall rating
+        
+        print(f"\nFinal Evaluation:\n{evaluation_result['summary']}")
+        print(f"\nKey Strengths:\n{evaluation_result['key_strengths']}")
+        print(f"\nImprovement Areas:\n{evaluation_result['improvement_areas']}")
+        print(f"\nOverall Rating: {evaluation_result['overall_rating']:.1f}/10")
+        print("[INFO] Interview evaluation completed - data ready for database storage.")
+        
         return {
             "stage": "done",
             "message": "Thanks again — this concludes the interview. Final evaluation saved.",
-            "interview_done": True  # ✅ Flag added
+            "interview_done": True,
+            "summary": evaluation_result['summary'],
+            "key_strengths": evaluation_result['key_strengths'],
+            "improvement_areas": evaluation_result['improvement_areas'],
+            "overall_rating": evaluation_result['overall_rating']
         }
 

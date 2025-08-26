@@ -1,7 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff } from 'lucide-react';
+import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for end button
 import { uploadFile, apiPost } from '../../api';
+import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
+import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -9,6 +11,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
   const messagesEndRef = useRef(null);
+  
+  // ✅ Use useAuth hook to get user
+  const { user } = useAuth();
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
@@ -38,45 +43,100 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
     try {
       console.log('🤖 Calling Interview Manager API with:', userInput);
       
+      // ✅ Get interview_id from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const interviewId = urlParams.get('interview_id');
+      
+      if (!interviewId) {
+        console.error('❌ No interview_id found in URL');
+        return;
+      }
+      
       const response = await apiPost('/api/generate-response', {
-        message: userInput, // Changed from user_input to message
-        model_name: 'llama3', // You can make this configurable
-        candidate_name: 'default' // You can make this configurable
+        message: userInput,
+        interview_id: interviewId // ✅ Send interview_id to backend
       });
 
       console.log('📥 Interview Manager response:', response);
-
+      
       if (response.success) {
-        const interviewerMessage = {
-          id: Date.now() + 1,
+        const newMessage = {
+          id: Date.now(),
           speaker: 'interviewer',
           message: response.data.response,
           timestamp: new Date().toLocaleTimeString()
         };
         
-        setConversation(prev => [...prev, interviewerMessage]);
+        setConversation(prev => [...prev, newMessage]);
         console.log('✅ Interviewer response added');
       } else {
-        console.error('❌ Interview Manager API failed:', response.message);
-        // Add error message to conversation
-        const errorMessage = {
-          id: Date.now() + 1,
-          speaker: 'system',
-          message: `Interview response failed: ${response.message || 'Unknown error'}`,
-          timestamp: new Date().toLocaleTimeString()
-        };
-        setConversation(prev => [...prev, errorMessage]);
+        console.error('❌ Interview Manager API error:', response.message);
       }
     } catch (error) {
-      console.error('❌ Error calling Interview Manager API:', error);
-      // Add error message to conversation
-      const errorMessage = {
-        id: Date.now() + 1,
-        speaker: 'system',
-        message: `Error getting interview response: ${error.message}`,
-        timestamp: new Date().toLocaleTimeString()
-      };
-      setConversation(prev => [...prev, errorMessage]);
+      console.error('❌ Error calling Interview Manager:', error);
+    }
+  };
+
+  // ✅ NEW: Send END_INTERVIEW command to backend
+  const handleEndInterview = async () => {
+    const confirmed = window.confirm('Are you sure you want to end the interview? This action cannot be undone.');
+    
+    if (confirmed) {
+      console.log('✅ User confirmed ending interview');
+      
+      try {
+        // ✅ NEW: Send END_INTERVIEW command to backend
+        console.log('📤 Sending END_INTERVIEW command to backend...');
+        
+        // Get interview_id from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const interviewId = urlParams.get('interview_id');
+        
+        if (!interviewId) {
+          console.error('❌ No interview_id found in URL');
+          return;
+        }
+        
+        // ✅ Use the same apiPost function that works for normal responses
+        const response = await apiPost('/api/generate-response', {
+          message: 'END_INTERVIEW',
+          interview_id: interviewId
+        });
+        
+        console.log('📥 End interview response:', response);
+        
+        if (response.success) {
+          console.log('✅ Interview ended successfully');
+          console.log('📋 Final response:', response.data);
+          
+          // ✅ Add the final evaluation message to conversation
+          const finalMessage = {
+            id: Date.now(),
+            speaker: 'interviewer',
+            message: response.data.response,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          
+          setConversation(prev => [...prev, finalMessage]);
+          
+          // ✅ Show success message to user
+          alert('Interview completed successfully! You will be redirected to your feedback shortly.');
+          
+          // ✅ Redirect to feedback page after a short delay
+          setTimeout(() => {
+            window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+          }, 2000);
+          
+        } else {
+          console.error('❌ Failed to end interview:', response.message);
+          alert(`Failed to end interview: ${response.message}`);
+        }
+      } catch (error) {
+        console.error('❌ Error ending interview:', error);
+        alert(`Error ending interview: ${error.message}`);
+      }
+    } else {
+      console.log('❌ User cancelled ending interview');
     }
   };
 
@@ -232,7 +292,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         borderLeft: '1px solid var(--color-border)'
       }}
     >
-      {/* Header with Title and Mic Button */}
+      {/* Header with Title and Buttons */}
       <div className="flex items-center justify-between mb-4">
         <h2 
           className="text-xl md:text-2xl font-bold tracking-tight"
@@ -241,7 +301,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           Interview Conversation
         </h2>
         
-        {/* Single Recording Button */}
+        {/* Buttons Container */}
         <div className="flex items-center gap-3">
           {/* Recording Status Indicator */}
           {isRecording && (
@@ -251,6 +311,17 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             </div>
           )}
           
+          {/* End Interview Button */}
+          <button
+            onClick={handleEndInterview}
+            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center gap-2"
+            title="End Interview"
+          >
+            <Square size={16} />
+            End Interview
+          </button>
+          
+          {/* Recording Button */}
           <button
             onClick={toggleRecording}
             className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 ${

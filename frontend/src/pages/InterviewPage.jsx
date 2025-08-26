@@ -1,14 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PhoneOff } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { supabase } from '../supabaseClient';
 import Navbar from '@/components/Navbar';
 import ChatWindow from '@/components/interview/ChatWindow';
 
 function InterviewPage() {
   const { isDark } = useTheme();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [isValidated, setIsValidated] = useState(false);
+  const [isValidating, setIsValidating] = useState(true); // ✅ RENAMED: Validation loading
+  
+  // ✅ ADD: Separate loading state for ChatWindow
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  
+  // ✅ ADD: Track if validation has been attempted
+  const hasValidated = useRef(false);
+  
+  // ✅ ADD MISSING STATE VARIABLES
   const [conversation, setConversation] = useState([
     {
       id: 1,
@@ -17,7 +29,6 @@ function InterviewPage() {
       timestamp: new Date().toLocaleTimeString()
     }
   ]);
-  const [isLoading, setIsLoading] = useState(false);
   
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -52,18 +63,116 @@ function InterviewPage() {
     };
   }, []);
 
+  // Interview validation - FIXED to only run once
+  useEffect(() => {
+    const validateInterview = async () => {
+      // ✅ FIXED: Only validate once
+      if (hasValidated.current) {
+        return;
+      }
+      
+      hasValidated.current = true;
+      
+      try {
+        setIsValidating(true); // ✅ FIXED: Use validation-specific loading state
+        
+        // Get interview_id from URL
+        const interviewId = searchParams.get('interview_id');
+        
+        if (!interviewId) {
+          console.log('❌ No interview_id provided');
+          navigate('/upload');
+          return;
+        }
+        
+        console.log('🔍 Validating interview:', interviewId);
+        
+        // Get user session
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          console.log('❌ No session found');
+          navigate('/upload');
+          return;
+        }
+        
+        // Check if interview exists and get its status
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews/${interviewId}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        
+        const result = await response.json();
+        
+        console.log('📋 Interview validation result:', result);
+        
+        if (!response.ok || !result.success) {
+          console.log('❌ Interview not found or access denied');
+          navigate('/upload');
+          return;
+        }
+        
+        const interview = result.data;
+        
+        // ✅ NEW: Handle different interview statuses
+        if (interview.status === 'ENDED') {
+          console.log('✅ Interview already completed, redirecting to feedback page');
+          navigate(`/interview-feedback?interview_id=${interviewId}`);
+          return;
+        }
+        
+        if (interview.status !== 'STARTED') {
+          console.log('❌ Interview status is not STARTED:', interview.status);
+          navigate('/upload');
+          return;
+        }
+        
+        console.log('✅ Interview validated successfully:', interview);
+        setIsValidated(true);
+        
+      } catch (error) {
+        console.error('❌ Interview validation error:', error);
+        navigate('/upload');
+      } finally {
+        setIsValidating(false); // ✅ FIXED: Use validation-specific loading state
+      }
+    };
+    
+    validateInterview();
+  }, []); // ✅ FIXED: Empty dependency array - only runs once on mount
+
   const endInterview = () => {
     // Stop camera stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
     
-    // Navigate to feedback page with a mock interview ID
-    // In a real implementation, this would be the actual interview ID from the backend
-    const mockInterviewId = 'mock-interview-id-' + Date.now();
-    navigate(`/interview-feedback?interview_id=${mockInterviewId}`);
+    // Navigate to feedback page with the actual interview ID
+    const interviewId = searchParams.get('interview_id');
+    navigate(`/interview-feedback?interview_id=${interviewId}`);
   };
 
+  // Show loading while validating
+  if (isValidating) { // ✅ FIXED: Use validation-specific loading state
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-primary)] mx-auto mb-4"></div>
+            <p className="text-[var(--color-text-secondary)]">Validating interview session...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Show error if not validated
+  if (!isValidated) {
+    return null; // Will redirect to /upload
+  }
+
+  // Original interview page content
   return (
     <>
       <Navbar />
@@ -85,51 +194,59 @@ function InterviewPage() {
               >
                 AI Interview Session
               </h1>
-              
-              {/* Session Status */}
-              {/* <div className="flex items-center gap-1 bg-green-500/90 backdrop-blur-sm text-white px-2 py-1 rounded-full text-xs font-semibold shadow-md border border-green-400/30">
-                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                <span className="tracking-wide">ACTIVE</span>
-              </div> */}
             </div>
           </div>
 
           {/* End Interview Button */}
           <button
             onClick={endInterview}
-            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-semibold text-sm transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
           >
-            <PhoneOff size={16} />
-            <span className="hidden sm:inline">End Interview</span>
+            <PhoneOff className="w-4 h-4" />
+            End Interview
           </button>
         </div>
 
-        <div className="flex flex-col lg:flex-row h-[80vh] lg:h-[85vh]">
-          {/* Left - Interviewer Video */}
+        {/* Main Interview Interface */}
+        <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)]">
+          {/* Left - AI Interviewer */}
           <div 
-            className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6" 
+            className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6"
             style={{ 
               backgroundColor: 'var(--color-card)', 
               borderColor: 'var(--color-border)' 
             }}
           >
             <div className="h-full flex flex-col">
-              {/* Interviewer Video Container */}
+              {/* AI Video Container */}
               <div 
                 className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
                 style={{ borderColor: 'var(--color-border)' }}
               >
-                {/* Interviewer Image */}
+                {/* ✅ FIXED: Add AI interviewer image */}
                 <img
                   src="/assets/interview/interviewer_1.jpg"
-                  alt="Michael Chen - Senior Engineering Manager"
+                  alt="AI Interviewer"
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // Show fallback if image fails to load
+                    e.target.style.display = 'none';
+                    e.target.nextElementSibling.style.display = 'flex';
+                  }}
                 />
                 
-                {/* Interviewer Info Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
-                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Michael Chen</h3>
-                  <p className="text-gray-200 text-sm md:text-base font-medium">Senior Engineering Manager</p>
+                {/* Fallback if image doesn't load */}
+                <div 
+                  className="absolute inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center"
+                  style={{ display: 'none' }}
+                >
+                  <div className="text-center text-white">
+                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <span className="text-2xl font-bold">AI</span>
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">AI Interviewer</h3>
+                    <p className="text-sm opacity-90">Ready to begin</p>
+                  </div>
                 </div>
 
                 {/* Live Indicator */}
@@ -157,40 +274,15 @@ function InterviewPage() {
                 className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
                 style={{ borderColor: 'var(--color-border)' }}
               >
-                                 <video
-                   ref={videoRef}
-                   autoPlay
-                   playsInline
-                   muted={true}
-                   className="w-full h-full object-cover"
-                                   />
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted={true}
+                  className="w-full h-full object-cover"
+                />
 
-                {/* Processing State */}
-                {isLoading && (
-                  <motion.div
-                    className="absolute inset-0 flex items-center justify-center"
-                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div 
-                      className="rounded-xl p-6 text-center shadow-2xl"
-                      style={{ backgroundColor: 'var(--color-card)' }}
-                    >
-                      <div 
-                        className="w-10 h-10 border-3 border-t-transparent rounded-full animate-spin mx-auto mb-3"
-                        style={{ borderColor: 'var(--color-primary)' }}
-                      ></div>
-                      <p 
-                        className="font-medium"
-                        style={{ color: 'var(--color-text-primary)' }}
-                      >
-                        Processing...
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
+                {/* Processing State - REMOVED: No longer needed since we have separate loading states */}
                 
                 {/* User Camera Label */}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
@@ -220,8 +312,8 @@ function InterviewPage() {
             <ChatWindow
               conversation={conversation}
               setConversation={setConversation}
-              isLoading={isLoading}
-              setIsLoading={setIsLoading}
+              isLoading={isChatLoading} // ✅ FIXED: Use chat-specific loading state
+              setIsLoading={setIsChatLoading} // ✅ FIXED: Use chat-specific loading state
             />
           </div>
         </div>

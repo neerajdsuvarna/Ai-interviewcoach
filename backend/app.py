@@ -33,6 +33,7 @@ from RealtimeSTT import AudioToTextRecorder
 from flask_socketio import SocketIO, emit
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
+from supabase import create_client, Client
 
 # ─────────────────────────────────────────────────────
 #  Load environment variables from .env
@@ -72,6 +73,23 @@ from common.auth import verify_supabase_token, optional_auth  # Import the decor
 device = get_device()
 interview_instances = {}
 from INTERVIEW.Interview_manager import InterviewManager
+
+# Add at the top with other imports
+import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Supabase client
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+if not supabase_url or not supabase_service_key:
+    raise ValueError("Missing Supabase environment variables")
+
+supabase: Client = create_client(supabase_url, supabase_service_key)
 
 # ─────────────────────────────────────────────────────
 # Global model loading
@@ -565,86 +583,223 @@ def transcribe_audio():
 def generate_response():
     """Generate interview response from user input"""
     try:
-        # Get data from request
         data = request.get_json()
         user_input = data.get('message', '').strip()
-        model_name = data.get('model_name', '').strip()
-        candidate_name = data.get('candidate_name', '').strip()
         
         if not user_input:
             return jsonify({
                 "success": False,
-                "message": "Missing required field: message"
+                "message": "User input is required"
             }), 400
         
-        print(f"[DEBUG] Generating response for model: {model_name}, candidate: {candidate_name}")
-        print(f"[DEBUG] User input: {user_input}")
+        # Get interview_id from request
+        interview_id = data.get('interview_id')
+        if not interview_id:
+            return jsonify({
+                "success": False,
+                "message": "Interview ID is required"
+            }), 400
         
-        # Get username from auth
-        username = request.user.get('email', 'default_user')
+        # Get auth token from request
+        auth_token = request.headers.get('Authorization').split(' ')[1]
         
-        # Create a default config path for testing
-        if model_name == 'default' or candidate_name == 'default':
-            # Use a simple default configuration
-            config_path = os.path.join(os.path.dirname(__file__), "INTERVIEW", "interview_config.json")
-            
-            # Ensure the config file exists
-            if not os.path.exists(config_path):
-                # Create a default config
-                default_config = {
-                    "job_title": "Software Developer",
-                    "job_description": "We're seeking a talented software developer to join our team. The ideal candidate should have experience in modern programming languages and frameworks.",
-                    "interview_style": "conversational",
-                    "custom_questions": [
-                        "Can you tell me about your experience with React?",
-                        "How do you handle debugging complex issues?",
-                        "What's your approach to learning new technologies?"
-                    ],
-                    "core_questions": [
-                        "Tell me about your background and experience.",
-                        "What interests you about this position?",
-                        "Can you describe a challenging project you worked on?"
-                    ],
-                    "icebreakers": [
-                        "What's your favorite programming language and why?",
-                        "How do you stay updated with technology trends?",
-                        "What's the most interesting project you've worked on?"
-                    ],
-                    "time_limit_minutes": 30
-                }
-                
-                os.makedirs(os.path.dirname(config_path), exist_ok=True)
-                with open(config_path, 'w') as f:
-                    json.dump(default_config, f, indent=2)
-                print(f"[DEBUG] Created default config at: {config_path}")
-        else:
-            # Use the existing logic for specific models/candidates
-            safe_model = secure_filename(model_name)
-            safe_candidate = secure_filename(candidate_name)
-            
-            # Resolve candidate folder and config
-            candidate_folder, config_path, source, model_folder = resolve_candidate_folder(
-                safe_model, safe_candidate, username, resolve_model_path
+        # ✅ ADD DEBUG: Print environment and request details
+        supabase_url = os.getenv('SUPABASE_URL')
+        print(f"[DEBUG] Supabase URL: {supabase_url}")
+        print(f"[DEBUG] Interview ID: {interview_id}")
+        print(f"[DEBUG] Auth token length: {len(auth_token) if auth_token else 0}")
+        
+        # ✅ Use edge function to fetch interview data
+        import requests
+        
+        # ✅ This should work perfectly since SUPABASE_URL is already local
+        supabase_url = os.getenv('SUPABASE_URL')
+        print(f"[DEBUG] Supabase URL: {supabase_url}")  # Should show http://127.0.0.1:54321
+
+        edge_function_url = f"{supabase_url}/functions/v1/interview-data"
+        print(f"[DEBUG] Edge function URL: {edge_function_url}")  # Should show http://127.0.0.1:54321/functions/v1/interview-data
+        
+        try:
+            print(f"[DEBUG] Making request to edge function...")
+            response = requests.get(
+                edge_function_url,
+                headers={
+                    'Authorization': f'Bearer {auth_token}',
+                    'Content-Type': 'application/json'
+                },
+                params={'interview_id': interview_id},
+                timeout=10  # Add timeout
             )
             
-            if not model_folder or not os.path.exists(config_path):
+            print(f"[DEBUG] Edge function response status: {response.status_code}")
+            print(f"[DEBUG] Edge function response headers: {dict(response.headers)}")
+            print(f"[DEBUG] Edge function response body: {response.text[:500]}...")  # First 500 chars
+            
+            if response.status_code != 200:
+                print(f"[ERROR] Edge function failed: {response.status_code} - {response.text}")
                 return jsonify({
                     "success": False,
-                    "message": "Interview config not found"
-                }), 404
+                    "message": f"Failed to fetch interview data: {response.status_code}"
+                }), 500
+            
+            result = response.json()
+            print(f"[DEBUG] Edge function JSON result: {result}")
+            
+            if not result.get('success'):
+                return jsonify({
+                    "success": False,
+                    "message": result.get('message', 'Failed to fetch interview data')
+                }), 500
+            
+            interview_data = result['data']
+            
+            job_title = interview_data['job_description']['title']
+            job_description = interview_data['job_description']['description']
+            questions = interview_data['questions']
+            
+            # Extract core questions
+            core_questions = [q['question_text'] for q in questions]
+            
+            print(f"[DEBUG] Fetched interview config: job_title='{job_title}', questions_count={len(core_questions)}")
+            
+        except requests.exceptions.RequestException as req_error:
+            print(f"[ERROR] Request exception: {req_error}")
+            return jsonify({
+                "success": False,
+                "message": f"Network error: {str(req_error)}"
+            }), 500
+        except Exception as edge_error:
+            print(f"[ERROR] Edge function call failed: {edge_error}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "success": False,
+                "message": "Failed to fetch interview details"
+            }), 500
+        
+        # Create dynamic config
+        dynamic_config = {
+            "job_title": job_title,
+            "job_description": job_description,
+            "core_questions": core_questions,
+            "time_limit_minutes": 30,
+            "custom_questions": [],
+        }
+        
+        # Create temporary config file
+        import tempfile
+        import json
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_config:
+            json.dump(dynamic_config, temp_config, indent=2)
+            config_path = temp_config.name
         
         # Create or get InterviewManager instance
-        instance_key = f"{model_name}:{candidate_name}:{username}"
+        user_id = request.user.get('id')
+        instance_key = f"{interview_id}:{user_id}"
         if instance_key not in interview_instances:
             print(f"[INFO] Creating new InterviewManager instance for: {instance_key}")
             interview_instances[instance_key] = InterviewManager(config_path=config_path)
         
         manager = interview_instances[instance_key]
-        
-        # Generate response using the manager
         response = manager.receive_input(user_input)
         
         print(f"[DEBUG] Interview response: {response}")
+        
+        # ✅ NEW: Handle interview completion - Save everything to database
+        if response.get("interview_done", False):
+            try:
+                print(f"[INFO] Interview completed - saving transcript, evaluation, and feedback to database...")
+                
+                # Get the generated data from InterviewManager (no files created)
+                transcript_data = {
+                    "interview_id": interview_id,
+                    "full_transcript": json.dumps(manager.conversation_history, indent=2),
+                    "evaluation_data": manager.final_evaluation_log
+                }
+                
+                print(f"[DEBUG] Saving transcript data: {transcript_data}")
+                
+                # Save to transcripts table
+                transcript_response = requests.post(
+                    f"{supabase_url}/functions/v1/transcripts",
+                    headers={
+                        'Authorization': f'Bearer {auth_token}',
+                        'Content-Type': 'application/json'
+                    },
+                    json=transcript_data
+                )
+                
+                # ✅ FIXED: Check for both 200 and 201 (success codes)
+                if transcript_response.status_code in [200, 201]:
+                    print(f"[INFO] Transcript and evaluation saved to database successfully")
+                    print(f"[DEBUG] Transcript response: {transcript_response.status_code} - {transcript_response.text}")
+                    
+                    # ✅ Use InterviewManager's generated data
+                    summary = manager.final_summary
+                    key_strengths = manager.key_strengths
+                    improvement_areas = manager.improvement_areas
+                    
+                    # Save feedback to interview_feedback table with all three fields
+                    feedback_data = {
+                        "interview_id": interview_id,
+                        "summary": summary,
+                        "key_strengths": key_strengths,
+                        "improvement_areas": improvement_areas
+                    }
+                    
+                    print(f"[DEBUG] Saving feedback data: {feedback_data}")
+                    
+                    feedback_response = requests.post(
+                        f"{supabase_url}/functions/v1/interview-feedback",
+                        headers={
+                            'Authorization': f'Bearer {auth_token}',
+                            'Content-Type': 'application/json'
+                        },
+                        json=feedback_data
+                    )
+                    
+                    # ✅ FIXED: Check for both 200 and 201 (success codes)
+                    if feedback_response.status_code in [200, 201]:
+                        print(f"[INFO] Interview feedback (summary, strengths, improvements) saved to database")
+                        print(f"[DEBUG] Feedback response: {feedback_response.status_code} - {feedback_response.text}")
+                        
+                        # ✅ NEW: Update interview status to ENDED - ONLY when interview is done
+                        try:
+                            print(f"[INFO] Updating interview status to ENDED...")
+                            
+                            # Update interview status using interviews edge function
+                            status_update_response = requests.put(
+                                f"{supabase_url}/functions/v1/interviews/{interview_id}",
+                                headers={
+                                    'Authorization': f'Bearer {auth_token}',
+                                    'Content-Type': 'application/json'
+                                },
+                                json={
+                                    'status': 'ENDED'
+                                }
+                            )
+                            
+                            if status_update_response.status_code in [200, 201]:
+                                print(f"[INFO] Interview status updated to ENDED successfully")
+                                print(f"[DEBUG] Status update response: {status_update_response.status_code} - {status_update_response.text}")
+                            else:
+                                print(f"[WARNING] Failed to update interview status: {status_update_response.status_code} - {status_update_response.text}")
+                                
+                        except Exception as update_error:
+                            print(f"[ERROR] Failed to update interview status: {update_error}")
+                            import traceback
+                            traceback.print_exc()
+                            
+                    else:
+                        print(f"[WARNING] Failed to save feedback: {feedback_response.status_code} - {feedback_response.text}")
+                else:
+                    print(f"[ERROR] Failed to save transcript: {transcript_response.status_code} - {transcript_response.text}")
+                    
+            except Exception as save_error:
+                print(f"[ERROR] Failed to save interview data: {save_error}")
+                import traceback
+                traceback.print_exc()
         
         return jsonify({
             "success": True,

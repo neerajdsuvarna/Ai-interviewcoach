@@ -606,7 +606,7 @@ def main():
     parser.add_argument("--config", required=True, help="Path to the interview_config.json")
     args = parser.parse_args()
 
-    max_retries = 5
+    max_retries = 1000
     for attempt in range(max_retries):
         try:
             print(f"\n[INFO] Attempt {attempt + 1} of {max_retries}")
@@ -677,7 +677,7 @@ def main():
 #     print(f"[INFO] All files saved under: {output_dir}")
 #     return structured_data
 
-def run_pipeline_from_api(resume_path, job_title, job_description, question_counts=None, include_answers=True, max_retries=5):
+def run_pipeline_from_api(resume_path, job_title, job_description, question_counts=None, include_answers=True, max_retries=1000):
     """
     Run the resume pipeline with data from frontend instead of config file
     

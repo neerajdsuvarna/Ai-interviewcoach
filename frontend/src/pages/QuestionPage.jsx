@@ -8,6 +8,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 
 
 const getLevelColor = (level) => {
@@ -172,6 +173,7 @@ const AnswerContent = ({ answer }) => {
 };
 
 export default function QuestionsPage() {
+  const [searchParams] = useSearchParams(); // ✅ Add this
   const { theme } = useTheme();
   const [expandedQuestions, setExpandedQuestions] = useState(new Set());
   const [filterLevel, setFilterLevel] = useState('all');
@@ -187,13 +189,29 @@ export default function QuestionsPage() {
   const [paymentStatus, setPaymentStatus] = useState(null);
   const [signatureOk, setSignatureOk] = useState(null);
   const [paymentDebug, setPaymentDebug] = useState([]);
+  const [currentResumeId, setCurrentResumeId] = useState(null);
+  const [currentJdId, setCurrentJdId] = useState(null);
 
-  // Fetch available question sets and most recent questions
+  // ✅ Updated useEffect - no more loadCurrentResumeAndJD
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
         setLoading(true);
         setError(null);
+
+        // ✅ Get resume_id and jd_id from URL params
+        const resumeIdFromUrl = searchParams.get('resume_id');
+        const jdIdFromUrl = searchParams.get('jd_id');
+
+        if (resumeIdFromUrl && jdIdFromUrl) {
+          console.log('✅ Got resume_id and jd_id from URL:', { resumeIdFromUrl, jdIdFromUrl });
+          setCurrentResumeId(resumeIdFromUrl);
+          setCurrentJdId(jdIdFromUrl);
+        } else {
+          console.log('⚠️ No resume_id/jd_id in URL - this might be a direct visit to questions page');
+          setError('Please upload a resume and job description first');
+          return;
+        }
 
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -258,7 +276,7 @@ export default function QuestionsPage() {
     };
 
     fetchQuestions();
-  }, []);
+  }, [searchParams]); // ✅ Add searchParams as dependency
 
   // Group questions by question_text to show all strength levels together
   const groupedQuestions = questions.reduce((acc, item) => {
@@ -326,32 +344,28 @@ export default function QuestionsPage() {
     setExpandedQuestions(newExpanded);
   };
   const { user } = useAuth();
+
+  const buildRedirectUrl = (resumeId, jdId, transactionId) => {
+    const baseUrl = `${window.location.origin}/payment-status`;
+    const params = new URLSearchParams({
+      resume_id: resumeId,
+      jd_id: jdId,
+      transaction_id: transactionId
+    });
+    return `${baseUrl}?${params.toString()}`;
+  };
+
   const handlePayment = async () => {
-    setIsPaymentLoading(true);
-    
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) {
-        console.error("User not logged in or fetch error:", error);
-        return;
-      }
-
-      // Generate a unique transaction ID
-      const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Create the Dodo payment URL with redirect to PaymentStatus page
-      const redirectUrl = encodeURIComponent(`${window.location.origin}/payment-status`);
-      const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${redirectUrl}&metadata[user_id]=${encodeURIComponent(user.id)}&metadata[email]=${encodeURIComponent(user.email)}&metadata[transaction_id]=${encodeURIComponent(transactionId)}`;
-      
-      // Redirect to Dodo payment page
-      window.location.href = dodoPaymentUrl;
-
-    } catch (error) {
-      console.error('Payment initiation failed:', error);
-      alert('Failed to initiate payment. Please try again.');
-    } finally {
-      setIsPaymentLoading(false);
+    if (!currentResumeId || !currentJdId) {
+      alert('Please ensure resume and job description are uploaded first.');
+      return;
     }
+    
+    // ✅ Simplified - no transaction_id needed
+    const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}`;
+    const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
+    
+    window.location.href = dodoPaymentUrl;
   };
   
   

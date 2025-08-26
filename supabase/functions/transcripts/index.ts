@@ -18,18 +18,21 @@ interface Database {
           id: string
           interview_id: string
           full_transcript: string
+          evaluation_data?: any  // ✅ ADD: evaluation_data field
           created_at: string
         }
         Insert: {
           id?: string
           interview_id: string
           full_transcript: string
+          evaluation_data?: any  // ✅ ADD: evaluation_data field
           created_at?: string
         }
         Update: {
           id?: string
           interview_id?: string
           full_transcript?: string
+          evaluation_data?: any  // ✅ ADD: evaluation_data field
           created_at?: string
         }
       }
@@ -51,6 +54,7 @@ interface Database {
 interface TranscriptRequest {
   interview_id: string
   full_transcript: string
+  evaluation_data?: any  // ✅ ADD: evaluation_data field
 }
 
 interface UpdateTranscriptRequest {
@@ -378,7 +382,7 @@ async function handleGetTranscript(supabaseClient: any, user: any, transcriptId:
 async function handleCreateTranscript(supabaseClient: any, req: Request, user: any) {
   try {
     const body = await req.json()
-    const { interview_id, full_transcript }: TranscriptRequest = body
+    const { interview_id, full_transcript, evaluation_data }: TranscriptRequest = body  // ✅ ADD evaluation_data
 
     // Validate required fields
     if (!interview_id || !full_transcript) {
@@ -437,7 +441,8 @@ async function handleCreateTranscript(supabaseClient: any, req: Request, user: a
 
     const transcriptData = {
       interview_id: interview_id.trim(),
-      full_transcript: full_transcript.trim()
+      full_transcript: full_transcript.trim(),
+      evaluation_data: evaluation_data  // ✅ ADD: evaluation_data
     }
 
     // Create new transcript
