@@ -258,9 +258,23 @@ def ask_ollama_for_structured_data_chunked(resume_text, model="llama3"):
                     merged_result[key] += " " + partial[key]
         # Merge links (GitHub/LinkedIn)
         if "links" in partial:
-            for platform in ["linkedin", "github"]:
-                if partial["links"].get(platform) and not merged_result["links"].get(platform):
-                    merged_result["links"][platform] = partial["links"][platform]
+            # Handle case where links might be returned as a list instead of dict
+            if isinstance(partial["links"], list):
+                print(f"[WARNING] Chunk {idx+1} returned links as list instead of dict: {partial['links']}")
+                # Try to extract links from the list if possible
+                for link_item in partial["links"]:
+                    if isinstance(link_item, str):
+                        if "linkedin.com" in link_item.lower() and not merged_result["links"]["linkedin"]:
+                            merged_result["links"]["linkedin"] = link_item
+                        elif "github.com" in link_item.lower() and not merged_result["links"]["github"]:
+                            merged_result["links"]["github"] = link_item
+            elif isinstance(partial["links"], dict):
+                # Normal case - links is a dictionary
+                for platform in ["linkedin", "github"]:
+                    if partial["links"].get(platform) and not merged_result["links"].get(platform):
+                        merged_result["links"][platform] = partial["links"][platform]
+            else:
+                print(f"[WARNING] Chunk {idx+1} returned links as unexpected type: {type(partial['links'])}")
 
         # Special merging for nested tools_and_technologies
         # Normalize known mislabels to match the target schema

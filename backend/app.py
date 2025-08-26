@@ -459,12 +459,23 @@ def generate_questions():
         # URL format: http://127.0.0.1:54321/storage/v1/object/public/resumes/user_files/...
         file_path = resume_url.split('/storage/v1/object/public/')[-1]
         
-        # Download file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+        # Extract the original file extension from the URL path
+        # The filename in the URL should preserve the original extension
+        original_filename = file_path.split('/')[-1]  # Get the filename part
+        file_ext = original_filename.split('.')[-1].lower() if '.' in original_filename else 'pdf'
+        
+        print(f"[DEBUG] Original filename from URL: {original_filename}")
+        print(f"[DEBUG] Extracted extension: {file_ext}")
+        
+        # Download file to temporary location with correct extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_ext}') as temp_file:
             response = requests.get(resume_url)
             response.raise_for_status()
             temp_file.write(response.content)
             temp_resume_path = temp_file.name
+        
+        print(f"[DEBUG] Downloaded resume to: {temp_resume_path}")
+        print(f"[DEBUG] Using extension: {file_ext}")
         
         try:
             # Import and run the new resume pipeline
@@ -578,10 +589,16 @@ def transcribe_audio():
             "message": f"Failed to process audio: {str(e)}"
         }), 500
 
+# Add this import at the top with other imports
+from Piper.voiceCloner import synthesize_text_to_wav
+import hashlib
+from datetime import datetime
+
+# Modify the existing generate_response function
 @app.route('/api/generate-response', methods=['POST'])
 @verify_supabase_token
 def generate_response():
-    """Generate interview response from user input"""
+    """Generate interview response from user input and create audio"""
     try:
         data = request.get_json()
         user_input = data.get('message', '').strip()
@@ -706,6 +723,72 @@ def generate_response():
         
         print(f"[DEBUG] Interview response: {response}")
         
+        # ✅ NEW: Generate audio for the interview response
+        audio_url = None
+        audio_file_path = None
+        
+        if response.get("message") and not response.get("interview_done", False):
+            try:
+                print(f"[DEBUG] Generating audio for interview response...")
+                
+                # Generate unique filename for this response
+                def generate_filename(text: str, user_id: str, interview_id: str):
+                    text_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+                    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+                    return f"interview_response_{interview_id}_{text_hash}_{timestamp}.wav"
+                
+                response_text = response.get("message", "")
+                filename = generate_filename(response_text, user_id, interview_id)
+                file_path = f"tts-audio/{user_id}/{filename}"
+                
+                print(f"[DEBUG] Generated filename: {filename}")
+                
+                # Generate audio file
+                import tempfile
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                temp_file.close()
+                
+                try:
+                    # Generate audio using Piper
+                    audio_file_path = synthesize_text_to_wav(response_text, temp_file.name)
+                    print(f"[DEBUG] Audio generated: {audio_file_path}")
+                    
+                    # Upload to Supabase Storage
+                    print(f"[DEBUG] Uploading interview response audio...")
+                    
+                    # Read the audio file
+                    with open(audio_file_path, 'rb') as f:
+                        audio_data = f.read()
+                    
+                    file_size = len(audio_data)
+                    print(f"[DEBUG] Audio file size: {file_size} bytes")
+                    
+                    # Upload to Supabase Storage
+                    result = supabase.storage.from_('user-files').upload(
+                        path=file_path,
+                        file=audio_data,
+                        file_options={"content-type": "audio/wav"}
+                    )
+                    
+                    if result:
+                        # Get the public URL
+                        audio_url = supabase.storage.from_('user-files').get_public_url(file_path)
+                        print(f"[DEBUG] Interview response audio uploaded successfully: {audio_url}")
+                    else:
+                        print(f"[WARNING] Failed to upload interview response audio")
+                        
+                finally:
+                    # Clean up temporary file
+                    if os.path.exists(temp_file.name):
+                        os.unlink(temp_file.name)
+                        print(f"[CLEANUP] Removed temporary audio file: {temp_file.name}")
+                        
+            except Exception as audio_error:
+                print(f"[ERROR] Audio generation failed: {audio_error}")
+                import traceback
+                traceback.print_exc()
+                # Continue without audio if generation fails
+        
         # ✅ NEW: Handle interview completion - Save everything to database
         if response.get("interview_done", False):
             try:
@@ -807,12 +890,267 @@ def generate_response():
             "data": {
                 "response": response.get("message", "Sorry, something went wrong."),
                 "stage": response.get("stage", "unknown"),
-                "interview_done": response.get("interview_done", False)
+                "interview_done": response.get("interview_done", False),
+                "audio_url": audio_url,  # ✅ NEW: Include audio URL
+                "audio_file_path": file_path if audio_url else None,  # ✅ NEW: Include file path for deletion
+                "should_delete_audio": True  # ✅ NEW: Flag to indicate audio should be deleted after playback
             }
         })
         
     except Exception as e:
         print(f"[ERROR] Exception in generate_response: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Internal server error: {str(e)}"
+        }), 500
+
+## **API Usage
+
+@app.route('/api/generate-speech', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def generate_speech():
+    """Generate speech from text and return audio URL"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+    
+    try:
+        # Get data from request
+        data = request.get_json()
+        text = data.get('text', '').strip()
+        
+        if not text:
+            return jsonify({
+                "success": False,
+                "message": "Text input is required"
+            }), 400
+        
+        # Validate text length
+        if len(text) > 1000:  # Limit to 1000 characters
+            return jsonify({
+                "success": False,
+                "message": "Text too long. Maximum 1000 characters allowed."
+            }), 400
+        
+        print(f"[DEBUG] Generating speech for text: {text[:50]}...")
+        
+        # Get user ID for file organization
+        user_id = request.user.get('id')
+        
+        # Generate unique filename
+        def generate_filename(text: str, user_id: str):
+            text_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+            timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            return f"tts_{user_id}_{text_hash}_{timestamp}.wav"
+        
+        filename = generate_filename(text, user_id)
+        file_path = f"tts-audio/{user_id}/{filename}"
+        
+        print(f"[DEBUG] Generated filename: {filename}")
+        
+        # Step 1: Generate audio file
+        import tempfile
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        temp_file.close()
+        
+        try:
+            # Generate audio using Piper
+            audio_file_path = synthesize_text_to_wav(text, temp_file.name)
+            print(f"[DEBUG] Audio generated: {audio_file_path}")
+            
+            # Step 2: Upload to Supabase Storage
+            print(f"[DEBUG] Uploading to Supabase Storage...")
+            
+            # Read the audio file
+            with open(audio_file_path, 'rb') as f:
+                audio_data = f.read()
+            
+            file_size = len(audio_data)
+            print(f"[DEBUG] Audio file size: {file_size} bytes")
+            
+            # Upload to Supabase Storage
+            result = supabase.storage.from_('user-files').upload(
+                path=file_path,
+                file=audio_data,
+                file_options={"content-type": "audio/wav"}
+            )
+            
+            if result:
+                # Get the public URL
+                public_url = supabase.storage.from_('user-files').get_public_url(file_path)
+                print(f"[DEBUG] Audio uploaded successfully: {public_url}")
+                
+                return jsonify({
+                    "success": True,
+                    "message": "Speech generated successfully",
+                    "data": {
+                        "audio_url": public_url,
+                        "text": text,
+                        "filename": filename,
+                        "file_path": file_path,
+                        "file_size": file_size,
+                        "duration_estimate": len(text.split()) * 0.5,  # Rough estimate: 0.5s per word
+                        "created_at": datetime.now().isoformat()
+                    }
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Failed to upload audio to storage"
+                }), 500
+                
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+                print(f"[CLEANUP] Removed temporary file: {temp_file.name}")
+            
+    except Exception as e:
+        print(f"[ERROR] General error in generate_speech: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Internal server error: {str(e)}"
+        }), 500
+
+@app.route('/api/delete-audio', methods=['DELETE', 'OPTIONS'])
+@verify_supabase_token
+def delete_audio():
+    """Delete audio file from storage bucket"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+    
+    try:
+        # Get data from request
+        data = request.get_json()
+        audio_url = data.get('audio_url', '').strip()
+        
+        if not audio_url:
+            return jsonify({
+                "success": False,
+                "message": "Audio URL is required"
+            }), 400
+        
+        print(f"[DEBUG] Deleting audio: {audio_url}")
+        
+        # Extract file path from URL
+        # URL format: http://127.0.0.1:54321/storage/v1/object/public/user-files/tts-audio/user-id/filename.wav
+        try:
+            # Remove the base URL to get the file path
+            base_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/user-files/"
+            if audio_url.startswith(base_url):
+                file_path = audio_url[len(base_url):]
+                # Remove any query parameters
+                file_path = file_path.split('?')[0]
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Invalid audio URL format"
+                }), 400
+            
+            print(f"[DEBUG] Extracted file path: {file_path}")
+            
+            # Verify the file belongs to the current user
+            user_id = request.user.get('id')
+            expected_prefix = f"tts-audio/{user_id}/"
+            
+            if not file_path.startswith(expected_prefix):
+                return jsonify({
+                    "success": False,
+                    "message": "Access denied: You can only delete your own audio files"
+                }), 403
+            
+            # Delete the file from Supabase Storage
+            result = supabase.storage.from_('user-files').remove([file_path])
+            
+            if result:
+                print(f"[DEBUG] Audio file deleted successfully: {file_path}")
+                return jsonify({
+                    "success": True,
+                    "message": "Audio file deleted successfully",
+                    "data": {
+                        "deleted_file": file_path,
+                        "deleted_at": datetime.now().isoformat()
+                    }
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Failed to delete audio file"
+                }), 500
+                
+        except Exception as parse_error:
+            print(f"[ERROR] URL parsing failed: {parse_error}")
+            return jsonify({
+                "success": False,
+                "message": "Invalid audio URL format"
+            }), 400
+            
+    except Exception as e:
+        print(f"[ERROR] General error in delete_audio: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Internal server error: {str(e)}"
+        }), 500
+
+@app.route('/api/list-audio-files', methods=['GET', 'OPTIONS'])
+@verify_supabase_token
+def list_audio_files():
+    """List all audio files for the current user"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+    
+    try:
+        user_id = request.user.get('id')
+        folder_path = f"tts-audio/{user_id}"
+        
+        print(f"[DEBUG] Listing audio files for user: {user_id}")
+        
+        # List files in the user's audio folder
+        result = supabase.storage.from_('user-files').list(path=folder_path)
+        
+        if result:
+            audio_files = []
+            for file_info in result:
+                file_path = f"{folder_path}/{file_info['name']}"
+                public_url = supabase.storage.from_('user-files').get_public_url(file_path)
+                
+                audio_files.append({
+                    "filename": file_info['name'],
+                    "file_path": file_path,
+                    "audio_url": public_url,
+                    "file_size": file_info.get('metadata', {}).get('size', 0),
+                    "created_at": file_info.get('created_at'),
+                    "updated_at": file_info.get('updated_at')
+                })
+            
+            return jsonify({
+                "success": True,
+                "message": f"Found {len(audio_files)} audio files",
+                "data": {
+                    "audio_files": audio_files,
+                    "total_count": len(audio_files)
+                }
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "message": "No audio files found",
+                "data": {
+                    "audio_files": [],
+                    "total_count": 0
+                }
+            })
+            
+    except Exception as e:
+        print(f"[ERROR] General error in list_audio_files: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({

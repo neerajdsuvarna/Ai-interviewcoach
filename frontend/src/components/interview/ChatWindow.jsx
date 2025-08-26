@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for end button
-import { uploadFile, apiPost } from '../../api';
+import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
 
@@ -14,6 +14,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
   
   // ✅ Use useAuth hook to get user
   const { user } = useAuth();
+
+  // Add this state for loading
+  const [isEndingInterview, setIsEndingInterview] = useState(false);
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
@@ -60,15 +63,56 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
       console.log('📥 Interview Manager response:', response);
       
       if (response.success) {
+        const { response: textResponse, audio_url, should_delete_audio } = response.data;
+        
         const newMessage = {
           id: Date.now(),
           speaker: 'interviewer',
-          message: response.data.response,
+          message: textResponse,
           timestamp: new Date().toLocaleTimeString()
         };
         
         setConversation(prev => [...prev, newMessage]);
         console.log('✅ Interviewer response added');
+        
+        // ✅ NEW: Play audio if available
+        if (audio_url) {
+          console.log('🔊 Playing audio response:', audio_url);
+          const audio = new Audio(audio_url);
+          
+          // ✅ NEW: Delete audio file after playback
+          audio.onended = async () => {
+            if (should_delete_audio) {
+              try {
+                console.log('🗑️ Deleting audio file after playback...');
+                console.log('🗑️ Audio URL to delete:', audio_url);
+                
+                // ✅ FIXED: Use apiDelete instead of apiPost
+                await apiDelete('/api/delete-audio', {
+                  body: { audio_url }
+                });
+                console.log('✅ Audio file deleted successfully');
+              } catch (error) {
+                console.error('❌ Failed to delete audio file:', error);
+                console.error('❌ Error details:', error.message);
+              }
+            } else {
+              console.log('ℹ️ Audio deletion skipped (should_delete_audio is false)');
+            }
+          };
+          
+          // ✅ NEW: Handle audio play errors
+          audio.onerror = (error) => {
+            console.error('❌ Audio playback failed:', error);
+          };
+          
+          // ✅ NEW: Play the audio
+          audio.play().catch(error => {
+            console.error('❌ Failed to play audio:', error);
+          });
+        } else {
+          console.log('ℹ️ No audio URL provided in response');
+        }
       } else {
         console.error('❌ Interview Manager API error:', response.message);
       }
@@ -77,12 +121,15 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
     }
   };
 
-  // ✅ NEW: Send END_INTERVIEW command to backend
+  // Update the handleEndInterview function
   const handleEndInterview = async () => {
     const confirmed = window.confirm('Are you sure you want to end the interview? This action cannot be undone.');
     
     if (confirmed) {
       console.log('✅ User confirmed ending interview');
+      
+      // ✅ NEW: Show loading state
+      setIsEndingInterview(true);
       
       try {
         // ✅ NEW: Send END_INTERVIEW command to backend
@@ -94,6 +141,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         
         if (!interviewId) {
           console.error('❌ No interview_id found in URL');
+          setIsEndingInterview(false); // Hide loading
           return;
         }
         
@@ -106,37 +154,73 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         console.log('📥 End interview response:', response);
         
         if (response.success) {
-          console.log('✅ Interview ended successfully');
-          console.log('📋 Final response:', response.data);
+          const { response: textResponse, audio_url, should_delete_audio, interview_done } = response.data;
           
-          // ✅ Add the final evaluation message to conversation
-          const finalMessage = {
+          // Add the final response to conversation
+          const newMessage = {
             id: Date.now(),
             speaker: 'interviewer',
-            message: response.data.response,
+            message: textResponse,
             timestamp: new Date().toLocaleTimeString()
           };
           
-          setConversation(prev => [...prev, finalMessage]);
+          setConversation(prev => [...prev, newMessage]);
           
-          // ✅ Show success message to user
-          alert('Interview completed successfully! You will be redirected to your feedback shortly.');
-          
-          // ✅ Redirect to feedback page after a short delay
-          setTimeout(() => {
+          // ✅ NEW: Play audio for final response (if available)
+          if (audio_url) {
+            console.log('🔊 Playing final audio response:', audio_url);
+            const audio = new Audio(audio_url);
+            
+            audio.onended = async () => {
+              if (should_delete_audio) {
+                try {
+                  console.log('🗑️ Deleting final audio file after playback...');
+                  console.log('🗑️ Final audio URL to delete:', audio_url);
+                  
+                  // ✅ FIXED: Use apiDelete instead of apiPost
+                  await apiDelete('/api/delete-audio', {
+                    body: { audio_url }
+                  });
+                  console.log('✅ Final audio file deleted successfully');
+                } catch (error) {
+                  console.error('❌ Failed to delete final audio file:', error);
+                  console.error('❌ Error details:', error.message);
+                }
+              }
+              
+              // ✅ NEW: Redirect to feedback page after audio finishes
+              if (interview_done) {
+                console.log('🎯 Interview completed, redirecting to feedback...');
+                // Add a small delay to ensure audio deletion completes
+                setTimeout(() => {
+                  window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+                }, 1000);
+              }
+            };
+            
+            audio.play().catch(error => {
+              console.error('❌ Failed to play final audio:', error);
+              // Still redirect even if audio fails
+              if (interview_done) {
+                window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+              }
+            });
+          } else if (interview_done) {
+            // ✅ NEW: If no audio but interview is done, redirect immediately
+            console.log('🎯 Interview completed (no audio), redirecting to feedback...');
             window.location.href = `/interview-feedback?interview_id=${interviewId}`;
-          }, 2000);
+          }
           
         } else {
-          console.error('❌ Failed to end interview:', response.message);
-          alert(`Failed to end interview: ${response.message}`);
+          console.error('❌ End interview API error:', response.message);
+          // ✅ NEW: Hide loading on error
+          setIsEndingInterview(false);
         }
       } catch (error) {
         console.error('❌ Error ending interview:', error);
-        alert(`Error ending interview: ${error.message}`);
+        // ✅ NEW: Hide loading on error
+        setIsEndingInterview(false);
       }
-    } else {
-      console.log('❌ User cancelled ending interview');
     }
   };
 
@@ -282,6 +366,82 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         alert('Failed to start recording. Please check microphone permissions.');
       }
     }
+  };
+
+  // Add the loading popup component
+  const LoadingPopup = () => {
+    if (!isEndingInterview) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-300">
+        <div className="bg-white/95 backdrop-blur-md rounded-2xl p-8 max-w-md mx-4 text-center shadow-2xl border border-gray-200/50 animate-in zoom-in-95 duration-300">
+          {/* Animated Icon */}
+          <div className="relative mb-6">
+            <div className="w-16 h-16 mx-auto relative">
+              {/* Outer ring */}
+              <div className="absolute inset-0 rounded-full border-4 border-blue-100 animate-pulse"></div>
+              {/* Spinning ring */}
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-600 border-r-blue-500 animate-spin"></div>
+              {/* Inner circle */}
+              <div className="absolute inset-2 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
+                <div className="w-3 h-3 bg-blue-600 rounded-full animate-ping"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Title */}
+          <h3 className="text-xl font-bold text-gray-900 mb-3 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Ending Interview
+          </h3>
+
+          {/* Progress Steps */}
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center justify-center space-x-3 text-sm">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-gray-600">Generating interview summary...</span>
+            </div>
+            <div className="flex items-center justify-center space-x-3 text-sm">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <span className="text-gray-600">Saving feedback and evaluation...</span>
+            </div>
+            <div className="flex items-center justify-center space-x-3 text-sm">
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+              <span className="text-gray-600">Preparing your results...</span>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="w-full bg-gray-200 rounded-full h-2 mb-4 overflow-hidden">
+            <div className="h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full animate-pulse" 
+                 style={{ width: '100%' }}></div>
+          </div>
+
+          {/* Message */}
+          <p className="text-gray-600 text-sm leading-relaxed">
+            Please wait while we process your interview data and generate comprehensive feedback.
+          </p>
+          
+          {/* Subtitle */}
+          <p className="text-xs text-gray-500 mt-3 font-medium">
+            This usually takes 10-15 seconds
+          </p>
+
+          {/* Decorative Elements */}
+          <div className="absolute top-4 right-4">
+            <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+          </div>
+          <div className="absolute bottom-4 left-4">
+            <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '200ms' }}></div>
+          </div>
+          <div className="absolute top-4 left-4">
+            <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce" style={{ animationDelay: '400ms' }}></div>
+          </div>
+          <div className="absolute bottom-4 right-4">
+            <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -472,6 +632,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         }}
       >
       </div>
+
+      {/* ✅ NEW: Loading popup */}
+      <LoadingPopup />
     </div>
   );
 }
