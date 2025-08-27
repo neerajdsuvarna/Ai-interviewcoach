@@ -7,6 +7,7 @@ import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
@@ -334,6 +335,13 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
     } else {
       // Start recording
       console.log('🎙️ Starting recording...');
+      
+      // Disable button for 3 seconds to prevent edge cases
+      setIsButtonDisabled(true);
+      setTimeout(() => {
+        setIsButtonDisabled(false);
+      }, 3000);
+      
       try {
         // Get user media stream
         const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -364,6 +372,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
       } catch (error) {
         console.error('❌ Error starting recording:', error);
         alert('Failed to start recording. Please check microphone permissions.');
+        setIsButtonDisabled(false); // Re-enable button if recording fails
       }
     }
   };
@@ -453,45 +462,57 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
       }}
     >
       {/* Header with Title and Buttons */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 
-          className="text-xl md:text-2xl font-bold tracking-tight"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
-          Interview Conversation
-        </h2>
-        
-        {/* Buttons Container */}
-        <div className="flex items-center gap-3">
-          {/* Recording Status Indicator */}
-          {isRecording && (
-            <div className="flex items-center gap-2 bg-red-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-red-400/30">
-              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-              <span className="tracking-wide">RECORDING</span>
-            </div>
-          )}
+      <div className="flex flex-col gap-4 mb-4">
+        <div className="flex items-center justify-between">
+          <h2 
+            className="text-xl md:text-2xl font-bold tracking-tight"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            Interview Conversation
+          </h2>
           
           {/* End Interview Button */}
           <button
             onClick={handleEndInterview}
-            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center gap-2"
+            className="px-6 py-3 bg-transparent border-2 font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center gap-2"
+            style={{
+              borderColor: 'var(--color-error)',
+              color: 'var(--color-error)',
+              backgroundColor: 'transparent'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = 'var(--color-error)';
+              e.target.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = 'transparent';
+              e.target.style.color = 'var(--color-error)';
+            }}
             title="End Interview"
           >
             <Square size={16} />
             End Interview
           </button>
-          
-          {/* Recording Button */}
+        </div>
+        
+        {/* Pill-shaped Recording Button */}
+        <div className="flex items-center justify-center gap-3">
           <button
             onClick={toggleRecording}
-            className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 ${
-              isRecording 
-                ? 'bg-red-500 hover:bg-red-600' 
-                : 'bg-blue-500 hover:bg-blue-600'
+            disabled={isButtonDisabled}
+            className={`w-full px-8 py-4 rounded-full flex items-center justify-center gap-3 text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 ${
+              isButtonDisabled
+                ? 'bg-gray-400 cursor-not-allowed opacity-60'
+                : isRecording 
+                  ? 'bg-red-500 hover:bg-red-600' 
+                  : 'bg-blue-500 hover:bg-blue-600'
             }`}
-            title={isRecording ? 'Stop Recording' : 'Start Recording'}
+            title={isRecording ? 'Stop Recording' : 'Speak Now'}
           >
-            {isRecording ? <MicOff size={24} /> : <Mic size={24} />}
+            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+            <span className="text-sm font-medium">
+              {isRecording ? 'Stop Recording' : 'Speak Now'}
+            </span>
           </button>
         </div>
       </div>

@@ -11,11 +11,13 @@ import {
   Share2,
   BookOpen,
   Target,
-  MessageSquare
+  MessageSquare,
+  AlertCircle
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import Navbar from '@/components/Navbar';
 import FeedbackLoading from '@/components/interview/FeedbackLoading';
+import { supabase } from '@/supabaseClient';
 
 function InterviewFeedbackPage() {
   const { isDark } = useTheme();
@@ -25,15 +27,64 @@ function InterviewFeedbackPage() {
   
   const [showLoading, setShowLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [feedbackData, setFeedbackData] = useState(null);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   
-  // Mock feedback data - in a real app this would come from the interview evaluation
-  const mockFeedback = {
-    key_strengths: "Excellent technical knowledge demonstrated throughout the interview. Strong problem-solving skills and clear communication. Good understanding of the role requirements.",
-    improvement_areas: "Could provide more specific examples from past experiences. Consider elaborating on technical challenges faced. Practice more concise responses to complex questions.",
-    summary: "Overall, you demonstrated solid technical knowledge and good communication skills. Your responses showed confidence and understanding of the role. With some refinement in providing specific examples and more concise answers, you would be an excellent candidate for this position."
+  // Fetch feedback data from the database
+  const fetchFeedbackData = async () => {
+    if (!interviewId) {
+      setError('Interview ID is required');
+      setShowLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Get current user session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      
+      // Fetch feedback data using the interview_id via Supabase Edge Function
+      const response = await fetch(`${supabaseUrl}/functions/v1/interview-feedback?interview_id=${interviewId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Failed to fetch feedback: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.data && result.data.length > 0) {
+        // Get the first feedback record for this interview
+        setFeedbackData(result.data[0]);
+      } else {
+        setError('No feedback data found for this interview');
+      }
+    } catch (err) {
+      console.error('Error fetching feedback data:', err);
+      setError(err.message || 'Failed to load interview feedback');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
+    // Start fetching data immediately
+    fetchFeedbackData();
+    
     // Simulate realistic loading progress
     const progressInterval = setInterval(() => {
       setLoadingProgress(prev => {
@@ -52,11 +103,12 @@ function InterviewFeedbackPage() {
     }, 100);
 
     return () => clearInterval(progressInterval);
-  }, []);
+  }, [interviewId]);
 
   const getOverallRating = () => {
     // This would be calculated based on the actual interview evaluation
     // For now, returning a placeholder rating
+    // In the future, this could be calculated from the feedback data
     return 7.5; // Out of 10
   };
 
@@ -73,6 +125,7 @@ function InterviewFeedbackPage() {
     return 'Needs Improvement';
   };
 
+  // Show loading screen
   if (showLoading) {
     return (
       <>
@@ -84,6 +137,66 @@ function InterviewFeedbackPage() {
             // The actual transition is handled by the useEffect above
           }}
         />
+      </>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-3 sm:px-4 py-6 sm:py-8 md:py-12 lg:py-16">
+          <div className="w-full max-w-6xl mx-auto">
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={32} className="text-red-500" />
+              </div>
+              <h1 className="text-2xl font-bold mb-2">Error Loading Feedback</h1>
+              <p className="text-[var(--color-text-secondary)] mb-6">{error}</p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-6 py-3 rounded-lg font-medium transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
+                  style={{ 
+                    backgroundColor: 'var(--color-primary)',
+                    color: 'white'
+                  }}
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={() => navigate('/profile')}
+                  className="px-6 py-3 rounded-lg font-medium transition-all duration-300 border hover:scale-105 active:scale-95"
+                  style={{ 
+                    borderColor: 'var(--color-border)',
+                    color: 'var(--color-text-primary)',
+                    backgroundColor: 'var(--color-card)'
+                  }}
+                >
+                  Back to Profile
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Show loading state while fetching data
+  if (isLoading || !feedbackData) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-3 sm:px-4 py-6 sm:py-8 md:py-12 lg:py-16">
+          <div className="w-full max-w-6xl mx-auto">
+            <div className="text-center">
+              <div className="animate-spin w-8 h-8 border-4 border-[var(--color-primary)] border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-[var(--color-text-secondary)]">Loading interview feedback...</p>
+            </div>
+          </div>
+        </div>
       </>
     );
   }
@@ -245,7 +358,7 @@ function InterviewFeedbackPage() {
                   
                   <div className="space-y-3">
                     <p style={{ color: 'var(--color-text-primary)' }}>
-                      {mockFeedback.key_strengths}
+                      {feedbackData.key_strengths || 'No key strengths data available.'}
                     </p>
                   </div>
                 </div>
@@ -278,7 +391,7 @@ function InterviewFeedbackPage() {
                   
                   <div className="space-y-3">
                     <p style={{ color: 'var(--color-text-primary)' }}>
-                      {mockFeedback.improvement_areas}
+                      {feedbackData.improvement_areas || 'No improvement areas data available.'}
                     </p>
                   </div>
                 </div>
@@ -312,7 +425,7 @@ function InterviewFeedbackPage() {
                 
                 <div className="prose max-w-none">
                   <p style={{ color: 'var(--color-text-primary)' }}>
-                    {mockFeedback.summary}
+                    {feedbackData.summary || 'No summary data available.'}
                   </p>
                 </div>
               </div>
