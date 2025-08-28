@@ -1,11 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PhoneOff } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { useHeadTracking } from '@/hooks/useHeadTracking';
 import { supabase } from '../supabaseClient';
 import Navbar from '@/components/Navbar';
 import ChatWindow from '@/components/interview/ChatWindow';
+import HeadTrackingAlert from '@/components/interview/HeadTrackingAlert';
+import WarningModal from '@/components/interview/WarningModal';
 
 function InterviewPage() {
   const { isDark } = useTheme();
@@ -30,8 +33,73 @@ function InterviewPage() {
     }
   ]);
   
-  const videoRef = useRef(null);
+  // Head tracking state
+  const [headTrackingEnabled, setHeadTrackingEnabled] = useState(false); // Start disabled
+  const [showHeadTrackingPopup, setShowHeadTrackingPopup] = useState(false);
+  const [headTrackingStarted, setHeadTrackingStarted] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningType, setWarningType] = useState(null);
+  
+  // Mode tracking
+  const [currentMode, setCurrentMode] = useState(null); // Track current mode
+  
+  // Track calibration state
+  const [calibrationState, setCalibrationState] = useState('idle'); // 'idle', 'checking', 'ready', 'error', 'success'
+  const [showCalibrationWarning, setShowCalibrationWarning] = useState(false);
+  const [calibrationCheckTimer, setCalibrationCheckTimer] = useState(null);
+  const [showCalibrationSuccess, setShowCalibrationSuccess] = useState(false);
+  const readyForCalibrationRef = useRef(false);
+  const calibrationInProgressRef = useRef(false);
+  
   const streamRef = useRef(null);
+
+  // Handle calibration success
+  const handleCalibrationSuccess = useCallback(() => {
+    setCalibrationState('success');
+    setShowCalibrationSuccess(true);
+    
+    // Clear any ongoing calibration check timer
+    if (calibrationCheckTimer) {
+      clearTimeout(calibrationCheckTimer);
+      setCalibrationCheckTimer(null);
+    }
+    // Reset the calibration progress flag
+    calibrationInProgressRef.current = false;
+    console.log('🎉 Calibration completed successfully');
+    
+    // Auto-hide success message after 3 seconds
+    setTimeout(() => {
+      setShowCalibrationSuccess(false);
+      setCalibrationState('idle');
+    }, 3000);
+  }, [calibrationCheckTimer]);
+
+  // Initialize head tracking
+  const {
+    isCalibrated,
+    isLooking,
+    isConnected,
+    error,
+    personStatus,
+    readyForCalibration,
+    calibrationMessage,
+    videoRef,
+    startFrameSending,
+    stopFrameSending,
+    startCalibration,
+    pauseFrameSending,
+    resumeFrameSending,
+    startMonitoring,
+    stopMonitoring
+  } = useHeadTracking(headTrackingEnabled, handleCalibrationSuccess);
+
+  // Show head tracking popup when user enables the toggle
+  useEffect(() => {
+    if (headTrackingEnabled && !headTrackingStarted) {
+      // Show popup when user enables head tracking
+      setShowHeadTrackingPopup(true);
+    }
+  }, [headTrackingEnabled, headTrackingStarted]);
 
   // Initialize camera
   useEffect(() => {
@@ -61,7 +129,175 @@ function InterviewPage() {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [videoRef]);
+
+  // Handle warning modal display - show warnings immediately
+  useEffect(() => {
+    if (!headTrackingStarted || !headTrackingEnabled) return; // Only show warnings if head tracking is active
+
+    // Skip warning checks if warning is already displayed
+    if (showWarningModal) {
+      return;
+    }
+
+    // Add a small delay after warning closes to allow backend to update isLooking state
+    const timeoutId = setTimeout(() => {
+      // Eye tracking warnings - show immediately when not looking
+      const warningConditionMet = isCalibrated && !isLooking;
+      console.log(`🔍 Warning condition check: isCalibrated=${isCalibrated}, !isLooking=${!isLooking}, conditionMet=${warningConditionMet}`);
+      
+      if (warningConditionMet) {
+        console.log('🚨 Showing head tracking warning (eye contact)');
+        setWarningType('eye_contact');
+        setShowWarningModal(true);
+        setCurrentMode('head_tracking');
+        // Pause monitoring while warning is shown
+        pauseFrameSending();
+      } else if (isCalibrated && isLooking) {
+        console.log('✅ User is looking at camera, no warning needed');
+      } else if (!isCalibrated) {
+        console.log('⚠️ Not calibrated yet, skipping warning check');
+      }
+    }, 500); // 500ms delay to allow backend to process new frames
+
+    return () => clearTimeout(timeoutId);
+  }, [headTrackingStarted, headTrackingEnabled, isCalibrated, isLooking, showWarningModal, pauseFrameSending]);
+
+  // Update mode when switching
+  useEffect(() => {
+    if (headTrackingEnabled) {
+      // Switching to head tracking mode
+      if (currentMode !== 'head_tracking') {
+        setCurrentMode('head_tracking');
+        console.log('🔄 Switched to head tracking mode');
+      }
+    } else {
+      // No monitoring when head tracking is disabled
+      if (currentMode !== 'disabled') {
+        setCurrentMode('disabled');
+        console.log('🔄 Disabled monitoring');
+      }
+    }
+  }, [headTrackingEnabled, currentMode]);
+
+  // Initialize current mode on first render
+  useEffect(() => {
+    if (currentMode === null) {
+      setCurrentMode('disabled'); // Start with no monitoring
+      setHeadTrackingStarted(false); // Don't start monitoring initially
+    }
+  }, [currentMode]);
+
+  // Start monitoring when video is ready and monitoring is confirmed
+  useEffect(() => {
+    console.log(`🔍 Monitoring check: videoRef=${!!videoRef.current}, isConnected=${isConnected}, headTrackingStarted=${headTrackingStarted}, showHeadTrackingPopup=${showHeadTrackingPopup}`);
+    
+    if (videoRef.current && headTrackingStarted && !showHeadTrackingPopup) {
+      const handleVideoReady = () => {
+        console.log('🎥 Video ready, starting monitoring...');
+        startMonitoring();
+        
+        // Don't start calibration immediately - wait for user to be ready
+        // Calibration will start automatically when readyForCalibration becomes true
+      };
+
+      if (videoRef.current.readyState >= 2) {
+        handleVideoReady();
+      } else {
+        videoRef.current.addEventListener('loadeddata', handleVideoReady);
+        return () => {
+          videoRef.current?.removeEventListener('loadeddata', handleVideoReady);
+        };
+      }
+    }
+  }, [videoRef, isConnected, headTrackingStarted, showHeadTrackingPopup, startMonitoring]);
+
+  // Handle calibration check process
+  const startCalibrationCheck = useCallback(() => {
+    // Prevent multiple calibration checks from running simultaneously
+    if (calibrationInProgressRef.current) {
+      console.log('⚠️ Calibration check already in progress, skipping...');
+      return;
+    }
+    
+    console.log('🔍 Starting 5-second calibration check...');
+    calibrationInProgressRef.current = true;
+    setCalibrationState('checking');
+    
+    // Check for 5 seconds
+    const timer = setTimeout(() => {
+      console.log('⏰ 5-second check completed');
+      // Get the current readyForCalibration value at the time of check
+      const currentReadyForCalibration = readyForCalibrationRef.current;
+      console.log(`🔍 Current readyForCalibration state: ${currentReadyForCalibration}`);
+      
+      if (currentReadyForCalibration && !isCalibrated) {
+        console.log('✅ User is ready, starting calibration');
+        setCalibrationState('ready');
+        startCalibration();
+      } else if (currentReadyForCalibration && isCalibrated) {
+        console.log('✅ User is ready but already calibrated, skipping calibration');
+        setCalibrationState('idle');
+        calibrationInProgressRef.current = false;
+      } else {
+        console.log('❌ User not ready, showing warning modal');
+        setCalibrationState('error');
+        setShowCalibrationWarning(true);
+        pauseFrameSending(); // Stop sending frames
+      }
+    }, 5000);
+    
+    setCalibrationCheckTimer(timer);
+  }, [startCalibration, pauseFrameSending, isCalibrated]);
+
+  // Handle calibration warning modal close
+  const handleCalibrationWarningClose = useCallback(() => {
+    console.log('🔄 User acknowledged warning, restarting check...');
+    setShowCalibrationWarning(false);
+    setCalibrationState('checking');
+    resumeFrameSending(); // Resume sending frames
+    
+    // Start another 5-second check
+    const timer = setTimeout(() => {
+      console.log('⏰ Second 5-second check completed');
+      // Get the current readyForCalibration value at the time of check
+      const currentReadyForCalibration = readyForCalibrationRef.current;
+      console.log(`🔍 Current readyForCalibration state: ${currentReadyForCalibration}`);
+      
+      if (currentReadyForCalibration && !isCalibrated) {
+        console.log('✅ User is now ready, starting calibration');
+        setCalibrationState('ready');
+        startCalibration();
+      } else if (currentReadyForCalibration && isCalibrated) {
+        console.log('✅ User is ready but already calibrated, skipping calibration');
+        setCalibrationState('idle');
+        calibrationInProgressRef.current = false;
+      } else {
+        console.log('❌ User still not ready, showing warning again');
+        setCalibrationState('error');
+        setShowCalibrationWarning(true);
+        pauseFrameSending(); // Stop sending frames again
+      }
+    }, 5000);
+    
+    setCalibrationCheckTimer(timer);
+  }, [startCalibration, pauseFrameSending, resumeFrameSending, isCalibrated]);
+
+  // Update ref when readyForCalibration changes
+  useEffect(() => {
+    readyForCalibrationRef.current = readyForCalibration;
+  }, [readyForCalibration]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (calibrationCheckTimer) {
+        clearTimeout(calibrationCheckTimer);
+      }
+      // Reset calibration progress flag
+      calibrationInProgressRef.current = false;
+    };
+  }, [calibrationCheckTimer]);
 
   // Interview validation - FIXED to only run once
   useEffect(() => {
@@ -141,7 +377,77 @@ function InterviewPage() {
     validateInterview();
   }, []); // ✅ FIXED: Empty dependency array - only runs once on mount
 
+  // Handle head tracking confirmation
+  const confirmHeadTracking = () => {
+    setShowHeadTrackingPopup(false);
+    setHeadTrackingStarted(true);
+    console.log('🚀 Head tracking confirmed and started');
+    
+    // Start calibration check after a short delay to allow monitoring to start
+    setTimeout(() => {
+      console.log('⏰ Starting calibration check process...');
+      startCalibrationCheck();
+    }, 1000);
+  };
+
+  // Toggle head tracking on/off
+  const toggleHeadTracking = () => {
+    const newMode = !headTrackingEnabled;
+    console.log(`🔄 Toggle requested: ${headTrackingEnabled} → ${newMode}`);
+    setHeadTrackingEnabled(newMode);
+    
+    if (newMode) {
+      // Switching TO head tracking - start fresh calibration session
+      console.log('🔄 Setting up head tracking mode...');
+      setCurrentMode('head_tracking');
+      setHeadTrackingStarted(false); // Reset to show popup again
+      setCalibrationState('idle'); // Reset calibration state
+      
+      // Reset all head tracking state for fresh session
+      setShowWarningModal(false);
+      setWarningType(null);
+      
+      // Clear any existing calibration check timers
+      if (calibrationCheckTimer) {
+        clearTimeout(calibrationCheckTimer);
+        setCalibrationCheckTimer(null);
+      }
+      
+      console.log('🔄 Toggled to head tracking - will show popup for calibration');
+    } else {
+      // Switching OFF head tracking - stop all monitoring
+      setCurrentMode('disabled');
+      setHeadTrackingStarted(false); // Stop monitoring
+      
+      // Clean up head tracking session
+      setShowHeadTrackingPopup(false);
+      setCalibrationState('idle');
+      setShowWarningModal(false);
+      setWarningType(null);
+      
+      // Reset calibration progress flag
+      calibrationInProgressRef.current = false;
+      
+      console.log('🔄 Toggled off head tracking - stopped all monitoring');
+    }
+  };
+
+  // Handle warning modal close
+  const closeWarningModal = () => {
+    setShowWarningModal(false);
+    
+    // Resume monitoring after user acknowledges warning
+    setTimeout(() => {
+      resumeFrameSending();
+    }, 1000); // Small delay to ensure user has time to adjust
+    
+    console.log(`✅ Monitoring resumed for ${currentMode} mode`);
+  };
+
   const endInterview = () => {
+    // Stop monitoring
+    stopMonitoring();
+    
     // Stop camera stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -177,6 +483,111 @@ function InterviewPage() {
     <>
       <Navbar />
       
+      {/* Head Tracking Alert */}
+      <HeadTrackingAlert 
+        isCalibrated={isCalibrated}
+        isConnected={isConnected}
+        error={error}
+        headTrackingEnabled={headTrackingEnabled}
+        readyForCalibration={readyForCalibration}
+        calibrationMessage={calibrationMessage}
+        calibrationState={calibrationState}
+        showCalibrationSuccess={showCalibrationSuccess}
+      />
+
+      {/* Head Tracking Confirmation Popup */}
+      <AnimatePresence>
+        {showHeadTrackingPopup && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-200 dark:border-gray-700"
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+                
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                  Head Tracking Ready
+                </h3>
+                
+                <p className="text-gray-600 dark:text-gray-300 mb-6">
+                  We're ready to start monitoring your head position and eye contact during the interview. This helps ensure professional conduct.
+                </p>
+                
+                <button
+                  onClick={confirmHeadTracking}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl"
+                >
+                  Start Head Tracking
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Warning Modal */}
+      <WarningModal
+        isOpen={showWarningModal}
+        onClose={closeWarningModal}
+        warningType={warningType}
+        headTrackingEnabled={headTrackingEnabled}
+      />
+
+      {/* Calibration Warning Modal */}
+      <AnimatePresence>
+        {showCalibrationWarning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-200 dark:border-gray-700"
+            >
+              <div className="text-center">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                  Camera Position Required
+                </h3>
+                
+                <p className="text-gray-600 dark:text-gray-300 mb-6">
+                  Please position yourself directly in front of the camera and look straight ahead. The system needs to detect your face and eye position for accurate head tracking calibration.
+                </p>
+                
+                <button
+                  onClick={handleCalibrationWarningClose}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl"
+                >
+                  OK, I'm Ready
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
       <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
         {/* Top Bar with End Interview Button */}
         <div 
@@ -194,22 +605,50 @@ function InterviewPage() {
               >
                 AI Interview Session
               </h1>
+              
+              {/* Monitoring Status */}
+              {headTrackingStarted && headTrackingEnabled && (
+                <div className="flex items-center gap-1 bg-green-500/90 backdrop-blur-sm text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-semibold shadow-md border border-green-400/30 mr-3 sm:mr-4">
+                  <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white rounded-full"></div>
+                  <span className="tracking-wide text-xs">HEAD TRACKING</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* End Interview Button */}
-          <button
-            onClick={endInterview}
-            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            <PhoneOff className="w-4 h-4" />
-            End Interview
-          </button>
+          {/* Head Tracking Toggle */}
+          <div className="flex items-center gap-2 sm:gap-4">
+            <label className="flex items-center gap-2 sm:gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={headTrackingEnabled}
+                  onChange={(e) => setHeadTrackingEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className={`
+                  w-10 h-6 sm:w-12 sm:h-7 rounded-full transition-all duration-300 ease-in-out shadow-inner flex items-center
+                  peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2
+                  ${headTrackingEnabled 
+                    ? 'bg-blue-500 peer-focus:ring-blue-500/20 shadow-lg' 
+                    : 'bg-gray-300 dark:bg-gray-600 peer-focus:ring-gray-500/20 shadow-inner'
+                  }
+                `}>
+                  <div className={`
+                    w-4 h-4 sm:w-5 sm:h-5 bg-white rounded-full shadow-lg transition-all duration-300 ease-in-out mx-0.5 sm:mx-1
+                    ${headTrackingEnabled ? 'translate-x-4 sm:translate-x-5' : 'translate-x-0'}
+                  `}></div>
+                </div>
+              </div>
+              <span className="text-xs sm:text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                Head Tracking
+              </span>
+            </label>
+          </div>
         </div>
 
-        {/* Main Interview Interface */}
-        <div className="flex flex-col lg:flex-row h-[calc(100vh-80px)]">
-          {/* Left - AI Interviewer */}
+        <div className="flex flex-col lg:flex-row h-[80vh] lg:h-[85vh]">
+          {/* Left - Interviewer Video */}
           <div 
             className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6"
             style={{ 
@@ -218,35 +657,22 @@ function InterviewPage() {
             }}
           >
             <div className="h-full flex flex-col">
-              {/* AI Video Container */}
+              {/* Interviewer Video Container */}
               <div 
                 className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
                 style={{ borderColor: 'var(--color-border)' }}
               >
-                {/* ✅ FIXED: Add AI interviewer image */}
+                {/* Interviewer Image */}
                 <img
                   src="/assets/interview/interviewer_1.jpg"
-                  alt="AI Interviewer"
+                  alt="Michael Chen - Senior Engineering Manager"
                   className="w-full h-full object-cover"
-                  onError={(e) => {
-                    // Show fallback if image fails to load
-                    e.target.style.display = 'none';
-                    e.target.nextElementSibling.style.display = 'flex';
-                  }}
                 />
                 
-                {/* Fallback if image doesn't load */}
-                <div 
-                  className="absolute inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center"
-                  style={{ display: 'none' }}
-                >
-                  <div className="text-center text-white">
-                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <span className="text-2xl font-bold">AI</span>
-                    </div>
-                    <h3 className="text-lg font-semibold mb-2">AI Interviewer</h3>
-                    <p className="text-sm opacity-90">Ready to begin</p>
-                  </div>
+                {/* Interviewer Info Overlay */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
+                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Michael Chen</h3>
+                  <p className="text-gray-200 text-sm md:text-base font-medium">Senior Engineering Manager</p>
                 </div>
 
                 {/* Live Indicator */}
@@ -282,7 +708,32 @@ function InterviewPage() {
                   className="w-full h-full object-cover"
                 />
 
-                {/* Processing State - REMOVED: No longer needed since we have separate loading states */}
+                {/* Processing State */}
+                {isChatLoading && (
+                  <motion.div
+                    className="absolute inset-0 flex items-center justify-center"
+                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <div 
+                      className="rounded-xl p-6 text-center shadow-2xl"
+                      style={{ backgroundColor: 'var(--color-card)' }}
+                    >
+                      <div 
+                        className="w-10 h-10 border-3 border-t-transparent rounded-full animate-spin mx-auto mb-3"
+                        style={{ borderColor: 'var(--color-primary)' }}
+                      ></div>
+                      <p 
+                        className="font-medium"
+                        style={{ color: 'var(--color-text-primary)' }}
+                      >
+                        Processing...
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
                 
                 {/* User Camera Label */}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
@@ -312,8 +763,8 @@ function InterviewPage() {
             <ChatWindow
               conversation={conversation}
               setConversation={setConversation}
-              isLoading={isChatLoading} // ✅ FIXED: Use chat-specific loading state
-              setIsLoading={setIsChatLoading} // ✅ FIXED: Use chat-specific loading state
+              isLoading={isChatLoading}
+              setIsLoading={setIsChatLoading}
             />
           </div>
         </div>

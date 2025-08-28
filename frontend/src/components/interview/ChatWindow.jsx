@@ -474,7 +474,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           {/* End Interview Button */}
           <button
             onClick={handleEndInterview}
-            className="px-6 py-3 bg-transparent border-2 font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center gap-2"
+            className="ml-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base bg-transparent border-2 font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap"
             style={{
               borderColor: 'var(--color-error)',
               color: 'var(--color-error)',
@@ -490,8 +490,8 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             }}
             title="End Interview"
           >
-            <Square size={16} />
-            End Interview
+            <span className="hidden sm:inline">End Interview</span>
+            <span className="sm:hidden">End</span>
           </button>
         </div>
         

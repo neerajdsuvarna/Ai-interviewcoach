@@ -74,6 +74,258 @@ device = get_device()
 interview_instances = {}
 from INTERVIEW.Interview_manager import InterviewManager
 
+# ─────────────────────────────────────────────────────
+# Head Tracking Implementation
+# ─────────────────────────────────────────────────────
+
+class EyeContactDetector_Callib():
+    def __init__(self):
+        self.FACE_3D_IDX = [1, 33, 263, 61, 291, 199] 
+        self.left_eye_idx = [33, 133, 159, 145]
+        self.left_iris_idx = 468
+        self.right_eye_idx = [362, 263, 386, 374]
+        self.right_iris_idx = 473
+
+        self.calibrated = False
+        self.eye_threshold = 0.25
+        self.head_threshold = 30
+        # Absolute limits for iris position (0 = extreme left/top, 1 = extreme right/bottom)
+        self.horizontal_eye_limits = (0.2, 0.8)
+        self.vertical_eye_limits = (0.2, 0.8)
+
+        self.baseline = {
+            "left_eye": None,
+            "right_eye": None,
+            "yaw": None,
+            "pitch": None,
+        }
+
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.face_mesh = self.mp_face_mesh.FaceMesh(
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+
+    def reset_calibration(self):
+        """Reset calibration state for new session"""
+        self.calibrated = False
+        self.baseline = {
+            "left_eye": None,
+            "right_eye": None,
+            "yaw": None,
+            "pitch": None,
+        }
+        print("[DEBUG] Calibration state reset for new session")
+
+    def get_eye_ratios(self, landmarks, eye_idx, iris_idx, w, h):
+        try:
+            left = landmarks[eye_idx[0]]
+            right = landmarks[eye_idx[1]]
+            top = landmarks[eye_idx[2]]
+            bottom = landmarks[eye_idx[3]]
+            iris = landmarks[iris_idx]
+
+            x_left, x_right = left.x * w, right.x * w
+            y_top, y_bottom = top.y * h, bottom.y * h
+            iris_x, iris_y = iris.x * w, iris.y * h
+
+            horizontal_ratio = (iris_x - x_left) / (x_right - x_left + 1e-6)
+            vertical_ratio = (iris_y - y_top) / (y_bottom - y_top + 1e-6)
+
+            return horizontal_ratio, vertical_ratio
+        except Exception as e:
+            print(f"Error in get_eye_ratios: {e}")
+            return 0.5, 0.5  # Return center position as fallback
+
+    def get_head_pose(self, landmarks, w, h):
+        try:
+            face_2d, face_3d = [], []
+            for idx in self.FACE_3D_IDX:
+                lm = landmarks[idx]
+                x, y = int(lm.x * w), int(lm.y * h)
+                face_2d.append([x, y])
+                face_3d.append([x, y, lm.z * 3000])
+            face_2d = np.array(face_2d, dtype=np.float64)
+            face_3d = np.array(face_3d, dtype=np.float64)
+
+            cam_matrix = np.array([[w, 0, w / 2],
+                                   [0, w, h / 2],
+                                   [0, 0, 1]])
+            dist_coeffs = np.zeros((4, 1))
+
+            _, rot_vec, _ = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_coeffs)
+            rmat, _ = cv2.Rodrigues(rot_vec)
+            angles, _, _, _, _, _ = cv2.RQDecomp3x3(rmat)
+            yaw, pitch = angles[1], angles[0]
+
+            return yaw, pitch
+        except Exception as e:
+            print(f"Error in get_head_pose: {e}")
+            return 0.0, 0.0  # Return neutral position as fallback
+
+    def calibrate(self, landmarks, w, h):
+        try:
+            left_eye = self.get_eye_ratios(landmarks, self.left_eye_idx, self.left_iris_idx, w, h)
+            right_eye = self.get_eye_ratios(landmarks, self.right_eye_idx, self.right_iris_idx, w, h)
+            yaw, pitch = self.get_head_pose(landmarks, w, h)
+
+            self.baseline["left_eye"] = left_eye
+            self.baseline["right_eye"] = right_eye
+            self.baseline["yaw"] = yaw
+            self.baseline["pitch"] = pitch
+
+            self.calibrated = True
+            print("Calibration completed:", self.baseline)
+        except Exception as e:
+            print(f"Error in calibrate: {e}")
+            # Don't set calibrated to True if there's an error
+            self.calibrated = False
+
+    def is_looking_at_camera_pre_calibration(self, landmarks, w, h):
+        """Check if person is looking at camera before calibration using basic heuristics"""
+        left_eye = self.get_eye_ratios(landmarks, self.left_eye_idx, self.left_iris_idx, w, h)
+        right_eye = self.get_eye_ratios(landmarks, self.right_eye_idx, self.right_iris_idx, w, h)
+        
+        # Check if iris is within reasonable bounds
+        left_h, left_v = left_eye
+        right_h, right_v = right_eye
+        
+        # Check horizontal position (should be roughly centered)
+        left_centered = bool(self.horizontal_eye_limits[0] <= left_h <= self.horizontal_eye_limits[1])
+        right_centered = bool(self.horizontal_eye_limits[0] <= right_h <= self.horizontal_eye_limits[1])
+        
+        # Check vertical position (should be roughly centered)
+        left_vertical_centered = bool(self.vertical_eye_limits[0] <= left_v <= self.vertical_eye_limits[1])
+        right_vertical_centered = bool(self.vertical_eye_limits[0] <= right_v <= self.vertical_eye_limits[1])
+        
+        # Both eyes should be reasonably centered
+        return bool(left_centered and right_centered and left_vertical_centered and right_vertical_centered)
+
+    def is_looking_at_camera(self, landmarks, w, h):
+        if not self.calibrated:
+            return self.is_looking_at_camera_pre_calibration(landmarks, w, h)
+
+        left_eye = self.get_eye_ratios(landmarks, self.left_eye_idx, self.left_iris_idx, w, h)
+        right_eye = self.get_eye_ratios(landmarks, self.right_eye_idx, self.right_iris_idx, w, h)
+        yaw, pitch = self.get_head_pose(landmarks, w, h)
+
+        # Calculate differences from baseline
+        left_diff = np.sqrt((left_eye[0] - self.baseline["left_eye"][0])**2 + 
+                           (left_eye[1] - self.baseline["left_eye"][1])**2)
+        right_diff = np.sqrt((right_eye[0] - self.baseline["right_eye"][0])**2 + 
+                            (right_eye[1] - self.baseline["right_eye"][1])**2)
+        
+        yaw_diff = abs(yaw - self.baseline["yaw"])
+        pitch_diff = abs(pitch - self.baseline["pitch"])
+
+        # Check if within thresholds
+        eye_ok = bool(left_diff < self.eye_threshold and right_diff < self.eye_threshold)
+        head_ok = bool(yaw_diff < self.head_threshold and pitch_diff < self.head_threshold)
+
+        return eye_ok and head_ok
+
+    def process(self, frame, is_calibrating=False):
+        h, w = frame.shape[:2]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb)
+
+        if not results.multi_face_landmarks:
+            # Debug: Log when no face is detected
+            if hasattr(self, '_no_face_counter'):
+                self._no_face_counter += 1
+            else:
+                self._no_face_counter = 0
+            
+            if self._no_face_counter % 10 == 0:  # Log every 10th no-face detection
+                print(f"[DEBUG] No face detected (counter: {self._no_face_counter})")
+            
+            if is_calibrating:
+                return {
+                    "looking": False,
+                    "ready_for_calibration": False,
+                    "message": "No face detected"
+                }
+            else:
+                return {
+                    "looking": False,
+                    "message": "No face detected"
+                }
+
+        landmarks = results.multi_face_landmarks[0].landmark
+        
+        # Debug: Log when face is detected
+        if hasattr(self, '_face_detected_counter'):
+            self._face_detected_counter += 1
+        else:
+            self._face_detected_counter = 0
+        
+        if self._face_detected_counter % 50 == 0:  # Log every 50th face detection
+            print(f"[DEBUG] Face detected (counter: {self._face_detected_counter})")
+        
+        if is_calibrating:
+            # Only calibrate if not already calibrated
+            if self.calibrated:
+                print("[DEBUG] Already calibrated, skipping calibration")
+                return {
+                    "looking": bool(self.is_looking_at_camera(landmarks, w, h))
+                }
+            
+            if self.is_looking_at_camera_pre_calibration(landmarks, w, h):
+                self.calibrate(landmarks, w, h)
+                return {
+                    "calibrated": True,
+                    "looking": True,
+                    "ready_for_calibration": False,
+                    "message": "Calibration successful"
+                }
+            else:
+                return {
+                    "calibrated": False,
+                    "looking": False,
+                    "ready_for_calibration": True,
+                    "message": "Please look directly at the camera"
+                }
+        else:
+            # During normal monitoring (including calibration check phase)
+            looking = self.is_looking_at_camera(landmarks, w, h)
+            
+            # If not calibrated yet, also check if ready for calibration
+            if not self.calibrated:
+                ready_for_calibration = self.is_looking_at_camera_pre_calibration(landmarks, w, h)
+                return {
+                    "looking": bool(looking),
+                    "ready_for_calibration": bool(ready_for_calibration)
+                }
+            else:
+                # After calibration, only check if currently looking
+                return {
+                    "looking": bool(looking)
+                }
+
+# Global detector instance
+detector = EyeContactDetector_Callib()
+
+def decode_image(img_data):
+    try:
+        # Check if img_data looks like a base64 data URL
+        if "," not in img_data:
+            raise ValueError("Image data does not contain a comma separator")
+
+        header, encoded = img_data.split(",", 1)
+        if not encoded:
+            raise ValueError("No encoded data found after header")
+
+        img_bytes = base64.b64decode(encoded)
+        img = Image.open(BytesIO(img_bytes))
+        cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        return cv_img
+
+    except (ValueError, base64.binascii.Error, UnidentifiedImageError) as e:
+        print(f"decode_image error: {e}")
+        return None
+
 # Add at the top with other imports
 import os
 from supabase import create_client, Client
@@ -1157,6 +1409,108 @@ def list_audio_files():
             "success": False,
             "message": f"Internal server error: {str(e)}"
         }), 500
+
+# ─────────────────────────────────────────────────────
+# Head Tracking Socket.IO Endpoints
+# ─────────────────────────────────────────────────────
+
+# Socket.IO connection handlers
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected to head tracking socket')
+    emit('response', {'message': 'Connected to head tracking service'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected from head tracking socket')
+
+# Socket.IO frame handler for head tracking
+@socketio.on("frame")
+def handle_frame(data):
+    try:
+        img_data = data.get("image")
+        calibrate = data.get("calibrate", False)
+
+        if not img_data:
+            emit("response", {"error": "No image data provided"})
+            return
+
+        frame = decode_image(img_data)
+        if frame is None:
+            emit("response", {"error": "Invalid image data"})
+            return
+
+        result = detector.process(frame, is_calibrating=calibrate)
+        
+        # Debug: Log calibration attempts
+        if calibrate:
+            print(f"[DEBUG] Calibration request received - result: {result}")
+        else:
+            # Only log occasionally to avoid spam
+            if hasattr(handle_frame, '_log_counter'):
+                handle_frame._log_counter += 1
+            else:
+                handle_frame._log_counter = 0
+            
+            if handle_frame._log_counter % 50 == 0:  # Log every 50th frame
+                print(f"[DEBUG] Normal monitoring frame - result: {result}")
+            
+            # Check for unexpected calibration results during normal monitoring
+            if result.get('calibrated', False):
+                print(f"[ERROR] Unexpected calibration result during normal monitoring: {result}")
+            
+        emit("response", result)
+    except Exception as e:
+        print(f"Error in handle_frame: {e}")
+        import traceback
+        traceback.print_exc()
+        emit("response", {"error": "Internal server error"})
+
+# Socket.IO reset calibration handler
+@socketio.on("reset_calibration")
+def handle_reset_calibration():
+    try:
+        detector.reset_calibration()
+        emit("response", {"calibration_reset": True})
+    except Exception as e:
+        print(f"Error in reset_calibration: {e}")
+        emit("response", {"error": "Failed to reset calibration"})
+
+# ─────────────────────────────────────────────────────
+# Person Detection API (for when eye tracking is disabled)
+# ─────────────────────────────────────────────────────
+
+mp_fd = mp.solutions.face_detection
+MP_DETECT = mp_fd.FaceDetection(model_selection=0, min_detection_confidence=0.5)
+DETECT_LOCK = threading.Lock()
+
+@atexit.register
+def _cleanup():
+    MP_DETECT.close()
+
+@app.route("/api/detect_person", methods=["POST"])
+def detect_person():
+    data = request.get_json(silent=True)
+    if not data or "image" not in data:
+        return jsonify({"error": "Missing 'image' key"}), 400
+
+    try:
+        _, b64 = data["image"].split(",", 1)
+        img_np = np.frombuffer(base64.b64decode(b64), dtype=np.uint8)
+        rgb = cv2.cvtColor(cv2.imdecode(img_np, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    except Exception:
+        return jsonify({"error": "Bad image data"}), 400
+
+    with DETECT_LOCK:
+        results = MP_DETECT.process(rgb)
+
+    n = 0 if results.detections is None else len(results.detections)
+
+    if n == 1:
+        return jsonify({"status": "single"})
+    if n == 0:
+        return jsonify({"status": "none", "message": "No person detected"})
+    return jsonify({"status": "multiple", "message": "Multiple people detected"})
 
 if __name__ == '__main__': 
     socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)
