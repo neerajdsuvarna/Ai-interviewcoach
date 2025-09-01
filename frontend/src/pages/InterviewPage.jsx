@@ -28,7 +28,7 @@ function InterviewPage() {
     {
       id: 1,
       speaker: 'interviewer',
-      message: 'Good morning. I\'m Michael Chen, Senior Engineering Manager at TechCorp. Thank you for joining us today. Let\'s begin with your introduction - please tell us about your background and what interests you about this position.',
+      message: 'Speak to start the interview.',
       timestamp: new Date().toLocaleTimeString()
     }
   ]);

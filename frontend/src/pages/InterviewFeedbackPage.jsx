@@ -19,6 +19,217 @@ import Navbar from '@/components/Navbar';
 import FeedbackLoading from '@/components/interview/FeedbackLoading';
 import { supabase } from '@/supabaseClient';
 
+// PDF generation functions
+const generateInterviewPDF = (feedbackData, transcriptData, getOverallRating, getRatingLabel, getInterviewDuration, getQuestionsAnswered, formatKeyStrengths, formatImprovementAreas) => {
+  // Import jsPDF dynamically to avoid SSR issues
+  import('jspdf').then(({ default: jsPDF }) => {
+    import('jspdf-autotable').then(({ default: autoTable }) => {
+      const doc = new jsPDF();
+      
+      // Set document properties
+      doc.setProperties({
+        title: 'Interview Feedback Report',
+        subject: 'Comprehensive Interview Analysis',
+        author: 'Interview Coach Platform',
+        creator: 'Interview Coach Platform'
+      });
+
+      // Page dimensions
+      const pageWidth = doc.internal.pageSize.width;
+      const margin = 20;
+      let yPosition = 30;
+
+      // Title
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(44, 62, 80);
+      doc.text('Interview Feedback Report', pageWidth / 2, yPosition, { align: 'center' });
+      yPosition += 20;
+
+      // Interview Details
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(52, 73, 94);
+      doc.text('Interview Details', margin, yPosition);
+      yPosition += 15;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(44, 62, 80);
+      
+      const interviewDate = new Date(feedbackData.created_at).toLocaleDateString();
+      const interviewTime = new Date(feedbackData.created_at).toLocaleTimeString();
+      
+      doc.text(`Date: ${interviewDate}`, margin, yPosition);
+      yPosition += 8;
+      doc.text(`Time: ${interviewTime}`, margin, yPosition);
+      yPosition += 8;
+      doc.text(`Interview ID: ${feedbackData.interview_id.slice(0, 8)}...`, margin, yPosition);
+      yPosition += 15;
+
+      // Overall Performance
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(52, 73, 94);
+      doc.text('Overall Performance', margin, yPosition);
+      yPosition += 15;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(44, 62, 80);
+      
+      doc.text(`Rating: ${getOverallRating()}/10 (${getRatingLabel()})`, margin, yPosition);
+      yPosition += 8;
+      doc.text(`Duration: ${getInterviewDuration()}`, margin, yPosition);
+      yPosition += 8;
+      doc.text(`Responses Given: ${getQuestionsAnswered()}`, margin, yPosition);
+      yPosition += 15;
+
+      // Executive Summary
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(52, 73, 94);
+      doc.text('Executive Summary', margin, yPosition);
+      yPosition += 15;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(44, 62, 80);
+      
+      const summary = feedbackData.summary || 'No summary available';
+      const summaryLines = doc.splitTextToSize(summary, pageWidth - 2 * margin);
+      summaryLines.forEach((line, index) => {
+        if (yPosition > doc.internal.pageSize.height - 30) {
+          doc.addPage();
+          yPosition = 30;
+        }
+        doc.text(line, margin, yPosition);
+        yPosition += 6;
+      });
+      yPosition += 10;
+
+      // Key Strengths
+      if (feedbackData.key_strengths) {
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(52, 73, 94);
+        doc.text('Key Strengths', margin, yPosition);
+        yPosition += 15;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(44, 62, 80);
+        
+        const strengths = formatKeyStrengths(feedbackData.key_strengths);
+        strengths.forEach((strength, index) => {
+          if (yPosition > doc.internal.pageSize.height - 30) {
+            doc.addPage();
+            yPosition = 30;
+          }
+          doc.text(`${index + 1}. ${strength}`, margin, yPosition);
+          yPosition += 8;
+        });
+        yPosition += 10;
+      }
+
+      // Areas for Improvement
+      if (feedbackData.improvement_areas) {
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(52, 73, 94);
+        doc.text('Areas for Improvement', margin, yPosition);
+        yPosition += 15;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(44, 62, 80);
+        
+        const improvements = formatImprovementAreas(feedbackData.improvement_areas);
+        improvements.forEach((improvement, index) => {
+          if (yPosition > doc.internal.pageSize.height - 30) {
+            doc.addPage();
+            yPosition = 30;
+          }
+          doc.text(`${index + 1}. ${improvement}`, margin, yPosition);
+          yPosition += 8;
+        });
+        yPosition += 10;
+      }
+
+      // Full Transcript
+      if (transcriptData) {
+        doc.addPage();
+        yPosition = 30;
+        
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(52, 73, 94);
+        doc.text('Full Interview Transcript', margin, yPosition);
+        yPosition += 15;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(44, 62, 80);
+        
+        const transcript = JSON.parse(transcriptData.full_transcript);
+        doc.text(`Total Messages: ${transcript.length}`, margin, yPosition);
+        yPosition += 8;
+        doc.text(`Interviewer Questions: ${transcript.filter(m => m.role === 'assistant').length}`, margin, yPosition);
+        yPosition += 8;
+        doc.text(`Candidate Responses: ${transcript.filter(m => m.role === 'user').length}`, margin, yPosition);
+        yPosition += 15;
+
+        // Transcript messages
+        transcript.forEach((message, index) => {
+          if (yPosition > doc.internal.pageSize.height - 30) {
+            doc.addPage();
+            yPosition = 30;
+          }
+          
+          const role = message.role === 'assistant' ? 'Interviewer' : 'Candidate';
+          const roleColor = message.role === 'assistant' ? [52, 152, 219] : [46, 204, 113];
+          
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(...roleColor);
+          doc.text(`[${index + 1}] ${role}:`, margin, yPosition);
+          
+          const messageX = margin + 40;
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(44, 62, 80);
+          
+          const messageLines = doc.splitTextToSize(message.content, pageWidth - messageX - margin);
+          messageLines.forEach((line, lineIndex) => {
+            if (yPosition > doc.internal.pageSize.height - 30) {
+              doc.addPage();
+              yPosition = 30;
+            }
+            doc.text(line, messageX, yPosition);
+            yPosition += 5;
+          });
+          yPosition += 8;
+        });
+      }
+
+      // Footer
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(128, 128, 128);
+        doc.text(`Page ${i} of ${totalPages}`, pageWidth / 2, doc.internal.pageSize.height - 10, { align: 'center' });
+        doc.text('Interview Coach Platform', pageWidth / 2, doc.internal.pageSize.height - 5, { align: 'center' });
+      }
+
+      // Save the PDF
+      const fileName = `interview-report-${feedbackData.interview_id.slice(0, 8)}-${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(fileName);
+    });
+  });
+};
+
 function InterviewFeedbackPage() {
   const { isDark } = useTheme();
   const navigate = useNavigate();
@@ -106,9 +317,22 @@ function InterviewFeedbackPage() {
   }, [interviewId]);
 
   const getOverallRating = () => {
-    // This would be calculated based on the actual interview evaluation
-    // For now, returning a placeholder rating
-    // In the future, this could be calculated from the feedback data
+    // Extract overall rating from the summary text if available
+    if (feedbackData?.summary) {
+      // Look for pattern like "Overall Rating: X.X/10" or "(Overall Rating: X.X/10)"
+      const ratingMatch = feedbackData.summary.match(/\(?Overall Rating:\s*(\d+\.?\d*)\/10\)?/i);
+      if (ratingMatch && ratingMatch[1]) {
+        return parseFloat(ratingMatch[1]);
+      }
+      
+      // Alternative pattern: look for "X.X/10" at the end of the summary
+      const endRatingMatch = feedbackData.summary.match(/(\d+\.?\d*)\/10\s*\)?\s*$/i);
+      if (endRatingMatch && endRatingMatch[1]) {
+        return parseFloat(endRatingMatch[1]);
+      }
+    }
+    
+    // Fallback to default rating if no rating found in summary
     return 7.5; // Out of 10
   };
 
@@ -118,11 +342,139 @@ function InterviewFeedbackPage() {
     return 'text-red-500';
   };
 
-  const getRatingLabel = (rating) => {
+  const getRatingLabel = () => {
+    // Extract the actual rating label from the summary text (between ** ** markers)
+    if (feedbackData?.summary) {
+      // Look for patterns like "**weak**", "**strong**", "**average**" in the summary
+      const labelMatch = feedbackData.summary.match(/\*\*(weak|strong|average)\*\*/i);
+      if (labelMatch && labelMatch[1]) {
+        return labelMatch[1].charAt(0).toUpperCase() + labelMatch[1].slice(1).toLowerCase();
+      }
+    }
+    
+    // Fallback to rating-based labels if no label found in summary
+    const rating = getOverallRating();
     if (rating >= 8) return 'Excellent';
     if (rating >= 6) return 'Good';
     if (rating >= 4) return 'Average';
     return 'Needs Improvement';
+  };
+
+  const getRatingIconColor = () => {
+    // Get the rating label and return appropriate color for the tick mark
+    const label = getRatingLabel().toLowerCase();
+    
+    if (label === 'strong') return 'text-green-500';
+    if (label === 'average') return 'text-yellow-500';
+    if (label === 'weak') return 'text-red-500';
+    
+    // Fallback to rating-based colors
+    const rating = getOverallRating();
+    if (rating >= 8) return 'text-green-500';
+    if (rating >= 6) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
+  const formatKeyStrengths = (strengthsText) => {
+    if (!strengthsText) return [];
+    
+    // Split by numbered points (1., 2., 3., etc.)
+    const points = strengthsText.split(/\d+\.\s*/).filter(point => point.trim());
+    
+    // Clean up each point and return as array
+    return points.map(point => point.trim());
+  };
+
+  const formatImprovementAreas = (improvementsText) => {
+    if (!improvementsText) return [];
+    
+    // Split by numbered points (1., 2., 3., etc.)
+    const points = improvementsText.split(/\d+\.\s*/).filter(point => point.trim());
+    
+    // Clean up each point and return as array
+    return points.map(point => point.trim());
+  };
+
+  const formatSummary = (summaryText) => {
+    if (!summaryText) return '';
+    
+    // Remove the overall rating part since it's displayed elsewhere
+    let cleanedSummary = summaryText.replace(/\(?Overall Rating:\s*\d+\.?\d*\/10\)?/gi, '');
+    
+    // Clean up any extra spaces or punctuation that might be left
+    cleanedSummary = cleanedSummary.replace(/\s+/g, ' ').trim();
+    
+    // Remove trailing punctuation if it ends with a period after cleaning
+    cleanedSummary = cleanedSummary.replace(/\.$/, '');
+    
+    return cleanedSummary;
+  };
+
+  const getInterviewDuration = () => {
+    if (feedbackData?.interview_duration_minutes) {
+      const minutes = feedbackData.interview_duration_minutes;
+      if (minutes < 60) {
+        return `${minutes} min`;
+      } else {
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+      }
+    }
+    return '25 min'; // Fallback
+  };
+
+  const getQuestionsAnswered = () => {
+    if (feedbackData?.responses_count !== undefined) {
+      return feedbackData.responses_count;
+    }
+    return 12; // Fallback
+  };
+
+  const downloadInterviewReport = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Fetch transcript data if not already available
+      let transcriptData = null;
+      if (feedbackData?.interview_id) {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const transcriptResponse = await fetch(`${supabaseUrl}/functions/v1/transcripts?interview_id=${feedbackData.interview_id}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (transcriptResponse.ok) {
+          const transcriptResult = await transcriptResponse.json();
+          if (transcriptResult.success && transcriptResult.data && transcriptResult.data.length > 0) {
+            transcriptData = transcriptResult.data[0];
+          }
+        }
+      }
+
+      // Generate and download PDF
+      generateInterviewPDF(
+        feedbackData, 
+        transcriptData, 
+        getOverallRating, 
+        getRatingLabel, 
+        getInterviewDuration, 
+        getQuestionsAnswered, 
+        formatKeyStrengths, 
+        formatImprovementAreas
+      );
+      
+    } catch (error) {
+      console.error('Error downloading interview report:', error);
+      alert('Failed to download interview report. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Show loading screen
@@ -230,12 +582,19 @@ function InterviewFeedbackPage() {
             >
               
               <div className="flex items-center gap-2">
-                <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors hover:scale-105 active:scale-95">
+                <button 
+                  onClick={downloadInterviewReport}
+                  disabled={isLoading}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Download Interview Report (PDF)"
+                >
                   <Download size={18} style={{ color: 'var(--color-text-primary)' }} />
                 </button>
+                {/* Share button commented out for now
                 <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors hover:scale-105 active:scale-95">
                   <Share2 size={18} style={{ color: 'var(--color-text-primary)' }} />
                 </button>
+                */}
               </div>
             </motion.div>
           </motion.div>
@@ -274,14 +633,14 @@ function InterviewFeedbackPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center mx-auto mb-3">
-                      <CheckCircle size={24} className="text-green-500" />
+                    <div className={`w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center mx-auto mb-3`}>
+                      <CheckCircle size={24} className={getRatingIconColor()} />
                     </div>
                     <h3 
                       className="font-semibold mb-1"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
-                      {getRatingLabel(getOverallRating())}
+                      {getRatingLabel()}
                     </h3>
                     <p 
                       className="text-sm"
@@ -299,7 +658,7 @@ function InterviewFeedbackPage() {
                       className="font-semibold mb-1"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
-                      25 min
+                      {getInterviewDuration()}
                     </h3>
                     <p 
                       className="text-sm"
@@ -317,13 +676,13 @@ function InterviewFeedbackPage() {
                       className="font-semibold mb-1"
                       style={{ color: 'var(--color-text-primary)' }}
                     >
-                      12
+                      {getQuestionsAnswered()}
                     </h3>
                     <p 
                       className="text-sm"
                       style={{ color: 'var(--color-text-secondary)' }}
                     >
-                      Questions Answered
+                      Responses Given
                     </p>
                   </div>
                 </div>
@@ -357,9 +716,27 @@ function InterviewFeedbackPage() {
                   </div>
                   
                   <div className="space-y-3">
-                    <p style={{ color: 'var(--color-text-primary)' }}>
-                      {feedbackData.key_strengths || 'No key strengths data available.'}
-                    </p>
+                    {feedbackData.key_strengths ? (
+                      formatKeyStrengths(feedbackData.key_strengths).map((strength, index) => (
+                        <div key={index} className="flex items-start gap-3">
+                          <div className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <span className="text-xs font-semibold text-green-600 dark:text-green-400">
+                              {index + 1}
+                            </span>
+                          </div>
+                          <p 
+                            className="text-sm leading-relaxed"
+                            style={{ color: 'var(--color-text-primary)' }}
+                          >
+                            {strength}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p style={{ color: 'var(--color-text-primary)' }}>
+                        No key strengths data available.
+                      </p>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -390,9 +767,27 @@ function InterviewFeedbackPage() {
                   </div>
                   
                   <div className="space-y-3">
-                    <p style={{ color: 'var(--color-text-primary)' }}>
-                      {feedbackData.improvement_areas || 'No improvement areas data available.'}
-                    </p>
+                    {feedbackData.improvement_areas ? (
+                      formatImprovementAreas(feedbackData.improvement_areas).map((improvement, index) => (
+                        <div key={index} className="flex items-start gap-3">
+                          <div className="w-6 h-6 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                              {index + 1}
+                            </span>
+                          </div>
+                          <p 
+                            className="text-sm leading-relaxed"
+                            style={{ color: 'var(--color-text-primary)' }}
+                          >
+                            {improvement}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p style={{ color: 'var(--color-text-primary)' }}>
+                        No improvement areas data available.
+                      </p>
+                    )}
                   </div>
                 </div>
               </motion.div>
@@ -411,7 +806,7 @@ function InterviewFeedbackPage() {
                   borderColor: 'var(--color-border)' 
                 }}
               >
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-6">
                   <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
                     <BookOpen size={20} className="text-blue-500" />
                   </div>
@@ -424,10 +819,53 @@ function InterviewFeedbackPage() {
                 </div>
                 
                 <div className="prose max-w-none">
-                  <p style={{ color: 'var(--color-text-primary)' }}>
-                    {feedbackData.summary || 'No summary data available.'}
-                  </p>
+                  {feedbackData.summary ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5 }}
+                      className="p-4 rounded-xl transition-all duration-300 hover:scale-[1.01]"
+                      style={{ 
+                        backgroundColor: 'var(--color-bg)',
+                        border: '1px solid var(--color-border)'
+                      }}
+                    >
+                      <p 
+                        className="text-base leading-relaxed text-justify"
+                        style={{ color: 'var(--color-text-primary)' }}
+                      >
+                        {formatSummary(feedbackData.summary)}
+                      </p>
+                    </motion.div>
+                  ) : (
+                    <p style={{ color: 'var(--color-text-primary)' }}>
+                      No summary data available.
+                    </p>
+                  )}
                 </div>
+                
+                {/* Summary footer with quick stats */}
+                {feedbackData.summary && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.6 }}
+                    className="mt-6 pt-6 border-t"
+                    style={{ borderColor: 'var(--color-border)' }}
+                  >
+                    <div className="flex items-center justify-end">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                        <span 
+                          className="text-sm font-medium"
+                          style={{ color: 'var(--color-text-secondary)' }}
+                        >
+                          Comprehensive evaluation
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </div>
             </motion.div>
 

@@ -287,7 +287,11 @@ def generate_followup_question(original_question, weak_response):
     """
     try:
         res = ollama.chat(model="llama3", messages=[{"role": "system", "content": prompt}])
-        return res["message"]["content"].strip()
+        content = res["message"]["content"].strip()
+        # Remove quotes from beginning and end if present
+        if content.startswith('"') and content.endswith('"'):
+            content = content[1:-1]
+        return content
 
     except:
         return "Could you elaborate a bit more on that?"
@@ -339,7 +343,11 @@ def generate_custom_followup(question, last_response):
     """
     try:
         result = ollama.chat(model="llama3", messages=[{"role": "system", "content": prompt}])
-        return result["message"]["content"].strip()
+        content = result["message"]["content"].strip()
+        # Remove quotes from beginning and end if present
+        if content.startswith('"') and content.endswith('"'):
+            content = content[1:-1]
+        return content
 
     except Exception:
         return "Could you clarify your thinking or give an example?"
@@ -355,18 +363,22 @@ def generate_model_answer(question):
         Give a **short** model answer in 2–3 concise sentences:
         - Clearly explain the key concept.
         - If helpful, include a quick example.
-        - End with “That’s how you could approach it.”
+        - End with "That's how you could approach it."
 
         Keep it crisp and under 50 words.
         Only return the answer — no explanation or extra text.
         """
     try:
         result = ollama.chat(model="llama3", messages=[{"role": "system", "content": prompt}])
-        return result["message"]["content"].strip()
+        content = result["message"]["content"].strip()
+        # Remove quotes from beginning and end if present
+        if content.startswith('"') and content.endswith('"'):
+            content = content[1:-1]
+        return content
 
     except Exception as e:
         print(f"[ERROR] generate_model_answer failed: {e}")
-        return "Tuples are immutable; lists are not. Use tuples when values shouldn't change. That’s how you could approach it."
+        return "Tuples are immutable; lists are not. Use tuples when values shouldn't change. That's how you could approach it."
 
 # ===== END OF - FUCNTIONS USED FOR CUSTOM QUESTIONS ====== 
 
@@ -601,63 +613,44 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
     Be specific, constructive, and relevant to the {job_title} position. Base your analysis on the actual conversation and evaluation data provided.
     """
 
-    try:
-        result = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
-        response_text = result["message"]["content"].strip()
-        
-        # print(f"[DEBUG] AI Response for comprehensive evaluation: {response_text}")
-        
-        # Try to parse JSON response
+    max_retries = 100
+    for attempt in range(max_retries):
         try:
-            # First, try to extract JSON from the response
+            result = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
+            response_text = result["message"]["content"].strip()
+
+            # Try to extract JSON
             json_start = response_text.find('{')
             json_end = response_text.rfind('}') + 1
-            
             if json_start != -1 and json_end != 0:
                 json_text = response_text[json_start:json_end]
-                # print(f"[DEBUG] Extracted JSON text: {json_text}")
                 json_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_text)
                 parsed_response = json.loads(json_text)
-                # print(f"[DEBUG] Successfully parsed JSON: {parsed_response}")
-                
-                return {
-                    'summary': parsed_response.get('summary', ''),
-                    'key_strengths': parsed_response.get('key_strengths', ''),
-                    'improvement_areas': parsed_response.get('improvement_areas', ''),
-                    'overall_rating': parsed_response.get('overall_rating', avg_knowledge_rating)
-                }
             else:
-                # If no JSON brackets found, try parsing the whole response
                 parsed_response = json.loads(response_text)
-                return {
-                    'summary': parsed_response.get('summary', ''),
-                    'key_strengths': parsed_response.get('key_strengths', ''),
-                    'improvement_areas': parsed_response.get('improvement_areas', ''),
-                    'overall_rating': parsed_response.get('overall_rating', avg_knowledge_rating)
-                }
-                
-        except json.JSONDecodeError as json_error:
-            print(f"[ERROR] JSON parsing failed: {json_error}")
-            print(f"[ERROR] Raw response: {response_text}")
+
+            # ✅ Success → return with rating in summary
             return {
-                'summary': 'Evaluation failed due to invalid JSON response.',
-                'key_strengths': '',
-                'improvement_areas': '',
-                'overall_rating': avg_knowledge_rating
+                'summary': parsed_response.get('summary', '') + f" (Overall Rating: {avg_knowledge_rating:.1f}/10)",
+                'key_strengths': parsed_response.get('key_strengths', ''),
+                'improvement_areas': parsed_response.get('improvement_areas', ''),
+                'overall_rating': parsed_response.get('overall_rating', avg_knowledge_rating)
             }
 
-            
-    except Exception as e:
-        print(f"[ERROR] generate_final_summary_review failed: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Ultimate fallback
-        return {
-            'summary': f"Interview evaluation completed for {job_title} position. Detailed analysis available in transcript and evaluation data.",
-            'key_strengths': 'Strengths analysis failed due to an error.',
-            'improvement_areas': 'Improvement areas analysis failed due to an error.',
-            'overall_rating': avg_knowledge_rating
-        }
+        except Exception as e:
+            print(f"[WARN] Attempt {attempt+1}/{max_retries} failed: {e}")
+            if attempt < max_retries - 1:
+                continue  # 🔁 retry again
+            else:
+                print("[ERROR] All retries failed")
+
+    # === Fallback if all retries fail ===
+    return {
+        'summary': f"Interview evaluation completed for {job_title} position. Detailed analysis available in transcript and evaluation data. (Overall Rating: {avg_knowledge_rating:.1f}/10)",
+        'key_strengths': 'Strengths analysis failed due to repeated errors.',
+        'improvement_areas': 'Improvement areas analysis failed due to repeated errors.',
+        'overall_rating': avg_knowledge_rating
+    }
+
 
 

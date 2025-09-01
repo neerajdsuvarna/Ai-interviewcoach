@@ -248,7 +248,7 @@ async function handleGetFeedbacks(supabaseClient: any, user: any, url: URL) {
     const sortOrder = params.get('sort_order') || 'desc'
     const interview_id = params.get('interview_id') // Optional filter by interview
     
-    // Build the query - use a join to ensure user owns the interview
+    // Build the query - use a join to ensure user owns the interview and get interview timing
     let query = supabaseClient
       .from('interview_feedback')
       .select(`
@@ -259,7 +259,10 @@ async function handleGetFeedbacks(supabaseClient: any, user: any, url: URL) {
         summary,
         audio_url,
         created_at,
-        interviews!inner(user_id)
+        interviews!inner(
+          user_id,
+          created_at
+        )
       `)
       .eq('interviews.user_id', user.id)
       .order(sortBy, { ascending: sortOrder === 'asc' })
@@ -286,21 +289,63 @@ async function handleGetFeedbacks(supabaseClient: any, user: any, url: URL) {
       )
     }
 
-    // Clean up the response to remove the interviews join data
-    const cleanedFeedbacks = feedbacks?.map(feedback => {
+    // Clean up the response and calculate interview duration and questions count
+    const cleanedFeedbacks = await Promise.all(feedbacks?.map(async (feedback) => {
       const { interviews, ...cleanFeedback } = feedback
-      return cleanFeedback
-    }) || []
+      
+      // Calculate interview duration in minutes
+      const interviewStart = new Date(interviews.created_at)
+      const interviewEnd = new Date(feedback.created_at)
+      const durationMs = interviewEnd.getTime() - interviewStart.getTime()
+      const durationMinutes = Math.round(durationMs / (1000 * 60))
+      
+      // Fetch transcript to count questions
+      let questionsCount = 0
+      try {
+        const { data: transcript } = await supabaseClient
+          .from('transcripts')
+          .select('full_transcript')
+          .eq('interview_id', feedback.interview_id)
+          .single()
+        
+        if (transcript?.full_transcript) {
+          try {
+            const transcriptData = JSON.parse(transcript.full_transcript)
+            if (Array.isArray(transcriptData)) {
+              // Count user responses (candidate answers) instead of assistant questions
+              questionsCount = transcriptData.filter(message => 
+                message.role === 'user'
+              ).length
+              
+              // Debug logging to verify
+              console.log(`Interview ${feedback.interview_id}: Found ${questionsCount} user responses in transcript`)
+              console.log('Total transcript messages:', transcriptData.length)
+              console.log('User messages:', transcriptData.filter(m => m.role === 'user').length)
+              console.log('Assistant messages:', transcriptData.filter(m => m.role === 'assistant').length)
+            }
+          } catch (parseError) {
+            console.log('Error parsing transcript JSON:', parseError)
+            questionsCount = 0
+          }
+        }
+      } catch (transcriptError) {
+        console.log('Error fetching transcript:', transcriptError)
+        questionsCount = 0
+      }
+      
+      return {
+        ...cleanFeedback,
+        interview_duration_minutes: durationMinutes,
+        interview_start_time: interviews.created_at,
+        responses_count: questionsCount  // Renamed to be more accurate
+      }
+    }) || [])
 
     return new Response(
       JSON.stringify({
         success: true,
         data: cleanedFeedbacks,
-        pagination: {
-          limit,
-          offset,
-          total: count || cleanedFeedbacks.length
-        }
+        count: count || cleanedFeedbacks.length
       }),
       {
         status: 200,
