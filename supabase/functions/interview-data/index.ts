@@ -84,19 +84,12 @@ serve(async (req) => {
 
     console.log(' Fetching interview data for:', interviewId);
 
-    // Get interview with job description and questions in one query
+    // Get interview with job description (questions fetched separately to support retakes)
     const { data: interview, error: interviewError } = await supabaseClient
       .from('interviews')
       .select(`
         *,
-        job_descriptions!inner(title, description),
-        questions!inner(
-          id,
-          question_text, 
-          expected_answer, 
-          difficulty_category,
-          question_set
-        )
+        job_descriptions!inner(title, description)
       `)
       .eq('id', interviewId)
       .eq('user_id', user.id)
@@ -117,9 +110,53 @@ serve(async (req) => {
       )
     }
 
+    // Determine the effective source for questions
+    let effectiveInterviewId = interview.id as string
+    let effectiveResumeId = interview.resume_id as string
+    let effectiveJdId = interview.jd_id as string
+    let effectiveQuestionSet = interview.question_set as number | null
+
+    if (interview.retake_from) {
+      // For retakes, use the original interview's identifiers to fetch the same questions
+      const { data: originalInterview } = await supabaseClient
+        .from('interviews')
+        .select('id, resume_id, jd_id, question_set')
+        .eq('id', interview.retake_from)
+        .single()
+
+      if (originalInterview) {
+        effectiveInterviewId = originalInterview.id
+        effectiveResumeId = originalInterview.resume_id
+        effectiveJdId = originalInterview.jd_id
+        effectiveQuestionSet = originalInterview.question_set
+      }
+    }
+
+    // Prefer fetching by (resume_id, jd_id, question_set) to avoid mixing sets
+    let allQuestions: any[] = []
+    if (effectiveQuestionSet !== null && effectiveQuestionSet !== undefined) {
+      const { data: questionsBySet } = await supabaseClient
+        .from('questions')
+        .select('id, question_text, expected_answer, difficulty_category, question_set')
+        .eq('resume_id', effectiveResumeId)
+        .eq('jd_id', effectiveJdId)
+        .eq('question_set', effectiveQuestionSet)
+
+      allQuestions = questionsBySet || []
+    }
+
+    // Fallback: if question_set is missing, try by interview_id
+    if ((!allQuestions || allQuestions.length === 0) && effectiveInterviewId) {
+      const { data: questionsByInterview } = await supabaseClient
+        .from('questions')
+        .select('id, question_text, expected_answer, difficulty_category, question_set')
+        .eq('interview_id', effectiveInterviewId)
+
+      allQuestions = questionsByInterview || []
+    }
+
     // ✅ Process questions to get one from each difficulty level
-    const allQuestions = interview.questions || [];
-    const processedQuestions = [];
+    const processedQuestions: any[] = [];
 
     // Group questions by difficulty category
     const questionsByDifficulty = {

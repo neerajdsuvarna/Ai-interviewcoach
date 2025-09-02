@@ -19,7 +19,10 @@ interface Database {
           user_id: string
           resume_id: string
           jd_id: string
-          status: string  // ✅ ADD: status field
+          status: string
+          question_set?: number  // ✅ ADD: question_set field for linking to question sets
+          retake_from?: string    // ✅ ADD: retake_from field for referencing original interview
+          attempt_number: number // ✅ ADD: attempt_number field for tracking attempts
           scheduled_at: string
           created_at: string
           updated_at: string
@@ -29,7 +32,10 @@ interface Database {
           user_id: string
           resume_id: string
           jd_id: string
-          status?: string  // ✅ ADD: status field
+          status?: string
+          question_set?: number  // ✅ ADD: question_set field
+          retake_from?: string    // ✅ ADD: retake_from field
+          attempt_number?: number // ✅ ADD: attempt_number field
           scheduled_at?: string
           created_at?: string
           updated_at?: string
@@ -39,7 +45,10 @@ interface Database {
           user_id?: string
           resume_id?: string
           jd_id?: string
-          status?: string  // ✅ ADD: status field
+          status?: string
+          question_set?: number  // ✅ ADD: question_set field
+          retake_from?: string    // ✅ ADD: retake_from field
+          attempt_number?: number // ✅ ADD: attempt_number field
           scheduled_at?: string
           created_at?: string
           updated_at?: string
@@ -52,14 +61,20 @@ interface Database {
 interface InterviewRequest {
   resume_id: string
   jd_id: string
-  status?: string  // ✅ ADD: status field
+  status?: string
+  question_set?: number  // ✅ ADD: question_set field for linking to question sets
+  retake_from?: string   // ✅ ADD: retake_from field for referencing original interview
+  attempt_number?: number // ✅ ADD: attempt_number field for tracking attempts
   scheduled_at?: string
 }
 
 interface UpdateInterviewRequest {
   resume_id?: string
   jd_id?: string
-  status?: string  // ✅ ADD: status field
+  status?: string
+  question_set?: number  // ✅ ADD: question_set field
+  retake_from?: string   // ✅ ADD: retake_from field
+  attempt_number?: number // ✅ ADD: attempt_number field
   scheduled_at?: string
 }
 
@@ -380,7 +395,7 @@ async function handleGetInterview(supabaseClient: any, user: any, interviewId: s
 async function handleCreateInterview(supabaseClient: any, req: Request, user: any) {
   try {
     const body = await req.json()
-    const { resume_id, jd_id, scheduled_at }: InterviewRequest = body
+    const { resume_id, jd_id, question_set, retake_from, attempt_number, scheduled_at }: InterviewRequest = body
 
     // Validate required fields
     if (!resume_id || !jd_id) {
@@ -396,11 +411,28 @@ async function handleCreateInterview(supabaseClient: any, req: Request, user: an
       )
     }
 
-    // If scheduled_at is not provided, set it to current timestamp (like in db_operations.py)
+    // Validate retake logic
+    if (retake_from && (!question_set || !attempt_number)) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Bad request', 
+          message: 'question_set and attempt_number are required for retake interviews' 
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    // If scheduled_at is not provided, set it to current timestamp
     const interviewData = {
       user_id: user.id,
       resume_id: resume_id.trim(),
       jd_id: jd_id.trim(),
+      question_set: question_set || null,
+      retake_from: retake_from || null,
+      attempt_number: attempt_number || 1,
       scheduled_at: scheduled_at || new Date().toISOString()
     }
 
@@ -454,13 +486,30 @@ async function handleCreateInterview(supabaseClient: any, req: Request, user: an
 async function handleUpdateInterview(supabaseClient: any, req: Request, user: any, interviewId: string) {
   try {
     const body = await req.json()
-    const { resume_id, jd_id, status, scheduled_at }: UpdateInterviewRequest = body  // ✅ ADD: status
+    const { resume_id, jd_id, status, question_set, retake_from, attempt_number, scheduled_at }: UpdateInterviewRequest = body
 
     // Build update object with only provided fields
     const updateData: any = {}
     if (resume_id !== undefined) updateData.resume_id = resume_id.trim()
     if (jd_id !== undefined) updateData.jd_id = jd_id.trim()
-    if (status !== undefined) updateData.status = status.trim()  // ✅ ADD: status handling
+    if (status !== undefined) updateData.status = status.trim()
+    if (question_set !== undefined) updateData.question_set = question_set
+    if (retake_from !== undefined) updateData.retake_from = retake_from
+    if (attempt_number !== undefined) {
+      if (attempt_number < 1) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'Bad request', 
+            message: 'attempt_number must be greater than 0' 
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        )
+      }
+      updateData.attempt_number = attempt_number
+    }
     if (scheduled_at !== undefined) {
       // Validate ISO date string if provided
       try {

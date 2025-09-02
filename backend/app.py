@@ -1476,41 +1476,5 @@ def handle_reset_calibration():
         print(f"Error in reset_calibration: {e}")
         emit("response", {"error": "Failed to reset calibration"})
 
-# ─────────────────────────────────────────────────────
-# Person Detection API (for when eye tracking is disabled)
-# ─────────────────────────────────────────────────────
-
-mp_fd = mp.solutions.face_detection
-MP_DETECT = mp_fd.FaceDetection(model_selection=0, min_detection_confidence=0.5)
-DETECT_LOCK = threading.Lock()
-
-@atexit.register
-def _cleanup():
-    MP_DETECT.close()
-
-@app.route("/api/detect_person", methods=["POST"])
-def detect_person():
-    data = request.get_json(silent=True)
-    if not data or "image" not in data:
-        return jsonify({"error": "Missing 'image' key"}), 400
-
-    try:
-        _, b64 = data["image"].split(",", 1)
-        img_np = np.frombuffer(base64.b64decode(b64), dtype=np.uint8)
-        rgb = cv2.cvtColor(cv2.imdecode(img_np, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
-    except Exception:
-        return jsonify({"error": "Bad image data"}), 400
-
-    with DETECT_LOCK:
-        results = MP_DETECT.process(rgb)
-
-    n = 0 if results.detections is None else len(results.detections)
-
-    if n == 1:
-        return jsonify({"status": "single"})
-    if n == 0:
-        return jsonify({"status": "none", "message": "No person detected"})
-    return jsonify({"status": "multiple", "message": "Multiple people detected"})
-
 if __name__ == '__main__': 
     socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)

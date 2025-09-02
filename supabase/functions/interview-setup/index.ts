@@ -23,6 +23,9 @@ interface Database {
           scheduled_at: string
           status: string
           created_at: string
+          question_set?: number
+          retake_from?: string
+          attempt_number: number
         }
         Insert: {
           id?: string
@@ -32,6 +35,9 @@ interface Database {
           scheduled_at?: string
           status?: string
           created_at?: string
+          question_set?: number
+          retake_from?: string
+          attempt_number?: number
         }
         Update: {
           id?: string
@@ -41,6 +47,9 @@ interface Database {
           scheduled_at?: string
           status?: string
           created_at?: string
+          question_set?: number
+          retake_from?: string
+          attempt_number?: number
         }
       }
       payments: {
@@ -99,6 +108,8 @@ interface InterviewSetupRequest {
   payment_id: string
   resume_id: string
   jd_id: string
+  question_set?: number
+  retake_from?: string
 }
 
 interface InterviewSetupResponse {
@@ -175,7 +186,7 @@ serve(async (req) => {
 
     // Parse request body
     const body = await req.json()
-    const { payment_id, resume_id, jd_id }: InterviewSetupRequest = body
+    const { payment_id, resume_id, jd_id, question_set, retake_from }: InterviewSetupRequest = body
 
     // Validate required fields
     if (!payment_id || !resume_id || !jd_id) {
@@ -229,6 +240,7 @@ serve(async (req) => {
       payment_id,
       resume_id,
       jd_id,
+      question_set,
       user_id: user.id
     });
 
@@ -416,6 +428,40 @@ serve(async (req) => {
 
     // Step 4: Create interview record (only if no existing interview found)
     console.log('🔍 Step 4: Creating new interview record...');
+    
+    // Handle retake logic
+    let attemptNumber = 1;
+    if (retake_from) {
+      console.log('🔄 Processing retake interview...');
+      
+      // Get current attempt count for this question set
+      const { data: currentAttempts, error: attemptsError } = await supabaseClient
+        .from('interviews')
+        .select('attempt_number')
+        .eq('user_id', user.id)
+        .eq('resume_id', resume_id)
+        .eq('jd_id', jd_id)
+        .eq('question_set', question_set)
+
+      if (attemptsError) {
+        console.error('❌ Error fetching current attempts:', attemptsError);
+        return new Response(
+          JSON.stringify({ 
+            success: false,
+            error: 'Database error', 
+            message: 'Failed to check current attempts' 
+          }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        )
+      }
+
+      attemptNumber = (currentAttempts?.length || 0) + 1;
+      console.log(`📊 Retake attempt number: ${attemptNumber}`);
+    }
+    
     const { data: newInterview, error: interviewError } = await supabaseClient
       .from('interviews')
       .insert({
@@ -424,8 +470,10 @@ serve(async (req) => {
         jd_id: jd_id,
         status: 'STARTED',
         scheduled_at: new Date().toISOString(),
-        created_at: new Date().toISOString()
-      })
+        created_at: new Date().toISOString(),
+        ...(typeof question_set === 'number' ? { question_set } : {}),
+        ...(retake_from ? { retake_from, attempt_number: attemptNumber } : {})
+      } as any)
       .select()
       .single()
 
@@ -465,12 +513,16 @@ serve(async (req) => {
 
     // Step 6: Update questions with interview_id
     console.log('🔍 Step 6: Updating questions with interview_id...');
-    const { error: questionsUpdateError } = await supabaseClient
+    let updateQuery = supabaseClient
       .from('questions')
       .update({ interview_id: newInterview.id })
       .eq('resume_id', resume_id)
       .eq('jd_id', jd_id)
       .is('interview_id', null) // Only update questions that don't have interview_id
+    if (typeof question_set === 'number') {
+      updateQuery = updateQuery.eq('question_set', question_set)
+    }
+    const { error: questionsUpdateError } = await updateQuery
 
     if (questionsUpdateError) {
       console.error('❌ Questions update failed:', questionsUpdateError);

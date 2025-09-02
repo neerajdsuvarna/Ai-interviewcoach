@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { FiCheckCircle, FiXCircle, FiLoader, FiClock } from 'react-icons/fi';
+import { FiCheckCircle, FiXCircle, FiLoader, FiClock, FiArrowLeft } from 'react-icons/fi';
+import Navbar from '../components/Navbar';
 
 export default function PaymentStatus() {
   const [searchParams] = useSearchParams();
@@ -13,6 +14,11 @@ export default function PaymentStatus() {
   // Extract URL parameters at component level so they're accessible in JSX
   const resumeId = searchParams.get('resume_id');
   const jdId = searchParams.get('jd_id');
+  const questionSet = searchParams.get('question_set');
+  const retakeFrom = searchParams.get('retake_from');
+  
+  // Check if this is a retake scenario
+  const isRetake = retakeFrom && questionSet;
 
   useEffect(() => {
     const processPayment = async () => {
@@ -43,6 +49,17 @@ export default function PaymentStatus() {
           });
           setStatus('error');
           setMessage('Missing resume or job description information');
+          return;
+        }
+
+        // For retakes, validate additional parameters
+        if (isRetake && (!questionSet || !retakeFrom)) {
+          console.error('❌ Missing retake context data:', {
+            questionSet: !!questionSet,
+            retakeFrom: !!retakeFrom
+          });
+          setStatus('error');
+          setMessage('Missing retake interview information');
           return;
         }
 
@@ -158,54 +175,43 @@ export default function PaymentStatus() {
                   try {
                     console.log('🚀 Setting up interview...');
                     
-                    console.log(' Debug values being sent:', {
-                      payment_id: result.data.transaction_id,
-                      resume_id: resumeId,
-                      jd_id: jdId,
-                      original_paymentId: paymentId,
-                      payment_record_id: result.data.id
-                    });
-                    
-                    const interviewSetupResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interview-setup`, {
-                      method: 'POST',
-                      headers: {
-                        'Authorization': `Bearer ${session.access_token}`,
-                        'Content-Type': 'application/json'
-                      },
-                      body: JSON.stringify({
-                        payment_id: result.data.transaction_id,
-                        resume_id: resumeId,
-                        jd_id: jdId
-                      })
-                    });
+                                                              // Use the same interview-setup flow for both normal and retake interviews
+                     console.log('🆕 Setting up interview...');
+                     console.log('Debug values being sent:', {
+                       payment_id: result.data.transaction_id,
+                       resume_id: resumeId,
+                       jd_id: jdId,
+                       question_set: questionSet ? Number(questionSet) : undefined,
+                       retake_from: isRetake ? retakeFrom : undefined
+                     });
+                     
+                     const interviewSetupResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interview-setup`, {
+                       method: 'POST',
+                       headers: {
+                         'Authorization': `Bearer ${session.access_token}`,
+                         'Content-Type': 'application/json'
+                       },
+                       body: JSON.stringify({
+                         payment_id: result.data.transaction_id,
+                         resume_id: resumeId,
+                         jd_id: jdId,
+                         question_set: questionSet ? Number(questionSet) : undefined,
+                         retake_from: isRetake ? retakeFrom : undefined
+                       })
+                     });
 
-                    const interviewResult = await interviewSetupResponse.json();
-                    
-                    console.log('📋 Interview setup result:', interviewResult);
+                     const interviewResult = await interviewSetupResponse.json();
+                     
+                     console.log('📋 Interview setup result:', interviewResult);
 
-                    if (interviewSetupResponse.ok && interviewResult.success) {
-                      console.log('✅ Interview setup successful, redirecting...');
-                      
-                      // ✅ DEBUG: Add 30-second delay for debugging
-                      console.log('🕐 DEBUG: Adding 2-second delay before redirect...');
-                      console.log('🕐 You can now check the database to see the created records');
-                      console.log('🕐 Interview ID:', interviewResult.data.interview_id);
-                      console.log('🕐 Payment ID:', result.data.transaction_id);
-                      console.log('🕐 Resume ID:', resumeId);
-                      console.log('🕐 JD ID:', jdId);
-                      console.log(' Check these tables:');
-                      console.log('   - interviews (id = ' + interviewResult.data.interview_id + ')');
-                      console.log('🕐   - payments (transaction_id = ' + result.data.transaction_id + ')');
-                      console.log('   - questions (resume_id = ' + resumeId + ', jd_id = ' + jdId + ')');
-                      
-                      setTimeout(() => {
-                        console.log('🚀 DEBUG: 2 seconds completed, now redirecting to interview...');
-                        navigate(`/interview?interview_id=${interviewResult.data.interview_id}`);
-                      }, 2000); // 30 seconds = 30000 milliseconds
-                    } else {
-                      console.error('❌ Interview setup failed:', interviewResult);
-                      setStatus('error');
-                      setMessage('Interview setup failed. Please contact support.');
+                     if (interviewSetupResponse.ok && interviewResult.success) {
+                       console.log('✅ Interview setup successful, redirecting...');
+                       
+                       setTimeout(() => {
+                         console.log('🚀 Redirecting to interview...');
+                         navigate(`/interview?interview_id=${interviewResult.data.interview_id}`);
+                       }, 2000);
+
                     }
                   } catch (error) {
                     console.error('❌ Interview setup error:', error);
@@ -259,80 +265,112 @@ export default function PaymentStatus() {
   }, [searchParams, navigate]);
 
   return (
-    <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center px-4">
-      <div className="bg-[var(--color-card)] rounded-2xl p-8 max-w-md w-full text-center border border-[var(--color-border)]">
-        {status === 'processing' && (
-          <>
-            <FiLoader className="w-16 h-16 text-[var(--color-primary)] mx-auto mb-4 animate-spin" />
-            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
-              Processing Payment
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-[var(--color-bg)] pt-20 flex items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+        <div className="w-full max-w-sm sm:max-w-md md:max-w-lg lg:max-w-md xl:max-w-md bg-[var(--color-card)] text-[var(--color-text-primary)] p-6 sm:p-8 rounded-2xl shadow-lg border border-[var(--color-border)]">
+          
+          {/* Header */}
+          <div className="text-center mb-6">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[var(--color-primary)] mb-2">
+              Payment Status
             </h2>
-            <p className="text-[var(--color-text-secondary)]">{message}</p>
-          </>
-        )}
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              {isRetake ? 'Processing retake interview payment' : 'Processing your interview payment'}
+            </p>
+          </div>
 
-        {status === 'success' && (
-          <>
-            <FiCheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
-              Payment Successful!
-            </h2>
-            <p className="text-[var(--color-text-secondary)]">{message}</p>
-            {paymentDetails && (
-              <div className="mt-4 text-sm text-[var(--color-text-secondary)]">
-                <p>Amount: ₹{(paymentDetails.amount / 100).toFixed(2)}</p>
-                <p>Payment ID: {paymentDetails.transaction_id}</p>
-              </div>
+          {/* Status Content */}
+          <div className="text-center">
+            {status === 'processing' && (
+              <>
+                <FiLoader className="w-16 h-16 text-[var(--color-primary)] mx-auto mb-4 animate-spin" />
+                <h3 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
+                  Processing Payment
+                </h3>
+                <p className="text-[var(--color-text-secondary)]">{message}</p>
+              </>
             )}
-          </>
-        )}
 
-        {status === 'pending' && (
-          <>
-            <FiClock className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
-              Payment Pending
-            </h2>
-            <p className="text-[var(--color-text-secondary)]">{message}</p>
-            {paymentDetails && (
-              <div className="mt-4 text-sm text-[var(--color-text-secondary)]">
-                <p>Amount: ₹{(paymentDetails.amount / 100).toFixed(2)}</p>
-                <p>Payment ID: {paymentDetails.transaction_id}</p>
-              </div>
+            {status === 'success' && (
+              <>
+                <FiCheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
+                  {isRetake ? 'Retake Payment Successful!' : 'Payment Successful!'}
+                </h3>
+                <p className="text-[var(--color-text-secondary)] mb-4">{message}</p>
+                {paymentDetails && (
+                  <div className="bg-[var(--color-input-bg)] rounded-lg p-4 mb-4 text-sm text-[var(--color-text-secondary)]">
+                    <p className="font-medium text-[var(--color-text-primary)] mb-2">Payment Details:</p>
+                    <p>Amount: ₹{(paymentDetails.amount / 100).toFixed(2)}</p>
+                    <p>Payment ID: {paymentDetails.transaction_id}</p>
+                    {isRetake && (
+                      <>
+                        <p>Question Set: {questionSet}</p>
+                        <p>Retake from: {retakeFrom}</p>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="text-sm text-[var(--color-text-secondary)]">
+                  <p>Redirecting to interview...</p>
+                </div>
+              </>
             )}
-            <button
-              onClick={() => navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}`)}
-              className="mt-4 bg-[var(--color-primary)] text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-colors"
-            >
-              Back to Questions
-            </button>
-          </>
-        )}
 
-        {status === 'error' && (
-          <>
-            <FiXCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
-              Payment Failed
-            </h2>
-            <p className="text-[var(--color-text-secondary)] mb-4">{message}</p>
-            {paymentDetails && (
-              <div className="mb-4 text-sm text-[var(--color-text-secondary)]">
-                <p>Amount: ₹{(paymentDetails.amount / 100).toFixed(2)}</p>
-                <p>Payment ID: {paymentDetails.transaction_id}</p>
-                <p>Status: {paymentDetails.payment_status}</p>
-              </div>
+            {status === 'pending' && (
+              <>
+                <FiClock className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
+                  Payment Pending
+                </h3>
+                <p className="text-[var(--color-text-secondary)] mb-4">{message}</p>
+                {paymentDetails && (
+                  <div className="bg-[var(--color-input-bg)] rounded-lg p-4 mb-4 text-sm text-[var(--color-text-secondary)]">
+                    <p className="font-medium text-[var(--color-text-primary)] mb-2">Payment Details:</p>
+                    <p>Amount: ₹{(paymentDetails.amount / 100).toFixed(2)}</p>
+                    <p>Payment ID: {paymentDetails.transaction_id}</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}`)}
+                  className="w-full bg-[var(--color-primary)] text-white px-6 py-3 rounded-lg hover:opacity-90 transition-opacity font-semibold"
+                >
+                  <FiArrowLeft className="inline mr-2" />
+                  Back to Questions
+                </button>
+              </>
             )}
-            <button
-              onClick={() => navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}`)}
-              className="bg-[var(--color-primary)] text-white px-6 py-2 rounded-lg hover:bg-opacity-90 transition-colors"
-            >
-              Back to Questions
-            </button>
-          </>
-        )}
+
+            {status === 'error' && (
+              <>
+                <FiXCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
+                  Payment Failed
+                </h3>
+                <p className="text-[var(--color-text-secondary)] mb-4">{message}</p>
+                {paymentDetails && (
+                  <div className="bg-[var(--color-input-bg)] rounded-lg p-4 mb-4 text-sm text-[var(--color-text-secondary)]">
+                    <p className="font-medium text-[var(--color-text-primary)] mb-2">Payment Details:</p>
+                    <p>Amount: ₹{(paymentDetails.amount / 100).toFixed(2)}</p>
+                    <p>Payment ID: {paymentDetails.transaction_id}</p>
+                    <p>Status: {paymentDetails.payment_status}</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}`)}
+                  className="w-full bg-[var(--color-primary)] text-white px-6 py-3 rounded-lg hover:opacity-90 transition-opacity font-semibold"
+                >
+                  <FiArrowLeft className="inline mr-2" />
+                  Back to Questions
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
+
 

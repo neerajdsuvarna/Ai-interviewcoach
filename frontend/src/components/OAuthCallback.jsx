@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { performSmartRedirect } from '../utils/smartRouting';
 
 const OAuthCallback = () => {
   const navigate = useNavigate();
@@ -10,8 +11,8 @@ const OAuthCallback = () => {
       const { data, error } = await supabase.auth.getSession();
 
       if (data?.session) {
-        // You are now logged in
-        navigate('/upload'); // or wherever you want to take the user
+        // You are now logged in - use smart redirect
+        performSmartRedirect(navigate);
       } else {
         // No session found, maybe an error occurred
         navigate('/login');

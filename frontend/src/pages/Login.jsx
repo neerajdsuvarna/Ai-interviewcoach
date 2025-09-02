@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 import Navbar from '../components/Navbar';
+import { performSmartRedirect } from '../utils/smartRouting';
 
 function Login() {
   const navigate = useNavigate();
@@ -32,8 +33,8 @@ function Login() {
           setErrorMsg(error.message);
         }
       } else {
-        // Redirect to a page that exists in your app
-        navigate('/upload'); // or '/profile' or '/' depending on your routes
+        // Smart redirect based on user's data
+        performSmartRedirect(navigate);
       }
     } catch (err) {
       console.error(err);

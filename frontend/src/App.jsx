@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import OAuthCallback from './components/OAuthCallback';
 import UploadPage from './pages/UploadPage';
 import ProfilePage from './pages/ProfilePage';
+import DashboardPage from './pages/DashboardPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import TestPage from './pages/TestPage';
 import QuestionsPage from './pages/QuestionPage';
@@ -40,6 +41,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ProfilePage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/dashboard" 
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
             </ProtectedRoute>
           } 
         />

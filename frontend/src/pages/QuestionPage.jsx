@@ -192,7 +192,7 @@ export default function QuestionsPage() {
   const [currentResumeId, setCurrentResumeId] = useState(null);
   const [currentJdId, setCurrentJdId] = useState(null);
 
-  // ✅ Updated useEffect - no more loadCurrentResumeAndJD
+  // ✅ Updated useEffect - now filters by resume_id + jd_id combination
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
@@ -202,9 +202,10 @@ export default function QuestionsPage() {
         // ✅ Get resume_id and jd_id from URL params
         const resumeIdFromUrl = searchParams.get('resume_id');
         const jdIdFromUrl = searchParams.get('jd_id');
+        const questionSetFromUrl = searchParams.get('question_set'); // ✅ Get question_set from URL
 
         if (resumeIdFromUrl && jdIdFromUrl) {
-          console.log('✅ Got resume_id and jd_id from URL:', { resumeIdFromUrl, jdIdFromUrl });
+          console.log('✅ Got resume_id and jd_id from URL:', { resumeIdFromUrl, jdIdFromUrl, questionSetFromUrl });
           setCurrentResumeId(resumeIdFromUrl);
           setCurrentJdId(jdIdFromUrl);
         } else {
@@ -220,8 +221,8 @@ export default function QuestionsPage() {
 
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         
-        // First, get all available question sets
-        const questionSetsResponse = await fetch(`${supabaseUrl}/functions/v1/questions`, {
+        // First, get all available question sets for this specific resume_id + jd_id combination
+        const questionSetsResponse = await fetch(`${supabaseUrl}/functions/v1/questions?resume_id=${resumeIdFromUrl}&jd_id=${jdIdFromUrl}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
@@ -235,25 +236,35 @@ export default function QuestionsPage() {
         }
 
         const questionSetsResult = await questionSetsResponse.json();
-        const allQuestions = questionSetsResult.data || [];
+        const questionsForThisCombination = questionSetsResult.data || [];
         
-        // Extract unique question sets and sort them
-        const questionSets = [...new Set(allQuestions.map(q => q.question_set))].sort((a, b) => b - a);
+        // Extract unique question sets for this combination and sort them
+        const questionSets = [...new Set(questionsForThisCombination.map(q => q.question_set))].sort((a, b) => b - a);
         setAvailableQuestionSets(questionSets);
         
-        // Get the most recent question set
-        const mostRecentSet = questionSets.length > 0 ? questionSets[0] : null;
-        setCurrentQuestionSet(mostRecentSet);
+        console.log('[DEBUG] Available question sets for this combination:', questionSets);
         
-        if (mostRecentSet) {
-          // Fetch questions from the most recent question set
-          const questionsResponse = await fetch(`${supabaseUrl}/functions/v1/questions?question_set=${mostRecentSet}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        // ✅ Use the question_set from URL if available, otherwise fall back to most recent
+        let targetQuestionSet = null;
+        if (questionSetFromUrl) {
+          targetQuestionSet = parseInt(questionSetFromUrl);
+          console.log('[DEBUG] Using question_set from URL:', targetQuestionSet);
+        } else {
+          targetQuestionSet = questionSets.length > 0 ? questionSets[0] : null;
+          console.log('[DEBUG] No question_set in URL, using most recent:', targetQuestionSet);
+        }
+        
+        setCurrentQuestionSet(targetQuestionSet);
+        
+        if (targetQuestionSet) {
+          // Fetch questions from the specific question set for this combination
+          const questionsResponse = await fetch(`${supabaseUrl}/functions/v1/questions?resume_id=${resumeIdFromUrl}&jd_id=${jdIdFromUrl}&question_set=${targetQuestionSet}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json'
+            }
+          });
 
           if (!questionsResponse.ok) {
             const errorData = await questionsResponse.json();
@@ -261,8 +272,8 @@ export default function QuestionsPage() {
           }
 
           const result = await questionsResponse.json();
-          console.log('[DEBUG] Fetched questions from set', mostRecentSet, ':', result);
-        setQuestions(result.data || []);
+          console.log('[DEBUG] Fetched questions from set', targetQuestionSet, 'for combination:', result);
+          setQuestions(result.data || []);
         } else {
           setQuestions([]);
         }
@@ -361,8 +372,8 @@ export default function QuestionsPage() {
       return;
     }
     
-    // ✅ Simplified - no transaction_id needed
-    const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}`;
+    // ✅ Include question_set so interview-setup can attach only that set
+    const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}&question_set=${currentQuestionSet}`;
     const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
     
     window.location.href = dodoPaymentUrl;
@@ -401,43 +412,7 @@ export default function QuestionsPage() {
     }
   };
 
-  // Function to switch to a different question set
-  const switchQuestionSet = async (questionSet) => {
-    try {
-      setLoading(true);
-      setError(null);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('No active session');
-      }
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const response = await fetch(`${supabaseUrl}/functions/v1/questions?question_set=${questionSet}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `Failed to fetch questions: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('[DEBUG] Switched to question set', questionSet, ':', result);
-      setQuestions(result.data || []);
-      setCurrentQuestionSet(questionSet);
-
-    } catch (error) {
-      console.error('Error switching question set:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   
 
@@ -460,61 +435,23 @@ export default function QuestionsPage() {
             </p>
             
 
-            {/* Question Set Selector */}
-            {availableQuestionSets.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+            {/* Question Set Display */}
+            {currentQuestionSet && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: 0.3 }}
-                className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-6"
+                className="flex items-center justify-center gap-4 mt-6"
               >
-                <div className="flex items-center gap-3">
-                  <div className="flex flex-col">
-                    <span className="text-sm sm:text-base text-[var(--color-text-secondary)] font-medium">
-                      Question Set
-                    </span>
-                  </div>
-                  <div className="relative">
-                    <select
-                      value={currentQuestionSet || ''}
-                      onChange={(e) => switchQuestionSet(parseInt(e.target.value))}
-                      disabled={loading}
-                      className={`appearance-none bg-[var(--color-input-bg)] border border-[var(--color-border)] text-[var(--color-text-primary)] px-4 py-2 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition-all duration-200 text-sm sm:text-base min-w-[140px] ${
-                        loading ? 'opacity-50 cursor-not-allowed' : 'hover:border-[var(--color-primary)] cursor-pointer'
-                      }`}
-                    >
-                      {loading && (
-                        <option value="" disabled>
-                          Loading...
-                        </option>
-                      )}
-                      {availableQuestionSets.map((set, index) => (
-                        <option key={set} value={set}>
-                          {set} {index === 0 ? '(Latest)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <svg 
-                        className={`w-4 h-4 text-[var(--color-text-secondary)] transition-transform duration-200 ${
-                          loading ? 'animate-spin' : ''
-                        }`} 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-2 text-sm sm:text-base text-[var(--color-text-secondary)] bg-[var(--color-input-bg)] px-4 py-2 rounded-full border border-[var(--color-border)]">
+                  <div className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"></div>
+                  <span className="font-medium">Question Set {currentQuestionSet}</span>
                 </div>
-                                 {currentQuestionSet && (
-                   <div className="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] bg-[var(--color-input-bg)] px-3 py-1 rounded-full border border-[var(--color-border)]">
-                     <div className="w-2 h-2 bg-[var(--color-primary)] rounded-full animate-pulse"></div>
-                     <span className="font-medium">{Object.keys(groupedQuestions).length} questions</span>
-                   </div>
-                 )}
-            </motion.div>
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-[var(--color-text-secondary)] bg-[var(--color-card)] px-3 py-1 rounded-full border border-[var(--color-border)]">
+                  <span className="font-medium">{Object.keys(groupedQuestions).length}</span>
+                  <span className="opacity-75">questions</span>
+                </div>
+              </motion.div>
             )}
           </motion.div>
 
@@ -606,7 +543,7 @@ export default function QuestionsPage() {
               >
                 <FiLoader className="w-12 h-12 sm:w-16 sm:h-16 text-[var(--color-text-secondary)] mx-auto mb-4 sm:mb-6 animate-spin" />
                 <p className="text-[var(--color-text-secondary)] text-base sm:text-lg mb-2">
-                  {currentQuestionSet ? `Loading questions from Set ${currentQuestionSet}...` : 'Loading question sets...'}
+                  {currentQuestionSet ? `Loading questions from Set ${currentQuestionSet}...` : 'Loading question sets for this resume & job combination...'}
                 </p>
               </motion.div>
             ) : error ? (
@@ -722,7 +659,7 @@ export default function QuestionsPage() {
               >
                 <FiFileText className="w-12 h-12 sm:w-16 sm:h-16 text-[var(--color-text-secondary)] mx-auto mb-4 sm:mb-6" />
                 <p className="text-[var(--color-text-secondary)] text-base sm:text-lg mb-2">
-                  No questions found matching your criteria in Set {currentQuestionSet}.
+                  No questions found matching your criteria in Set {currentQuestionSet} for this resume & job combination.
                 </p>
                 <p className="text-[var(--color-text-secondary)] text-sm">Try adjusting your filters or search terms.</p>
               </motion.div>

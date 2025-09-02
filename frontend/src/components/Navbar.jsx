@@ -37,6 +37,9 @@ function Navbar() {
         {/* Desktop Nav */}
         <nav className="hidden md:flex space-x-6 text-sm font-medium">
           <Link to="/" className="hover:text-[var(--color-accent)]">Home</Link>
+          {user && (
+            <Link to="/dashboard" className="hover:text-[var(--color-accent)]">Dashboard</Link>
+          )}
           <Link to="/upload" className="hover:text-[var(--color-accent)]">Upload</Link>
           <Link to="/features" className="hover:text-[var(--color-accent)]">Features</Link>
           <Link to="/contact" className="hover:text-[var(--color-accent)]">Contact</Link>
@@ -65,11 +68,18 @@ function Navbar() {
                     {user.user_metadata.full_name || user.email}
                   </div>
                   <Link
+                    to="/dashboard"
+                    onClick={() => setDropdownOpen(false)}
+                    className="block w-full text-left px-4 py-2 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-input-bg)]"
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
                     to="/profile"
                     onClick={() => setDropdownOpen(false)}
                     className="block w-full text-left px-4 py-2 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-input-bg)]"
                   >
-                    Profile Dashboard
+                    Profile Settings
                   </Link>
                   <button
                     onClick={handleLogout}
@@ -105,6 +115,9 @@ function Navbar() {
         <div className="md:hidden px-6 pb-4">
           <nav className="flex flex-col space-y-4 text-sm font-medium">
             <Link to="/" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Home</Link>
+            {user && (
+              <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Dashboard</Link>
+            )}
             <Link to="/upload" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Upload</Link>
             <Link to="/features" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Features</Link>
             <Link to="/contact" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Contact</Link>
@@ -117,12 +130,20 @@ function Navbar() {
                   <span>{user.user_metadata.full_name || user.email}</span>
                 </div>
                 <Link
+                  to="/dashboard"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center space-x-2 text-[var(--color-text-primary)] hover:underline"
+                >
+                  <FiUser />
+                  <span>Dashboard</span>
+                </Link>
+                <Link
                   to="/profile"
                   onClick={() => setMenuOpen(false)}
                   className="flex items-center space-x-2 text-[var(--color-text-primary)] hover:underline"
                 >
                   <FiUser />
-                  <span>Profile Dashboard</span>
+                  <span>Profile Settings</span>
                 </Link>
                 <button
                   onClick={() => {

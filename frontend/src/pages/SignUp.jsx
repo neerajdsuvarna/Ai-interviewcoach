@@ -6,6 +6,7 @@ import { FiEye, FiEyeOff, FiMail, FiCheckCircle, FiLoader } from 'react-icons/fi
 import Navbar from '../components/Navbar';
 import { isValidEmail, formatErrorMessage, resendVerificationEmail } from '../utils/emailVerificationUtils';
 import { useSimpleVerificationStatus } from '../hooks/useSimpleVerificationStatus';
+import { performSmartRedirect } from '../utils/smartRouting';
 
 function Signup() {
   const navigate = useNavigate();
@@ -96,9 +97,9 @@ function Signup() {
     setErrorMsg('');
     const isVerified = await checkVerificationStatus();
     if (isVerified) {
-      setSuccessMsg('Email verified successfully! Redirecting to upload page...');
+      setSuccessMsg('Email verified successfully! Redirecting to your dashboard...');
       setTimeout(() => {
-        navigate('/upload');
+        performSmartRedirect(navigate);
       }, 2000);
     } else {
       setErrorMsg('Email not verified yet. Please check your email and click the verification link.');
@@ -182,7 +183,7 @@ function Signup() {
                  </button>
                </p>
                <p className="text-xs text-[var(--color-text-secondary)]">
-                 After verification, you'll be automatically logged in and redirected to the upload page to start using InterviewCoach.
+                 After verification, you'll be automatically logged in and redirected to start using InterviewCoach.
                </p>
              </div>
           </div>

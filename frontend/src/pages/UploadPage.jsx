@@ -258,7 +258,7 @@ function UploadPage() {
       }, new Set());
       
       alert(`Resume, job description, and questions generated successfully!\n\nQuestion Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`);
-      navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}`);
+      navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}&question_set=${savedQuestionSet}`);
 
     } catch (error) {
       console.error('Error in complete workflow:', error);
@@ -313,8 +313,8 @@ function UploadPage() {
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       
-      // First, get the current highest question set number for this user
-      const getCurrentQuestionSetsResponse = await fetch(`${supabaseUrl}/functions/v1/questions`, {
+      // First, get the current highest question set number for this specific resume_id + jd_id combination
+      const getCurrentQuestionSetsResponse = await fetch(`${supabaseUrl}/functions/v1/questions?resume_id=${resumeId}&jd_id=${jdId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -328,24 +328,24 @@ function UploadPage() {
       }
 
       const currentQuestionSetsResult = await getCurrentQuestionSetsResponse.json();
-      const allQuestions = currentQuestionSetsResult.data || [];
+      const questionsForThisCombination = currentQuestionSetsResult.data || [];
       
-      // Find the highest question set number
-      const existingQuestionSets = allQuestions.map(q => q.question_set).filter(set => set !== null && set !== undefined);
+      // Find the highest question set number for this specific resume_id + jd_id combination
+      const existingQuestionSets = questionsForThisCombination.map(q => q.question_set).filter(set => set !== null && set !== undefined);
       
       if (existingQuestionSets.length === 0) {
-        console.log('[DEBUG] No existing question sets found, starting with set 1');
+        console.log('[DEBUG] No existing question sets found for this resume_id + jd_id combination, starting with set 1');
         var nextQuestionSet = 1;
       } else {
         const maxSet = Math.max(...existingQuestionSets);
         nextQuestionSet = maxSet + 1;
-        console.log('[DEBUG] Found existing sets, max is', maxSet, 'next will be', nextQuestionSet);
+        console.log('[DEBUG] Found existing sets for this combination, max is', maxSet, 'next will be', nextQuestionSet);
       }
       
-      console.log('[DEBUG] Current question sets:', existingQuestionSets);
+      console.log('[DEBUG] Current question sets for resume_id', resumeId, 'and jd_id', jdId, ':', existingQuestionSets);
       console.log('[DEBUG] Next question set will be:', nextQuestionSet);
-      console.log('[DEBUG] Total questions found:', allQuestions.length);
-      console.log('[DEBUG] Questions by set:', existingQuestionSets.reduce((acc, set) => {
+      console.log('[DEBUG] Total questions found for this combination:', questionsForThisCombination.length);
+      console.log('[DEBUG] Questions by set for this combination:', existingQuestionSets.reduce((acc, set) => {
         acc[set] = (acc[set] || 0) + 1;
         return acc;
       }, {}));
