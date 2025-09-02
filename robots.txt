@@ -1,0 +1,18 @@
+User-agent: *
+Allow: /
+
+# Disallow crawling of sensitive areas
+Disallow: /backend/
+Disallow: /venv/
+Disallow: /supabase/
+Disallow: /node_modules/
+
+# Allow crawling of public assets
+Allow: /frontend/public/
+Allow: /frontend/src/assets/
+
+# Sitemap (if you have one)
+# Sitemap: https://yourdomain.com/sitemap.xml
+
+# Crawl delay (optional)
+Crawl-delay: 1

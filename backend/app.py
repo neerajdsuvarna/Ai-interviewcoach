@@ -541,6 +541,15 @@ def get_static_url(rel_path):
     return f"{DOMAIN}/api/uploads/{rel_path}"
 
 # ─────────────────────────────────────────────────────
+# Static File Routes
+# ─────────────────────────────────────────────────────
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Serve robots.txt file"""
+    return send_from_directory(os.path.dirname(os.path.dirname(__file__)), 'robots.txt')
+
+# ─────────────────────────────────────────────────────
 # Test API Route with Supabase Authentication
 # ─────────────────────────────────────────────────────
 
