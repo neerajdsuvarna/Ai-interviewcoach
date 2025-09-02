@@ -34,6 +34,9 @@ from flask_socketio import SocketIO, emit
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
 from supabase import create_client, Client
+from pydub import AudioSegment
+import requests
+from urllib.parse import urlparse
 
 # ─────────────────────────────────────────────────────
 #  Load environment variables from .env
@@ -359,7 +362,7 @@ def initialize_whisper_model():
         try:
             # Check if device is MPS and fall back to CPU for Whisper
             whisper_device = "cpu" if device == "mps" else device
-            whisper_model = WhisperModel("base", device=whisper_device)
+            whisper_model = WhisperModel("large-v3", device=whisper_device)
             print(f"[DONE] Whisper model loaded on {whisper_device} (original device was {device})")
         except Exception as e:
             print(f"[ERROR] Failed to load Whisper model: {e}")
@@ -823,6 +826,36 @@ def transcribe_audio():
         
         transcription = result.get('transcription', '')
         
+        # ✅ NEW: Store user audio file permanently
+        if transcription:  # Only store if transcription was successful
+            try:
+                # Get user_id and interview_id from request
+                user_id = request.user.get('id')
+                interview_id = request.args.get('interview_id') or request.form.get('interview_id')
+                
+                if user_id and interview_id:
+                    # Generate filename for user audio
+                    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+                    user_filename = f"user_speech_{timestamp}.wav"
+                    user_file_path = f"{user_id}/{interview_id}/{user_filename}"
+                    
+                    # Reset file pointer and upload
+                    file.seek(0)
+                    result = supabase.storage.from_('audio-files').upload(
+                        path=user_file_path,
+                        file=file.read(),
+                        file_options={"content-type": "audio/wav"}
+                    )
+                    
+                    if result:
+                        print(f"[INFO] User audio stored successfully: {user_file_path}")
+                    else:
+                        print(f"[WARNING] Failed to store user audio")
+                        
+            except Exception as e:
+                print(f"[ERROR] Failed to store user audio: {e}")
+                # Don't fail the transcription if storage fails
+        
         return jsonify({
             "success": True,
             "message": "Audio transcribed successfully",
@@ -991,7 +1024,7 @@ def generate_response():
                 
                 response_text = response.get("message", "")
                 filename = generate_filename(response_text, user_id, interview_id)
-                file_path = f"tts-audio/{user_id}/{filename}"
+                file_path = f"{user_id}/{interview_id}/interviewer_{filename}"
                 
                 print(f"[DEBUG] Generated filename: {filename}")
                 
@@ -1016,7 +1049,7 @@ def generate_response():
                     print(f"[DEBUG] Audio file size: {file_size} bytes")
                     
                     # Upload to Supabase Storage
-                    result = supabase.storage.from_('user-files').upload(
+                    result = supabase.storage.from_('audio-files').upload(
                         path=file_path,
                         file=audio_data,
                         file_options={"content-type": "audio/wav"}
@@ -1024,7 +1057,7 @@ def generate_response():
                     
                     if result:
                         # Get the public URL
-                        audio_url = supabase.storage.from_('user-files').get_public_url(file_path)
+                        audio_url = supabase.storage.from_('audio-files').get_public_url(file_path)
                         print(f"[DEBUG] Interview response audio uploaded successfully: {audio_url}")
                     else:
                         print(f"[WARNING] Failed to upload interview response audio")
@@ -1044,9 +1077,28 @@ def generate_response():
         # ✅ NEW: Handle interview completion - Save everything to database
         if response.get("interview_done", False):
             try:
-                print(f"[INFO] Interview completed - saving transcript, evaluation, and feedback to database...")
+                print(f"[INFO] Interview completed - saving transcript, evaluation, and merging audio...")
                 
-                # Get the generated data from InterviewManager (no files created)
+                # ✅ NEW: Merge all audio files first
+                print(f"[INFO] Starting audio merge process...")
+                merged_audio_path = merge_interview_audio(user_id, interview_id)
+                
+                if merged_audio_path:
+                    print(f"[SUCCESS] Audio transcript created: {merged_audio_path}")
+                    
+                    # ✅ NEW: Clean up individual audio files
+                    print(f"[INFO] Cleaning up individual audio files...")
+                    cleanup_individual_audio_files(user_id, interview_id, keep_merged_audio=True)
+                    
+                    # Get the audio transcript URL for database storage
+                    audio_transcript_url = supabase.storage.from_('audio-files').get_public_url(merged_audio_path)
+                    print(f"[INFO] Audio transcript URL: {audio_transcript_url}")
+                    
+                else:
+                    print(f"[WARNING] Audio merge failed - keeping individual files")
+                    audio_transcript_url = None
+                
+                # Get the generated data from InterviewManager
                 transcript_data = {
                     "interview_id": interview_id,
                     "full_transcript": json.dumps(manager.conversation_history, indent=2),
@@ -1075,12 +1127,13 @@ def generate_response():
                     key_strengths = manager.key_strengths
                     improvement_areas = manager.improvement_areas
                     
-                    # Save feedback to interview_feedback table with all three fields
+                    # ✅ UPDATED: Save feedback to interview_feedback table with audio transcript URL
                     feedback_data = {
                         "interview_id": interview_id,
                         "summary": summary,
                         "key_strengths": key_strengths,
-                        "improvement_areas": improvement_areas
+                        "improvement_areas": improvement_areas,
+                        "audio_url": audio_transcript_url  # ✅ NEW: Include audio transcript URL
                     }
                     
                     print(f"[DEBUG] Saving feedback data: {feedback_data}")
@@ -1145,7 +1198,7 @@ def generate_response():
                 "interview_done": response.get("interview_done", False),
                 "audio_url": audio_url,  # ✅ NEW: Include audio URL
                 "audio_file_path": file_path if audio_url else None,  # ✅ NEW: Include file path for deletion
-                "should_delete_audio": True  # ✅ NEW: Flag to indicate audio should be deleted after playback
+                "should_delete_audio": False  # ✅ NEW: Keep audio files for merging later
             }
         })
         
@@ -1198,7 +1251,7 @@ def generate_speech():
             return f"tts_{user_id}_{text_hash}_{timestamp}.wav"
         
         filename = generate_filename(text, user_id)
-        file_path = f"tts-audio/{user_id}/{filename}"
+        file_path = f"{user_id}/general/{filename}"  # For general TTS not tied to interviews
         
         print(f"[DEBUG] Generated filename: {filename}")
         
@@ -1223,7 +1276,7 @@ def generate_speech():
             print(f"[DEBUG] Audio file size: {file_size} bytes")
             
             # Upload to Supabase Storage
-            result = supabase.storage.from_('user-files').upload(
+            result = supabase.storage.from_('audio-files').upload(
                 path=file_path,
                 file=audio_data,
                 file_options={"content-type": "audio/wav"}
@@ -1231,7 +1284,7 @@ def generate_speech():
             
             if result:
                 # Get the public URL
-                public_url = supabase.storage.from_('user-files').get_public_url(file_path)
+                public_url = supabase.storage.from_('audio-files').get_public_url(file_path)
                 print(f"[DEBUG] Audio uploaded successfully: {public_url}")
                 
                 return jsonify({
@@ -1290,10 +1343,10 @@ def delete_audio():
         print(f"[DEBUG] Deleting audio: {audio_url}")
         
         # Extract file path from URL
-        # URL format: http://127.0.0.1:54321/storage/v1/object/public/user-files/tts-audio/user-id/filename.wav
+        # URL format: http://127.0.0.1:54321/storage/v1/object/public/audio-files/tts-audio/user-id/filename.wav
         try:
             # Remove the base URL to get the file path
-            base_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/user-files/"
+            base_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/audio-files/"
             if audio_url.startswith(base_url):
                 file_path = audio_url[len(base_url):]
                 # Remove any query parameters
@@ -1317,7 +1370,7 @@ def delete_audio():
                 }), 403
             
             # Delete the file from Supabase Storage
-            result = supabase.storage.from_('user-files').remove([file_path])
+            result = supabase.storage.from_('audio-files').remove([file_path])
             
             if result:
                 print(f"[DEBUG] Audio file deleted successfully: {file_path}")
@@ -1366,13 +1419,13 @@ def list_audio_files():
         print(f"[DEBUG] Listing audio files for user: {user_id}")
         
         # List files in the user's audio folder
-        result = supabase.storage.from_('user-files').list(path=folder_path)
+        result = supabase.storage.from_('audio-files').list(path=folder_path)
         
         if result:
             audio_files = []
             for file_info in result:
                 file_path = f"{folder_path}/{file_info['name']}"
-                public_url = supabase.storage.from_('user-files').get_public_url(file_path)
+                public_url = supabase.storage.from_('audio-files').get_public_url(file_path)
                 
                 audio_files.append({
                     "filename": file_info['name'],
@@ -1475,6 +1528,209 @@ def handle_reset_calibration():
     except Exception as e:
         print(f"Error in reset_calibration: {e}")
         emit("response", {"error": "Failed to reset calibration"})
+
+
+
+def merge_interview_audio(user_id, interview_id):
+    """
+    Merge all interviewer and user audio files into one complete interview recording
+    Returns the path to the merged audio file
+    """
+    temp_files = []  # ✅ NEW: Track all temp files for cleanup
+    
+    try:
+        print(f"[INFO] Starting audio merge for interview {interview_id}")
+        
+        # List all files in the interview folder
+        folder_path = f"{user_id}/{interview_id}"
+        result = supabase.storage.from_('audio-files').list(path=folder_path)
+        
+        if not result:
+            print(f"[WARNING] No audio files found in {folder_path}")
+            return None
+        
+        # ✅ FIXED: Create a list of all audio files with their timestamps and order
+        audio_files_with_order = []
+        
+        for file_info in result:
+            filename = file_info['name']
+            
+            if filename.startswith('interviewer_') or filename.startswith('user_speech_'):
+                # Extract timestamp from filename to determine order
+                # Format: interviewer_response_2025-09-02T12-47-40.wav or user_speech_2025-09-02T12-47-40.wav
+                try:
+                    # Find the timestamp part in the filename
+                    if 'T' in filename and '.wav' in filename:
+                        # Extract timestamp from filename
+                        timestamp_part = filename.split('T')[1].split('.wav')[0]
+                        # Convert to datetime for proper sorting
+                        from datetime import datetime
+                        file_time = datetime.strptime(timestamp_part, '%H-%M-%S')
+                        
+                        audio_files_with_order.append({
+                            'filename': filename,
+                            'timestamp': file_time,
+                            'type': 'interviewer' if filename.startswith('interviewer_') else 'user'
+                        })
+                        print(f"[DEBUG] Found audio file: {filename} at {file_time}")
+                    else:
+                        print(f"[WARNING] Could not parse timestamp from filename: {filename}")
+                        continue
+                        
+                except Exception as e:
+                    print(f"[WARNING] Failed to parse timestamp from {filename}: {e}")
+                    continue
+        
+        if not audio_files_with_order:
+            print(f"[WARNING] No valid audio files found for merging")
+            return None
+        
+        # ✅ FIXED: Sort files by timestamp to maintain chronological order
+        audio_files_with_order.sort(key=lambda x: x['timestamp'])
+        
+        print(f"[INFO] Audio files in chronological order:")
+        for i, file_info in enumerate(audio_files_with_order):
+            print(f"  {i+1}. {file_info['type']}: {file_info['filename']} at {file_info['timestamp']}")
+        
+        # Download and merge audio files in chronological order
+        audio_segments = []
+        
+        for file_info in audio_files_with_order:
+            try:
+                filename = file_info['filename']
+                file_path = f"{folder_path}/{filename}"
+                print(f"[DEBUG] Processing {file_info['type']} file: {filename}")
+                
+                # Download audio file
+                audio_data = supabase.storage.from_('audio-files').download(file_path)
+                
+                # Convert to AudioSegment
+                temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                temp_files.append(temp_file.name)  # ✅ NEW: Track for cleanup
+                
+                temp_file.write(audio_data)
+                temp_file.close()
+                
+                # ✅ NEW: Add delay to ensure file is fully written
+                time.sleep(0.1)
+                
+                audio_segment = AudioSegment.from_wav(temp_file.name)
+                audio_segments.append(audio_segment)
+                
+                print(f"[DEBUG] Added {file_info['type']} audio segment: {len(audio_segment)}ms")
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to process {file_info['type']} file {filename}: {e}")
+                continue
+        
+        if not audio_segments:
+            print(f"[WARNING] No valid audio segments found for merging")
+            return None
+        
+        # Merge all segments in chronological order
+        print(f"[INFO] Merging {len(audio_segments)} audio segments in chronological order...")
+        merged_audio = audio_segments[0]
+        for segment in audio_segments[1:]:
+            merged_audio = merged_audio + segment
+        
+        print(f"[INFO] Audio merge completed. Total duration: {len(merged_audio)}ms")
+        
+        # Save merged audio to temporary file
+        merged_temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+        temp_files.append(merged_temp_file.name)  # ✅ NEW: Track for cleanup
+        
+        merged_audio.export(merged_temp_file.name, format="wav")
+        merged_temp_file.close()
+        
+        # ✅ NEW: Add delay to ensure file is fully written
+        time.sleep(0.1)
+        
+        # Upload merged audio to storage
+        merged_filename = f"audio_transcript_{interview_id}.wav"
+        merged_file_path = f"{folder_path}/{merged_filename}"
+        
+        with open(merged_temp_file.name, 'rb') as f:
+            merged_audio_data = f.read()
+        
+        # Upload to storage
+        result = supabase.storage.from_('audio-files').upload(
+            path=merged_file_path,
+            file=merged_audio_data,
+            file_options={"content-type": "audio/wav"}
+        )
+        
+        if result:
+            print(f"[SUCCESS] Audio transcript uploaded: {merged_file_path}")
+            return merged_file_path
+        else:
+            print(f"[ERROR] Failed to upload audio transcript")
+            return None
+                
+    except Exception as e:
+        print(f"[ERROR] Audio merging failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+        
+    finally:
+        # ✅ NEW: Clean up all temp files
+        print(f"[CLEANUP] Cleaning up {len(temp_files)} temporary files...")
+        for temp_file_path in temp_files:
+            try:
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    print(f"[CLEANUP] Removed: {temp_file_path}")
+            except Exception as cleanup_error:
+                print(f"[WARNING] Failed to remove temp file {temp_file_path}: {cleanup_error}")
+
+def cleanup_individual_audio_files(user_id, interview_id, keep_merged_audio=True):
+    """
+    Delete individual audio files after successful merging
+    keep_merged_audio: if True, keeps the merged audio transcript file
+    """
+    try:
+        print(f"[INFO] Cleaning up individual audio files for interview {interview_id}")
+        
+        folder_path = f"{user_id}/{interview_id}"
+        result = supabase.storage.from_('audio-files').list(path=folder_path)
+        
+        if not result:
+            print(f"[WARNING] No files found in {folder_path}")
+            return
+        
+        files_to_delete = []
+        for file_info in result:
+            filename = file_info['name']
+            
+            # ✅ UPDATED: Keep audio transcript file
+            if keep_merged_audio and filename.startswith('audio_transcript_'):
+                print(f"[INFO] Keeping audio transcript file: {filename}")
+                continue
+            
+            # Delete individual audio files
+            if filename.startswith('interviewer_') or filename.startswith('user_speech_'):
+                files_to_delete.append(f"{folder_path}/{filename}")
+        
+        if files_to_delete:
+            print(f"[INFO] Deleting {len(files_to_delete)} individual audio files")
+            
+            # Delete files in batches (Supabase allows up to 1000 files per request)
+            batch_size = 1000
+            for i in range(0, len(files_to_delete), batch_size):
+                batch = files_to_delete[i:i + batch_size]
+                result = supabase.storage.from_('audio-files').remove(batch)
+                
+                if result:
+                    print(f"[SUCCESS] Deleted batch {i//batch_size + 1}: {len(batch)} files")
+                else:
+                    print(f"[WARNING] Failed to delete batch {i//batch_size + 1}")
+        else:
+            print(f"[INFO] No individual audio files to delete")
+            
+    except Exception as e:
+        print(f"[ERROR] Cleanup failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__': 
     socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)

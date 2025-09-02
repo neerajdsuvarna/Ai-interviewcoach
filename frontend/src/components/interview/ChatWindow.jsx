@@ -12,20 +12,31 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
   const audioChunksRef = useRef([]);
   const streamRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   
   // ✅ Use useAuth hook to get user
   const { user } = useAuth();
 
   // Add this state for loading
   const [isEndingInterview, setIsEndingInterview] = useState(false);
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [currentAudioElement, setCurrentAudioElement] = useState(null);
+  const [canEndInterview, setCanEndInterview] = useState(true); // Start enabled
+  const [isResponseInProgress, setIsResponseInProgress] = useState(false);
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // ✅ FIXED: Scroll only the messages container
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // ✅ FIXED: Scroll only the messages container
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [conversation]);
 
   // Cleanup function to stop media stream when component unmounts
@@ -34,6 +45,14 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
+      // ✅ NEW: Clean up audio state
+      if (currentAudioElement) {
+        currentAudioElement.pause();
+        currentAudioElement.currentTime = 0;
+      }
+      setIsAudioPlaying(false);
+      setCurrentAudioElement(null);
+      setCanEndInterview(true);
     };
   }, []);
 
@@ -81,8 +100,19 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           console.log('🔊 Playing audio response:', audio_url);
           const audio = new Audio(audio_url);
           
+          // ✅ NEW: Track audio playback state
+          setIsAudioPlaying(true);
+          setCurrentAudioElement(audio);
+          setCanEndInterview(false); // Disable end interview button while audio plays
+          
           // ✅ NEW: Delete audio file after playback
           audio.onended = async () => {
+            console.log('✅ Audio playback completed');
+            setIsAudioPlaying(false);
+            setCurrentAudioElement(null);
+            setCanEndInterview(true); // Re-enable end interview button
+            setIsResponseInProgress(false); // ✅ NEW: Response process complete
+            
             if (should_delete_audio) {
               try {
                 console.log('🗑️ Deleting audio file after playback...');
@@ -105,14 +135,24 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           // ✅ NEW: Handle audio play errors
           audio.onerror = (error) => {
             console.error('❌ Audio playback failed:', error);
+            setIsAudioPlaying(false);
+            setCurrentAudioElement(null);
+            setCanEndInterview(true); // Re-enable button on error
+            setIsResponseInProgress(false); // ✅ NEW: Response process complete on error
           };
           
           // ✅ NEW: Play the audio
           audio.play().catch(error => {
             console.error('❌ Failed to play audio:', error);
+            setIsAudioPlaying(false);
+            setCurrentAudioElement(null);
+            setCanEndInterview(true); // Re-enable button on error
+            setIsResponseInProgress(false); // ✅ NEW: Response process complete on error
           });
         } else {
           console.log('ℹ️ No audio URL provided in response');
+          setCanEndInterview(true); // No audio, so button can be enabled
+          setIsResponseInProgress(false); // ✅ NEW: Response process complete
         }
       } else {
         console.error('❌ Interview Manager API error:', response.message);
@@ -172,7 +212,17 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             console.log('🔊 Playing final audio response:', audio_url);
             const audio = new Audio(audio_url);
             
+            // ✅ NEW: Track final audio playback state
+            setIsAudioPlaying(true);
+            setCurrentAudioElement(audio);
+            setCanEndInterview(false); // Disable end interview button while final audio plays
+            
             audio.onended = async () => {
+              console.log('✅ Final audio playback completed');
+              setIsAudioPlaying(false);
+              setCurrentAudioElement(null);
+              setCanEndInterview(true); // Re-enable end interview button
+              
               if (should_delete_audio) {
                 try {
                   console.log('🗑️ Deleting final audio file after playback...');
@@ -225,11 +275,13 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
     }
   };
 
+  // Update the toggleRecording function (around line 266)
   const toggleRecording = async () => {
     if (isRecording) {
       // Stop recording
       console.log('🛑 Stopping recording...');
       setIsRecording(false);
+      setCanEndInterview(true); // ✅ NEW: Re-enable end interview button when recording stops
       setIsLoading(true);
       console.log('🔄 Loading state set to true');
       
@@ -263,9 +315,18 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         // Send audio to backend for transcription
         console.log('📤 Sending audio to backend for transcription...');
         try {
+          const wavBlob = await convertToWav(audioBlob);
           const formData = new FormData();
-          formData.append('audio', audioBlob, 'recording.webm');
+          formData.append('audio', wavBlob, 'recording.wav');
           
+          // Get interview_id from URL
+          const urlParams = new URLSearchParams(window.location.search);
+          const interviewId = urlParams.get('interview_id');
+
+          if (interviewId) {
+            formData.append('interview_id', interviewId);
+          }
+
           const result = await uploadFile('/api/transcribe-audio', formData);
           
           console.log('📥 Backend response:', result);
@@ -287,6 +348,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
               setIsLoading(false); // Stop loading immediately after user message appears
               
               // Call Interview Manager API to get the next question/response
+              setIsResponseInProgress(true); // ✅ NEW: Start response process
               await callInterviewManager(transcription);
               
             } else {
@@ -313,14 +375,13 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             setConversation(prev => [...prev, errorMessage]);
             setIsLoading(false);
           }
-          
         } catch (error) {
-          console.error('❌ Error sending audio to backend:', error);
+          console.error('❌ Error during transcription:', error);
           // Add error message to conversation
           const errorMessage = {
             id: Date.now(), // Use timestamp as unique ID
             speaker: 'system',
-            message: `Error processing audio: ${error.message}`,
+            message: `Transcription error: ${error.message || 'Unknown error'}`,
             timestamp: new Date().toLocaleTimeString()
           };
           setConversation(prev => [...prev, errorMessage]);
@@ -328,53 +389,130 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         }
         
       } catch (error) {
-        console.error('❌ Error processing audio:', error);
+        console.error('❌ Error stopping recording:', error);
         setIsLoading(false);
       }
       
     } else {
       // Start recording
       console.log('🎙️ Starting recording...');
+      setIsRecording(true);
+      setCanEndInterview(false); // ✅ NEW: Disable end interview button when recording starts
       
-      // Disable button for 3 seconds to prevent edge cases
+      // ✅ RESTORED: Disable button for 3 seconds to prevent edge cases
       setIsButtonDisabled(true);
       setTimeout(() => {
         setIsButtonDisabled(false);
-      }, 3000);
+      }, 1500);
       
       try {
-        // Get user media stream
         const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: true,
-          video: false
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          } 
         });
         
-        // Store stream reference for cleanup
         streamRef.current = stream;
         
-        // Create a new MediaRecorder
-        mediaRecorderRef.current = new MediaRecorder(stream, {
-          mimeType: 'audio/webm;codecs=opus'
+        // ✅ FIXED: Use audio/webm format which is more compatible
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus',
+          audioBitsPerSecond: 128000
         });
         
-        // Set up event handlers
-        mediaRecorderRef.current.ondataavailable = (event) => {
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+        
+        mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             audioChunksRef.current.push(event.data);
           }
         };
         
-        // Start recording
-        mediaRecorderRef.current.start();
-        setIsRecording(true);
-        console.log('✅ Recording started');
+        mediaRecorder.start();
+        console.log('✅ Recording started successfully');
         
       } catch (error) {
-        console.error('❌ Error starting recording:', error);
-        alert('Failed to start recording. Please check microphone permissions.');
-        setIsButtonDisabled(false); // Re-enable button if recording fails
+        console.error('❌ Failed to start recording:', error);
+        setIsRecording(false);
+        setCanEndInterview(true); // ✅ NEW: Re-enable button if recording fails
+        setIsButtonDisabled(false); // ✅ RESTORED: Re-enable button if recording fails
       }
     }
+  };
+
+  // ✅ NEW: Add audio conversion function
+  const convertToWav = async (audioBlob) => {
+    try {
+      // Create an audio context
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Convert blob to array buffer
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      
+      // Decode the audio
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // Convert to WAV format
+      const wavBuffer = audioBufferToWav(audioBuffer);
+      
+      return new Blob([wavBuffer], { type: 'audio/wav' });
+    } catch (error) {
+      console.error('❌ Audio conversion failed:', error);
+      // Fallback: return original blob if conversion fails
+      return audioBlob;
+    }
+  };
+
+  // ✅ NEW: Audio buffer to WAV conversion with proper header
+  const audioBufferToWav = (buffer) => {
+    const length = buffer.length;
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    
+    // Calculate buffer size correctly
+    const bufferSize = 44 + length * numberOfChannels * 2;
+    const arrayBuffer = new ArrayBuffer(bufferSize);
+    const view = new DataView(arrayBuffer);
+    
+    // Helper function to write strings
+    const writeString = (offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+    
+    // Write WAV file header (44 bytes)
+    writeString(0, 'RIFF');                    // Chunk ID
+    view.setUint32(4, bufferSize - 8, true);  // Chunk size (file size - 8)
+    writeString(8, 'WAVE');                    // Format
+    writeString(12, 'fmt ');                   // Subchunk1 ID
+    view.setUint32(16, 16, true);             // Subchunk1 size (16 for PCM)
+    view.setUint16(20, 1, true);              // Audio format (1 = PCM)
+    view.setUint16(22, numberOfChannels, true); // Number of channels
+    view.setUint32(24, sampleRate, true);     // Sample rate
+    view.setUint32(28, sampleRate * numberOfChannels * 2, true); // Byte rate
+    view.setUint16(32, numberOfChannels * 2, true); // Block align
+    view.setUint16(34, 16, true);             // Bits per sample
+    writeString(36, 'data');                   // Subchunk2 ID
+    view.setUint32(40, length * numberOfChannels * 2, true); // Subchunk2 size
+    
+    // Write audio data
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+      for (let channel = 0; channel < numberOfChannels; channel++) {
+        const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+        // Convert float to 16-bit integer
+        const sample16 = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        view.setInt16(offset, sample16, true);
+        offset += 2;
+      }
+    }
+    
+    return arrayBuffer;
   };
 
   // Add the loading popup component
@@ -474,24 +612,52 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           {/* End Interview Button */}
           <button
             onClick={handleEndInterview}
-            className="ml-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base bg-transparent border-2 font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap"
-            style={{
-              borderColor: 'var(--color-error)',
-              color: 'var(--color-error)',
-              backgroundColor: 'transparent'
-            }}
+            disabled={!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress} // ✅ NEW: Also disable during response process
+            className={`ml-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap ${
+              !canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
+                ? 'bg-red-900/20 border-2 border-red-800 text-red-700 cursor-not-allowed opacity-80' // ✅ NEW: Red/black disabled state for all conditions
+                : 'bg-transparent border-2 border-[var(--color-error)] text-[var(--color-error)] hover:bg-[var(--color-error)] hover:text-white' // ✅ NEW: Enabled state
+            }`}
             onMouseEnter={(e) => {
-              e.target.style.backgroundColor = 'var(--color-error)';
-              e.target.style.color = 'white';
+              // ✅ NEW: Only apply hover effects when button is enabled
+              if (canEndInterview && !isAudioPlaying && !isRecording && !isLoading && !isResponseInProgress) {
+                e.target.style.backgroundColor = 'var(--color-error)';
+                e.target.style.color = 'white';
+              }
             }}
             onMouseLeave={(e) => {
-              e.target.style.backgroundColor = 'transparent';
-              e.target.style.color = 'var(--color-error)';
+              // ✅ NEW: Only apply hover effects when button is enabled
+              if (canEndInterview && !isAudioPlaying && !isRecording && !isLoading && !isResponseInProgress) {
+                e.target.style.backgroundColor = 'transparent';
+                e.target.style.color = 'var(--color-error)';
+              }
             }}
-            title="End Interview"
+            title={
+              !canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
+                ? (isRecording ? "Wait for recording to finish" : 
+                   isLoading ? "Wait for response to generate" : 
+                   isResponseInProgress ? "Response in progress..." : "Wait for audio to finish")
+                : "End Interview"
+            } // ✅ NEW: Dynamic tooltip for all states
           >
-            <span className="hidden sm:inline">End Interview</span>
-            <span className="sm:hidden">End</span>
+            <span className="hidden sm:inline">
+              {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
+                ? (isRecording ? "Recording..." : 
+                   isAudioPlaying ? "Audio Playing..." :  // ✅ FIXED: Check audio playing first
+                   isLoading ? "Generating..." : 
+                   isResponseInProgress ? "Response in progress..." : "Please Wait...")
+                : "End Interview"
+              } {/* ✅ NEW: Dynamic text for all states */}
+            </span>
+            <span className="sm:hidden">
+              {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
+                ? (isRecording ? "..." : 
+                   isAudioPlaying ? "..." :  // ✅ FIXED: Check audio playing first
+                   isLoading ? "..." : 
+                   isResponseInProgress ? "..." : "...")
+                : "End"
+              } {/* ✅ NEW: Dynamic text for all states */}
+            </span>
           </button>
         </div>
         
@@ -499,26 +665,40 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={toggleRecording}
-            disabled={isButtonDisabled}
-            className={`w-full px-8 py-4 rounded-full flex items-center justify-center gap-3 text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 ${
-              isButtonDisabled
-                ? 'bg-gray-400 cursor-not-allowed opacity-60'
+            disabled={isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress} // ✅ NEW: Also disable during response process
+            className={`w-full px-8 py-4 rounded-full flex items-center justify-center gap-3 text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-xl hover:scale-105 active:scale-95 ${
+              isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? 'bg-gray-400 cursor-not-allowed opacity-60' // ✅ NEW: Disabled state for all conditions
                 : isRecording 
                   ? 'bg-red-500 hover:bg-red-600' 
                   : 'bg-blue-500 hover:bg-blue-600'
             }`}
-            title={isRecording ? 'Stop Recording' : 'Speak Now'}
+            title={
+              isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? (isAudioPlaying ? 'Wait for audio to finish' : 
+                   isLoading ? 'Generating response...' : 
+                   isResponseInProgress ? 'Response in progress...' : 'Button temporarily disabled')
+                : (isRecording ? 'Stop Recording' : 'Speak Now')
+            } // ✅ NEW: Dynamic tooltip for all disabled states
           >
             {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
             <span className="text-sm font-medium">
-              {isRecording ? 'Stop Recording' : 'Speak Now'}
+              {isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? (isAudioPlaying ? 'Audio Playing...' : 
+                   isLoading ? 'Generating...' : 
+                   isResponseInProgress ? 'Response in progress...' : 'Please Wait...')
+                : (isRecording ? 'Stop Recording' : 'Speak Now')
+              } {/* ✅ NEW: Dynamic text for all disabled states */}
             </span>
           </button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2">
+      <div 
+        ref={messagesContainerRef}  // ✅ NEW: Add ref to messages container
+        className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2"
+      >
         <AnimatePresence>
           {conversation.map((message) => (
             <motion.div

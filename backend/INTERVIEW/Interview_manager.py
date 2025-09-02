@@ -150,7 +150,7 @@ class InterviewManager:
             return self.handle_candidate_questions_stage(user_input)
         return {
             "stage": "done",
-            "message": "All initial stages complete. Awaiting next module.",
+            "message": "All stages complete. Please press the END Interview Button to end the interview.",
             "interview_done": False  # ✅ So your app can differentiate
         }
 
@@ -472,7 +472,7 @@ class InterviewManager:
                 self.stage = "candidate_questions"
                 return {
                     "stage": "candidate_questions",
-                    "message": "Thanks for the clear answer! Before we wrap up, do you have any questions for me?"
+                    "message": "Thanks for the answers! Before we wrap up, do you have any questions for me?"
                 }
 
 
@@ -602,7 +602,12 @@ class InterviewManager:
         if decision == "no":
             self.candidate_qna_done = True
             self.stage = "wrapup_evaluation"
-            return self.handle_wrapup_evaluation()
+            # ✅ CHANGED: Show message instead of calling handle_wrapup_evaluation
+            return {
+                "stage": "wrapup_evaluation",
+                "message": "Please press the END interview button to end the interview.",
+                "interview_done": False  # Keep interview active until user manually ends
+            }
 
         # Step 4: Answer the question
         last_chance = self.candidate_question_count == self.max_candidate_questions - 2
@@ -622,10 +627,11 @@ class InterviewManager:
             self.candidate_qna_done = True
             self.stage = "wrapup_evaluation"
             self.conversation_history.append({"role": "assistant", "content": reply})
+            # ✅ CHANGED: Show message instead of calling handle_wrapup_evaluation
             return {
                 "stage": "wrapup_evaluation",
-                "message": reply + "\n\nThanks again — let’s wrap up with a quick summary.",
-                **self.handle_wrapup_evaluation()
+                "message": reply + "\n\nPlease press the END interview button to end the interview.",
+                "interview_done": False  # Keep interview active until user manually ends
             }
 
 

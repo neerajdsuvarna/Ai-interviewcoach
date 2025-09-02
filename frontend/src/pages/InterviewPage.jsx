@@ -664,15 +664,15 @@ function InterviewPage() {
               >
                 {/* Interviewer Image */}
                 <img
-                  src="/assets/interview/interviewer_1.jpg"
-                  alt="Michael Chen - Senior Engineering Manager"
+                  src="/assets/interview/interviewer_1.png"
+                  alt="Sadhan"
                   className="w-full h-full object-cover"
                 />
                 
                 {/* Interviewer Info Overlay */}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
-                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Michael Chen</h3>
-                  <p className="text-gray-200 text-sm md:text-base font-medium">Senior Engineering Manager</p>
+                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Sadhan</h3>
+                  <p className="text-gray-200 text-sm md:text-base font-medium"></p>
                 </div>
 
                 {/* Live Indicator */}

@@ -12,7 +12,8 @@ import {
   BookOpen,
   Target,
   MessageSquare,
-  AlertCircle
+  AlertCircle,
+  Headphones
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import Navbar from '@/components/Navbar';
@@ -346,7 +347,7 @@ function InterviewFeedbackPage() {
     // Extract the actual rating label from the summary text (between ** ** markers)
     if (feedbackData?.summary) {
       // Look for patterns like "**weak**", "**strong**", "**average**" in the summary
-      const labelMatch = feedbackData.summary.match(/\*\*(weak|strong|average)\*\*/i);
+      const labelMatch = feedbackData.summary.match(/\b(weak|strong|average)\b/i);
       if (labelMatch && labelMatch[1]) {
         return labelMatch[1].charAt(0).toUpperCase() + labelMatch[1].slice(1).toLowerCase();
       }
@@ -477,6 +478,44 @@ function InterviewFeedbackPage() {
     }
   };
 
+  const handleDownloadAudioTranscript = async (audioUrl) => {
+    try {
+      console.log('🎵 Downloading audio transcript from:', audioUrl);
+      
+      // Fetch the audio file
+      const response = await fetch(audioUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.status}`);
+      }
+      
+      // Get the audio blob
+      const audioBlob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(audioBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Set filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      link.download = `interview_audio_transcript_${timestamp}.wav`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Audio transcript downloaded successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to download audio transcript:', error);
+      alert('Failed to download audio transcript. Please try again.');
+    }
+  };
+
   // Show loading screen
   if (showLoading) {
     return (
@@ -581,21 +620,31 @@ function InterviewFeedbackPage() {
               className="flex items-center justify-center gap-4"
             >
               
-              <div className="flex items-center gap-2">
-                <button 
+              {/* Download Section - Seamlessly Integrated */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Download Overview Button */}
+                <button
                   onClick={downloadInterviewReport}
                   disabled={isLoading}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Download Interview Report (PDF)"
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <Download size={18} style={{ color: 'var(--color-text-primary)' }} />
+                  <Download size={20} />
+                  Download Overview
                 </button>
-                {/* Share button commented out for now
-                <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors hover:scale-105 active:scale-95">
-                  <Share2 size={18} style={{ color: 'var(--color-text-primary)' }} />
-                </button>
-                */}
+                
+                {/* Download Audio Transcript Button */}
+                {feedbackData?.audio_url && (
+                  <button
+                    onClick={() => handleDownloadAudioTranscript(feedbackData.audio_url)}
+                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-all duration-300 shadow-md hover:shadow-lg hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <Headphones size={20} />
+                    Download Audio Transcript
+                  </button>
+                )}
               </div>
+              
+              
             </motion.div>
           </motion.div>
 

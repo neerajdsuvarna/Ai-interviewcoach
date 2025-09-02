@@ -27,7 +27,7 @@ from datetime import datetime
 from piper import PiperVoice
 
 # Use relative path for production
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "en_GB-alan-medium.onnx")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "en_US-kusal-medium.onnx")
 
 # Initialize voice model globally
 voice = None

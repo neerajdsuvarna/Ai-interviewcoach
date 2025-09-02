@@ -2,7 +2,7 @@
 
 -- Create storage buckets
 insert into storage.buckets (id, name, public) values 
-  ('user-files', 'user-files', true)
+  ('audio-files', 'audio-files', true)
   -- ('documents', 'documents', true),
   -- ('analytics', 'analytics', true),
   -- ('assets', 'assets', true),
