@@ -5,13 +5,14 @@ import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
 
-function Navbar() {
+function Navbar({ disableNavigation = false }) {
   const { user } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const dropdownRef = useRef(null);
 
   const handleLogout = async () => {
+    if (disableNavigation) return; // Prevent logout during question generation
     await supabase.auth.signOut();
     window.location.reload();
   };
@@ -26,23 +27,52 @@ function Navbar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Helper function to render navigation links
+  const renderNavLink = (to, children, onClick = null) => {
+    if (disableNavigation) {
+      return (
+        <span className="text-[var(--color-text-secondary)] cursor-not-allowed opacity-60">
+          {children}
+        </span>
+      );
+    }
+    
+    if (onClick) {
+      return (
+        <Link to={to} onClick={onClick} className="hover:text-[var(--color-accent)]">
+          {children}
+        </Link>
+      );
+    }
+    
+    return (
+      <Link to={to} className="hover:text-[var(--color-accent)]">
+        {children}
+      </Link>
+    );
+  };
+
   return (
     <header className="sticky top-0 z-50 bg-[var(--color-bg)] border-b border-[var(--color-border)]">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-        <Link to="/" className="text-2xl font-bold text-[var(--color-primary)] tracking-tight hover:opacity-90">
-          Interview<span className="text-[var(--color-accent)]">Coach</span>
-        </Link>
+        {disableNavigation ? (
+          <span className="text-2xl font-bold text-[var(--color-text-secondary)] tracking-tight opacity-60 cursor-not-allowed">
+            Interview<span className="text-[var(--color-text-secondary)]">Coach</span>
+          </span>
+        ) : (
+          <Link to="/" className="text-2xl font-bold text-[var(--color-primary)] tracking-tight hover:opacity-90">
+            Interview<span className="text-[var(--color-accent)]">Coach</span>
+          </Link>
+        )}
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex space-x-6 text-sm font-medium">
-          <Link to="/" className="hover:text-[var(--color-accent)]">Home</Link>
-          {user && (
-            <Link to="/dashboard" className="hover:text-[var(--color-accent)]">Dashboard</Link>
-          )}
-          <Link to="/upload" className="hover:text-[var(--color-accent)]">Upload</Link>
-          <Link to="/features" className="hover:text-[var(--color-accent)]">Features</Link>
-          <Link to="/contact" className="hover:text-[var(--color-accent)]">Contact</Link>
+          {renderNavLink("/", "Home")}
+          {user && renderNavLink("/dashboard", "Dashboard")}
+          {renderNavLink("/upload", "Upload")}
+          <span className="text-[var(--color-text-primary)] cursor-not-allowed">Features</span>
+          <span className="text-[var(--color-text-primary)] cursor-not-allowed">Contact</span>
         </nav>
 
         {/* Right side icons */}
@@ -56,13 +86,18 @@ function Navbar() {
           {user ? (
             <div className="hidden md:block relative" ref={dropdownRef}>
               <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="w-9 h-9 flex items-center justify-center rounded-full border-2 border-[var(--color-primary)] hover:bg-[var(--color-input-bg)] transition"
+                onClick={() => !disableNavigation && setDropdownOpen(!dropdownOpen)}
+                disabled={disableNavigation}
+                className={`w-9 h-9 flex items-center justify-center rounded-full border-2 transition ${
+                  disableNavigation
+                    ? 'border-[var(--color-text-secondary)] opacity-60 cursor-not-allowed'
+                    : 'border-[var(--color-primary)] hover:bg-[var(--color-input-bg)] cursor-pointer'
+                }`}
               >
-                <FiUser size={20} color="var(--color-text-primary)" />
+                <FiUser size={20} color={disableNavigation ? "var(--color-text-secondary)" : "var(--color-text-primary)"} />
               </button>
 
-              {dropdownOpen && (
+              {dropdownOpen && !disableNavigation && (
                 <div className="absolute right-0 mt-2 w-48 bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl shadow-lg py-2 z-50">
                   <div className="px-4 py-2 text-sm text-[var(--color-text-primary)] font-medium">
                     {user.user_metadata.full_name || user.email}
@@ -83,7 +118,7 @@ function Navbar() {
                   </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left px-4 py-2 text-sm text-[var(--color-error)] hover:bg-[var(--color-input-bg)] rounded-b-md"
+                    className="w-full text-left px-4 py-2 text-sm text-[var(--color-error)] hover:bg-[var(--color-input-bg)] rounded-b-md cursor-pointer"
                   >
                     Logout
                   </button>
@@ -91,18 +126,29 @@ function Navbar() {
               )}
             </div>
           ) : (
-            <Link
-              to="/signup"
-              className="hidden md:flex w-9 h-9 items-center justify-center rounded-full border hover:bg-[var(--color-primary)] hover:text-white transition"
-            >
-              <FiLogIn size={20} />
-            </Link>
+            disableNavigation ? (
+              <span className="hidden md:flex w-9 h-9 items-center justify-center rounded-full border text-[var(--color-text-secondary)] opacity-60 cursor-not-allowed">
+                <FiLogIn size={20} />
+              </span>
+            ) : (
+              <Link
+                to="/signup"
+                className="hidden md:flex w-9 h-9 items-center justify-center rounded-full border hover:bg-[var(--color-primary)] hover:text-white transition"
+              >
+                <FiLogIn size={20} />
+              </Link>
+            )
           )}
 
           {/* Hamburger Menu (mobile only) */}
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden w-9 h-9 flex items-center justify-center rounded-md border"
+            onClick={() => !disableNavigation && setMenuOpen(!menuOpen)}
+            disabled={disableNavigation}
+            className={`md:hidden w-9 h-9 flex items-center justify-center rounded-md border transition ${
+              disableNavigation
+                ? 'text-[var(--color-text-secondary)] opacity-60 cursor-not-allowed'
+                : 'cursor-pointer'
+            }`}
             aria-label="Toggle Menu"
           >
             {menuOpen ? <FiX size={20} /> : <FiMenu size={20} />}
@@ -111,16 +157,14 @@ function Navbar() {
       </div>
 
       {/* Mobile Menu */}
-      {menuOpen && (
+      {menuOpen && !disableNavigation && (
         <div className="md:hidden px-6 pb-4">
           <nav className="flex flex-col space-y-4 text-sm font-medium">
-            <Link to="/" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Home</Link>
-            {user && (
-              <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Dashboard</Link>
-            )}
-            <Link to="/upload" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Upload</Link>
-            <Link to="/features" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Features</Link>
-            <Link to="/contact" onClick={() => setMenuOpen(false)} className="hover:text-[var(--color-accent)]">Contact</Link>
+            {renderNavLink("/", "Home", () => setMenuOpen(false))}
+            {user && renderNavLink("/dashboard", "Dashboard", () => setMenuOpen(false))}
+            {renderNavLink("/upload", "Upload", () => setMenuOpen(false))}
+            <span className="text-[var(--color-text-primary)] cursor-not-allowed">Features</span>
+            <span className="text-[var(--color-text-primary)] cursor-not-allowed">Contact</span>
 
             {/* User Info (mobile only) */}
             {user ? (

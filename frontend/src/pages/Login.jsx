@@ -97,7 +97,7 @@ function Login() {
                 <button
                   type="button"
                   onClick={handlePasswordVisibilityToggle}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] cursor-pointer"
                   aria-label="Toggle password visibility"
                 >
                   {passwordVisible ? (
@@ -116,7 +116,7 @@ function Login() {
               className={`w-full font-semibold py-2 rounded-lg transition ${
                 loading
                   ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-[var(--color-primary)] text-white hover:opacity-90'
+                  : 'bg-[var(--color-primary)] text-white hover:opacity-90 cursor-pointer'
               }`}
             >
               {loading ? 'Logging in...' : 'Login'}

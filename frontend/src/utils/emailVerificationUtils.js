@@ -51,22 +51,53 @@ export const formatErrorMessage = (error) => {
     // Handle common Supabase auth errors
     const message = error.message.toLowerCase();
     
-    if (message.includes('invalid email')) {
+    // Email validation errors
+    if (message.includes('invalid email') || message.includes('email format')) {
       return 'Please enter a valid email address.';
     }
-    if (message.includes('password')) {
-      return 'Password requirements not met. Please try again.';
+    if (message.includes('email required')) {
+      return 'Email address is required.';
     }
-    if (message.includes('already registered')) {
+    
+    // Password validation errors
+    if (message.includes('password') && message.includes('weak')) {
+      return 'Password is too weak. Please choose a stronger password.';
+    }
+    if (message.includes('password') && message.includes('short')) {
+      return 'Password is too short. Please use at least 8 characters.';
+    }
+    if (message.includes('password') && message.includes('requirements')) {
+      return 'Password does not meet security requirements.';
+    }
+    
+    // User registration errors
+    if (message.includes('already registered') || message.includes('already exists')) {
       return 'This email is already registered. Please try logging in instead.';
     }
-    if (message.includes('email not confirmed')) {
+    if (message.includes('email not confirmed') || message.includes('not confirmed')) {
       return 'Please check your email and click the verification link.';
+    }
+    
+    // Rate limiting and security errors
+    if (message.includes('rate limit') || message.includes('too many requests')) {
+      return 'Too many attempts. Please wait a moment before trying again.';
     }
     if (message.includes('expired')) {
       return 'The verification link has expired. Please request a new one.';
     }
+    if (message.includes('invalid')) {
+      return 'Invalid information provided. Please check your details.';
+    }
     
+    // Network and server errors
+    if (message.includes('network') || message.includes('connection')) {
+      return 'Network error. Please check your connection and try again.';
+    }
+    if (message.includes('server') || message.includes('service')) {
+      return 'Service temporarily unavailable. Please try again later.';
+    }
+    
+    // Return the original message if no specific case matches
     return error.message;
   }
   

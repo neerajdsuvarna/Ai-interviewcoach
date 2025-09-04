@@ -612,51 +612,37 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           {/* End Interview Button */}
           <button
             onClick={handleEndInterview}
-            disabled={!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress} // ✅ NEW: Also disable during response process
+            disabled={!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress}
             className={`ml-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap ${
               !canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
-                ? 'bg-red-900/20 border-2 border-red-800 text-red-700 cursor-not-allowed opacity-80' // ✅ NEW: Red/black disabled state for all conditions
-                : 'bg-transparent border-2 border-[var(--color-error)] text-[var(--color-error)] hover:bg-[var(--color-error)] hover:text-white' // ✅ NEW: Enabled state
+                ? 'bg-[var(--color-error)]/10 border-2 border-[var(--color-error)]/30 text-[var(--color-error)]/70 cursor-not-allowed'
+                : 'bg-[var(--color-error)]/10 border-2 border-[var(--color-error)] text-[var(--color-error)] hover:bg-[var(--color-error)] hover:text-white hover:border-[var(--color-error)]'
             }`}
-            onMouseEnter={(e) => {
-              // ✅ NEW: Only apply hover effects when button is enabled
-              if (canEndInterview && !isAudioPlaying && !isRecording && !isLoading && !isResponseInProgress) {
-                e.target.style.backgroundColor = 'var(--color-error)';
-                e.target.style.color = 'white';
-              }
-            }}
-            onMouseLeave={(e) => {
-              // ✅ NEW: Only apply hover effects when button is enabled
-              if (canEndInterview && !isAudioPlaying && !isRecording && !isLoading && !isResponseInProgress) {
-                e.target.style.backgroundColor = 'transparent';
-                e.target.style.color = 'var(--color-error)';
-              }
-            }}
             title={
               !canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
                 ? (isRecording ? "Wait for recording to finish" : 
                    isLoading ? "Wait for response to generate" : 
                    isResponseInProgress ? "Response in progress..." : "Wait for audio to finish")
                 : "End Interview"
-            } // ✅ NEW: Dynamic tooltip for all states
+            }
           >
             <span className="hidden sm:inline">
               {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
                 ? (isRecording ? "Recording..." : 
-                   isAudioPlaying ? "Audio Playing..." :  // ✅ FIXED: Check audio playing first
+                   isAudioPlaying ? "Audio Playing..." : 
                    isLoading ? "Generating..." : 
                    isResponseInProgress ? "Response in progress..." : "Please Wait...")
                 : "End Interview"
-              } {/* ✅ NEW: Dynamic text for all states */}
+              }
             </span>
             <span className="sm:hidden">
               {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
                 ? (isRecording ? "..." : 
-                   isAudioPlaying ? "..." :  // ✅ FIXED: Check audio playing first
+                   isAudioPlaying ? "..." : 
                    isLoading ? "..." : 
                    isResponseInProgress ? "..." : "...")
                 : "End"
-              } {/* ✅ NEW: Dynamic text for all states */}
+              }
             </span>
           </button>
         </div>

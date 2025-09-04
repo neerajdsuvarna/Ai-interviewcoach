@@ -21,6 +21,7 @@ const UploadBox = ({
   otherFileExists,
   multiple = false, // default: false
   parsing = false, // new prop for parsing state
+  disabled = false, // new prop for disabled state
 }) => {
   const inputRef = useRef(null);
 
@@ -34,16 +35,19 @@ const UploadBox = ({
   };
 
   const handleDragEvents = (e, isEntering) => {
+    if (disabled || parsing) return; // Disable drag events when disabled
     e.preventDefault();
     setDragging(isEntering);
   };
 
   const handleFileSelect = (e) => {
+    if (disabled || parsing) return; // Disable file selection when disabled
     const selectedFiles = Array.from(e.target.files);
     validateFiles(selectedFiles);
   };
 
   const validateFiles = (files) => {
+    if (disabled || parsing) return; // Disable validation when disabled
     if (!files || files.length === 0) return;
 
     if (!multiple && files.length > 1) {
@@ -72,6 +76,7 @@ const UploadBox = ({
   };
 
   const removeFile = (index = 0) => {
+    if (disabled || parsing) return; // Disable file removal when disabled
     if (!multiple) {
       setFile(null);
       setError('');
@@ -85,16 +90,18 @@ const UploadBox = ({
 
   return (
     <motion.div
-      className={`border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer ${
-        dragging
-          ? 'border-[var(--color-primary)] scale-105 bg-[var(--color-bg-secondary)]'
+      className={`border-2 border-dashed rounded-xl p-6 text-center transition ${
+        disabled || parsing
+          ? 'cursor-not-allowed opacity-60'
+          : dragging
+          ? 'cursor-pointer border-[var(--color-primary)] scale-105 bg-[var(--color-bg-secondary)]'
           : parsing
           ? 'border-[var(--color-primary)] bg-[var(--color-bg-secondary)]'
-          : 'border-[var(--color-border)]'
+          : 'cursor-pointer border-[var(--color-border)]'
       }`}
       onClick={() => {
-        if (parsing) {
-          return; // Disable clicking during parsing
+        if (disabled || parsing) {
+          return; // Disable clicking when disabled
         }
         if (!multiple && file) {
           setError(`${label} already uploaded. Remove it before uploading another.`);
@@ -105,7 +112,7 @@ const UploadBox = ({
       onDragOver={(e) => handleDragEvents(e, true)}
       onDragLeave={(e) => handleDragEvents(e, false)}
       onDrop={(e) => {
-        if (parsing) return; // Disable drop during parsing
+        if (disabled || parsing) return; // Disable drop when disabled
         handleDragEvents(e, false);
         const droppedFiles = Array.from(e.dataTransfer.files);
         validateFiles(droppedFiles);
@@ -119,6 +126,16 @@ const UploadBox = ({
           </p>
           <p className="text-xs text-[var(--color-text-secondary)]">
             Please wait while we extract job information
+          </p>
+        </div>
+      ) : disabled ? (
+        <div className="flex flex-col items-center">
+          <FiUploadCloud className="mx-auto w-10 h-10 text-[var(--color-text-secondary)] mb-3" />
+          <p className="text-sm text-[var(--color-text-secondary)] font-medium mb-2">
+            {label} Upload Disabled
+          </p>
+          <p className="text-xs text-[var(--color-text-secondary)]">
+            Please wait for question generation to complete
           </p>
         </div>
       ) : (
@@ -142,7 +159,7 @@ const UploadBox = ({
         multiple={multiple}
         onChange={handleFileSelect}
         className="hidden"
-        disabled={parsing}
+        disabled={disabled || parsing}
       />
 
       <AnimatePresence>
@@ -165,13 +182,19 @@ const UploadBox = ({
         onClick={(e) => {
             e.stopPropagation();
             e.currentTarget.blur(); 
+            if (disabled || parsing) return; // Disable removal when disabled
             if (window.innerWidth <= 480) {
             const confirmDelete = window.confirm('Remove this file?');
             if (!confirmDelete) return;
             }
             removeFile(idx);
         }}
-        className="shrink-0 rounded-full p-2 sm:p-2.5 flex items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-error)] hover:bg-[var(--color-error-bg)] active:scale-95 transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--color-error)]"
+        disabled={disabled || parsing}
+        className={`shrink-0 rounded-full p-2 sm:p-2.5 flex items-center justify-center transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 ${
+          disabled || parsing
+            ? 'text-[var(--color-text-secondary)] opacity-50 cursor-not-allowed'
+            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-error)] hover:bg-[var(--color-error-bg)] active:scale-95 focus:ring-[var(--color-error)]'
+        }`}
         aria-label="Remove file"
         >
         <FiX className="w-5 h-5" />

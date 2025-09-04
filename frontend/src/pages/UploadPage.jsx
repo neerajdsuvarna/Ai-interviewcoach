@@ -7,6 +7,7 @@ import { FiTrash2, FiLoader, FiFileText, FiCheck } from 'react-icons/fi';
 import { useTheme } from '../hooks/useTheme';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadFile } from '../api';
+import SuccessModal from '../components/SuccessModal';
 
 function UploadPage() {
   const { theme } = useTheme();
@@ -23,6 +24,8 @@ function UploadPage() {
   const [parsingJobDesc, setParsingJobDesc] = useState(false);
   const [jobDescParsed, setJobDescParsed] = useState(false);
   const [clearCounter, setClearCounter] = useState(0);
+  const [successModal, setSuccessModal] = useState({ isOpen: false, title: '', message: '', details: null });
+  const [lastCreatedIds, setLastCreatedIds] = useState({ resumeId: null, jdId: null, questionSet: null });
 
   const handleClearAll = () => {
     setResume(null);
@@ -257,8 +260,26 @@ function UploadPage() {
         return acc;
       }, new Set());
       
-      alert(`Resume, job description, and questions generated successfully!\n\nQuestion Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`);
-      navigate(`/questions?resume_id=${resumeId}&jd_id=${jdId}&question_set=${savedQuestionSet}`);
+      // Store the created IDs for navigation
+      setLastCreatedIds({
+        resumeId: resumeId,
+        jdId: jdId,
+        questionSet: savedQuestionSet
+      });
+      
+      // Show success modal instead of alert
+      setSuccessModal({
+        isOpen: true,
+        title: 'Upload & Generation Complete!',
+        message: `Resume, job description, and questions generated successfully! Question Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`,
+        details: [
+          `Question Set: ${savedQuestionSet}`,
+          `Total Questions: ${uniqueQuestions.size}`,
+          `Resume: ${resume.name}`,
+          `Job Title: ${jobTitle}`,
+          `Status: Ready for interview preparation`
+        ]
+      });
 
     } catch (error) {
       console.error('Error in complete workflow:', error);
@@ -380,17 +401,32 @@ function UploadPage() {
   // Check if generate questions button should be enabled
   const canGenerateQuestions = resume && jobTitle.trim() && jobDescription.trim() && jobDescParsed && !loading && !parsingJobDesc;
 
+  // Handle navigation to questions page (used by both buttons)
+  const handleNavigateToQuestions = () => {
+    setSuccessModal({ isOpen: false, title: '', message: '', details: null });
+    
+    if (lastCreatedIds.resumeId && lastCreatedIds.jdId && lastCreatedIds.questionSet) {
+      navigate(`/questions?resume_id=${lastCreatedIds.resumeId}&jd_id=${lastCreatedIds.jdId}&question_set=${lastCreatedIds.questionSet}`);
+    } else {
+      // Fallback to dashboard if IDs are not available
+      navigate('/dashboard');
+    }
+  };
+
   // Check if there's unsaved work that should trigger navigation warnings
   const hasUnsavedWork = resume || jobDesc || jobTitle.trim() || jobDescription.trim() || loading || parsingJobDesc;
 
-  // Handle beforeunload event (page refresh/close)
+  // Check if any critical operations are in progress
+  const isCriticalOperationInProgress = loading || parsingJobDesc;
+
+  // Handle beforeunload event (page refresh/close) - only block during critical operations
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if (hasUnsavedWork) {
-        // Standard way to show browser's default "Leave Site?" dialog
+      if (isCriticalOperationInProgress) {
+        // Only block navigation during critical operations (parsing or generating)
         e.preventDefault();
-        e.returnValue = '';
-        return '';
+        e.returnValue = 'You have a critical operation in progress. Are you sure you want to leave?';
+        return e.returnValue;
       }
     };
 
@@ -399,16 +435,13 @@ function UploadPage() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [hasUnsavedWork]);
-
-  // Note: Back/forward navigation protection removed to use only standard browser dialog
-  // The beforeunload event below handles page refresh/close with standard browser dialog
+  }, [isCriticalOperationInProgress]);
 
 
 
   return (
     <>
-      <Navbar />
+      <Navbar disableNavigation={isCriticalOperationInProgress} />
       <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-4 py-8 sm:py-12 md:py-16 flex justify-center">
         <div className="w-full max-w-3xl bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-6 sm:p-8 md:p-10">
           <div className="text-center mb-10">
@@ -427,7 +460,7 @@ function UploadPage() {
             transition={{ duration: 0.3 }}
             >
             <form onSubmit={handleGenerateQuestions} className="space-y-8">
-            <UploadBox
+                        <UploadBox
               key={`resume-${clearCounter}`}
               label="Resume"
               accept=".pdf,.doc,.docx"
@@ -439,6 +472,7 @@ function UploadPage() {
               setDragging={setDragging}
               type="resume"
               otherFileExists={!!jobDesc}
+              disabled={loading}
             />
 
             <UploadBox
@@ -448,13 +482,14 @@ function UploadPage() {
               file={jobDesc}
                 setFile={handleJobDescUpload}
               error={jobDescError}
-              setError={setJobDescError}
-              dragging={dragging}
-              setDragging={setDragging}
-              type="job"
-              otherFileExists={!!resume}
-              multiple={false}
+                setError={setJobDescError}
+                dragging={dragging}
+                setDragging={setDragging}
+                type="job"
+                otherFileExists={!!resume}
+                multiple={false}
                 parsing={parsingJobDesc}
+                disabled={loading}
               />
 
               {/* Job Title and Description Fields - Only show after parsing */}
@@ -485,7 +520,12 @@ function UploadPage() {
                         value={jobTitle}
                         onChange={(e) => setJobTitle(e.target.value)}
                         placeholder="e.g., Senior Software Engineer"
-                        className="w-full px-4 py-3 border border-[var(--color-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition"
+                        disabled={loading}
+                        className={`w-full px-4 py-3 border border-[var(--color-border)] rounded-xl transition resize-none ${
+                          loading
+                            ? 'bg-[var(--color-text-secondary)]/20 text-[var(--color-text-secondary)] cursor-not-allowed opacity-60'
+                            : 'bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'
+                        }`}
                         required
                       />
                     </div>
@@ -500,7 +540,12 @@ function UploadPage() {
                         onChange={(e) => setJobDescription(e.target.value)}
                         placeholder="Paste the job description here or upload a file to parse the job description..."
                         rows={6}
-                        className="w-full px-4 py-3 border border-[var(--color-border)] rounded-xl bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] transition resize-none"
+                        disabled={loading}
+                        className={`w-full px-4 py-3 border border-[var(--color-border)] rounded-xl transition resize-none ${
+                          loading
+                            ? 'bg-[var(--color-text-secondary)]/20 text-[var(--color-text-secondary)] cursor-not-allowed opacity-60'
+                            : 'bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'
+                        }`}
                         required
                       />
                     </div>
@@ -510,7 +555,7 @@ function UploadPage() {
 
             {(resume || jobDesc) && (
               <div className="flex justify-end">
-                <button
+                                <button
                 type="button"
                 onClick={handleClearAll}
                 disabled={parsingJobDesc || loading}
@@ -519,9 +564,9 @@ function UploadPage() {
                     ? 'text-gray-400 border-gray-300 dark:text-gray-500 dark:border-gray-600 cursor-not-allowed opacity-50'
                     : 'text-[var(--color-error)] border-[var(--color-error)] hover:bg-[var(--color-error-bg)]'
                 }`}
-                >
+              >
                 <FiTrash2 className="w-5 h-5" />
-                {parsingJobDesc ? 'Parsing...' : 'Clear All Files'}
+                {parsingJobDesc ? 'Parsing...' : loading ? 'Generation in Progress...' : 'Clear All Files'}
                 </button>
               </div>
             )}
@@ -544,6 +589,19 @@ function UploadPage() {
           </motion.div>
         </div>
       </div>
+
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={handleNavigateToQuestions}
+        title={successModal.title}
+        message={successModal.message}
+        details={successModal.details}
+        customAction={{
+          label: 'View Questions',
+          onClick: handleNavigateToQuestions
+        }}
+      />
     </>
   );
 }

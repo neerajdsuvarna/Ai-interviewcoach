@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import Navbar from '@/components/Navbar';
-import FeedbackLoading from '@/components/interview/FeedbackLoading';
 import { supabase } from '@/supabaseClient';
 
 // PDF generation functions
@@ -238,7 +237,6 @@ function InterviewFeedbackPage() {
   const interviewId = searchParams.get('interview_id');
   
   const [showLoading, setShowLoading] = useState(true);
-  const [loadingProgress, setLoadingProgress] = useState(0);
   const [feedbackData, setFeedbackData] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -282,12 +280,15 @@ function InterviewFeedbackPage() {
       if (result.success && result.data && result.data.length > 0) {
         // Get the first feedback record for this interview
         setFeedbackData(result.data[0]);
+        setShowLoading(false); // Hide loading when data is loaded
       } else {
         setError('No feedback data found for this interview');
+        setShowLoading(false);
       }
     } catch (err) {
       console.error('Error fetching feedback data:', err);
       setError(err.message || 'Failed to load interview feedback');
+      setShowLoading(false);
     } finally {
       setIsLoading(false);
     }
@@ -296,25 +297,6 @@ function InterviewFeedbackPage() {
   useEffect(() => {
     // Start fetching data immediately
     fetchFeedbackData();
-    
-    // Simulate realistic loading progress
-    const progressInterval = setInterval(() => {
-      setLoadingProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          // Add a small delay after reaching 100% for better UX
-          setTimeout(() => {
-            setShowLoading(false);
-          }, 500);
-          return 100;
-        }
-        // Slow down progress as it approaches 100%
-        const increment = prev < 80 ? 2 : prev < 95 ? 1 : 0.5;
-        return Math.min(prev + increment, 100);
-      });
-    }, 100);
-
-    return () => clearInterval(progressInterval);
   }, [interviewId]);
 
   const getOverallRating = () => {
@@ -521,13 +503,13 @@ function InterviewFeedbackPage() {
     return (
       <>
         <Navbar />
-        <FeedbackLoading 
-          progress={loadingProgress}
-          onProgressComplete={() => {
-            // This will be called when progress reaches 100%
-            // The actual transition is handled by the useEffect above
-          }}
-        />
+        <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-primary)] border-t-transparent mx-auto mb-4"></div>
+            <p className="text-[var(--color-text-secondary)] text-lg">Loading your interview feedback...</p>
+            <p className="text-[var(--color-text-secondary)] text-sm mt-2 opacity-75">This should only take a moment</p>
+          </div>
+        </div>
       </>
     );
   }
@@ -557,7 +539,7 @@ function InterviewFeedbackPage() {
                   Try Again
                 </button>
                 <button
-                  onClick={() => navigate('/profile')}
+                  onClick={() => navigate('/dashboard')}
                   className="px-6 py-3 rounded-lg font-medium transition-all duration-300 border hover:scale-105 active:scale-95"
                   style={{ 
                     borderColor: 'var(--color-border)',
@@ -565,7 +547,7 @@ function InterviewFeedbackPage() {
                     backgroundColor: 'var(--color-card)'
                   }}
                 >
-                  Back to Profile
+                  Back to Dashboard
                 </button>
               </div>
             </div>
@@ -937,7 +919,7 @@ function InterviewFeedbackPage() {
               </button>
               
               <button
-                onClick={() => navigate('/profile')}
+                onClick={() => navigate('/dashboard')}
                 className="px-6 py-3 rounded-lg font-medium transition-all duration-300 border hover:scale-105 active:scale-95"
                 style={{ 
                   borderColor: 'var(--color-border)',

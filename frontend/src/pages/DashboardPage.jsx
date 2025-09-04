@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { FiFileText, FiBriefcase, FiPlay, FiEye, FiRefreshCw, FiCalendar } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import Navbar from '../components/Navbar';
 import InterviewHistoryCard from '../components/InterviewHistoryCard';
+import SuccessModal from '../components/SuccessModal';
 import { supabase } from '../supabaseClient';
 import { apiPost } from '../api';
 
 function DashboardPage() {
   const { theme } = useTheme();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [selectedPairings, setSelectedPairings] = useState(new Set());
   const [expandedDescriptions, setExpandedDescriptions] = useState(new Set());
@@ -19,12 +21,16 @@ function DashboardPage() {
   const [modalContent, setModalContent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [regeneratingQuestions, setRegeneratingQuestions] = useState(new Set());
+  const [successModal, setSuccessModal] = useState({ isOpen: false, title: '', message: '', details: null });
+  const [downloadingResume, setDownloadingResume] = useState(new Set());
+  const [downloadSuccess, setDownloadSuccess] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
-
+    // Check if any questions are being regenerated
+  const isGeneratingQuestions = regeneratingQuestions.size > 0;
 
   const fetchDashboardData = async () => {
     try {
@@ -151,7 +157,18 @@ function DashboardPage() {
         return acc;
       }, new Set());
       
-      alert(`Questions regenerated successfully!\n\nQuestion Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`);
+      // Show success modal instead of alert
+      setSuccessModal({
+        isOpen: true,
+        title: 'Questions Generated Successfully!',
+        message: `Question Set ${savedQuestionSet} has been created with ${uniqueQuestions.size} questions.`,
+        details: [
+          `Question Set: ${savedQuestionSet}`,
+          `Total Questions: ${uniqueQuestions.size}`,
+          `Resume: ${pairing.resumeName}`,
+          `Job Title: ${pairing.jobTitle}`
+        ]
+      });
       
       // Refresh the dashboard data to show the new question set
       await fetchDashboardData();
@@ -175,12 +192,88 @@ function DashboardPage() {
     alert('Interview scheduling feature coming soon!');
   };
 
+  const handleDownloadResume = async (pairing, e) => {
+    e.stopPropagation(); // Prevent triggering the pairing selection
+    
+    // Prevent multiple clicks
+    if (downloadingResume.has(pairing.id)) {
+      return;
+    }
+    
+    try {
+      // Set loading state for this specific pairing
+      setDownloadingResume(prev => new Set(prev).add(pairing.id));
+      setDownloadSuccess(null);
+      
+      // Extract file path from the full URL
+      // pairing.resumeUrl is like: http://127.0.0.1:54321/storage/v1/object/public/resumes/user_files/filename.pdf
+      // We need: user_files/filename.pdf
+      const url = new URL(pairing.resumeUrl);
+      const pathParts = url.pathname.split('/');
+      const bucketIndex = pathParts.findIndex(part => part === 'resumes');
+      if (bucketIndex === -1) {
+        throw new Error('Invalid resume URL format');
+      }
+      const filePath = pathParts.slice(bucketIndex + 1).join('/');
+      
+      console.log('Downloading resume from path:', filePath);
+      
+      // Direct download from Supabase storage
+      const { data, error } = await supabase.storage
+        .from('resumes')
+        .download(filePath)
+      
+      if (error) throw error
+      
+      // Create download link
+      const downloadUrl = URL.createObjectURL(data)
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = pairing.resumeName || 'resume.pdf'
+      document.body.appendChild(a)
+      a.click()
+      
+      // Cleanup
+      URL.revokeObjectURL(downloadUrl)
+      document.body.removeChild(a)
+      
+      // Show success feedback
+      setDownloadSuccess(pairing.id);
+      setTimeout(() => setDownloadSuccess(null), 3000); // Clear after 3 seconds
+
+    } catch (error) {
+      console.error('Error downloading resume:', error)
+      alert('Failed to download resume. Please try again.')
+    } finally {
+      // Clear loading state for this specific pairing
+      setDownloadingResume(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(pairing.id);
+        return newSet;
+      });
+    }
+  };
+
   // Retake requests are now handled directly in InterviewHistoryCard
   // This function is kept for future use if needed
   const handleRetakeRequest = (retakeInterview) => {
     console.log('Retake interview created:', retakeInterview);
     // Refresh the dashboard to show the new interview
     fetchDashboardData();
+  };
+
+  // Helper function to format file size
+  const formatFileSize = (bytes) => {
+    if (!bytes) return 'Unknown size';
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  // Helper function to get file extension
+  const getFileExtension = (filename) => {
+    if (!filename) return 'Unknown';
+    return filename.split('.').pop()?.toUpperCase() || 'Unknown';
   };
 
   // Helper function to call backend API for question generation
@@ -298,7 +391,7 @@ function DashboardPage() {
               <p className="text-[var(--color-text-secondary)] mb-4">{error}</p>
               <button
                 onClick={fetchDashboardData}
-                className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-lg hover:opacity-90 transition-opacity"
+                className="bg-[var(--color-primary)] text-white px-4 py-2 rounded-lg hover:opacity-90 transition-opacity cursor-pointer"
               >
                 Try Again
               </button>
@@ -311,7 +404,7 @@ function DashboardPage() {
 
     return (
     <>
-      <Navbar />
+      <Navbar disableNavigation={isGeneratingQuestions} />
       <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-3 sm:px-4 lg:px-6 py-4 sm:py-6 md:py-8 lg:py-12 flex justify-center">
         <div className="w-full max-w-7xl">
           {/* Header */}
@@ -329,14 +422,23 @@ function DashboardPage() {
           {/* Upload Button Section - Only show for users with existing data */}
           {resumeJobPairings.length > 0 && (
             <div className="text-center mb-6 sm:mb-8">
-              <Link
-                to="/upload"
-                className="bg-[var(--color-primary)] text-white px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center shadow-lg hover:shadow-xl transform hover:scale-105 text-sm sm:text-base"
-              >
+                              <button
+                  onClick={() => {
+                    if (!isGeneratingQuestions) {
+                      window.location.href = '/upload';
+                    }
+                  }}
+                  disabled={isGeneratingQuestions}
+                  className={`px-4 sm:px-6 md:px-8 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-semibold transition-all duration-200 inline-flex items-center shadow-md hover:shadow-lg transform hover:scale-105 ${
+                    isGeneratingQuestions
+                      ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                      : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white cursor-pointer'
+                  }`}
+                >
                 <FiFileText className="mr-2" />
                 <span className="hidden sm:inline">Upload Resume & Job Description</span>
                 <span className="sm:hidden">Upload</span>
-              </Link>
+              </button>
             </div>
           )}
 
@@ -350,14 +452,23 @@ function DashboardPage() {
                   <p className="text-xs sm:text-sm text-[var(--color-text-secondary)] mb-4 sm:mb-6">
                     You need to upload a resume and job description, then generate questions to see them here.
                   </p>
-                  <Link
-                    to="/upload"
-                    className="bg-[var(--color-primary)] text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg hover:opacity-90 transition-opacity inline-flex items-center text-sm sm:text-base"
+                  <button
+                    onClick={() => {
+                      if (!isGeneratingQuestions) {
+                        window.location.href = '/upload';
+                      }
+                    }}
+                    disabled={isGeneratingQuestions}
+                    className={`px-4 sm:px-6 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-semibold transition-all duration-200 inline-flex items-center ${
+                      isGeneratingQuestions
+                        ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                        : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white cursor-pointer'
+                    }`}
                   >
                     <FiFileText className="mr-2" />
                     <span className="hidden sm:inline">Upload Resume & Job Description</span>
                     <span className="sm:hidden">Upload</span>
-                  </Link>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -370,10 +481,46 @@ function DashboardPage() {
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 items-stretch">
                     {/* Resume */}
-                    <div className="bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded-lg p-3 sm:p-4 md:p-6 text-center flex flex-col justify-center min-h-[80px] sm:min-h-[100px] md:min-h-[120px] transition-colors duration-200">
-                      <FiFileText className="mx-auto mb-2 sm:mb-3 text-[var(--color-primary)] transition-colors duration-200" size={24} />
-                      <p className="text-xs sm:text-sm md:text-base font-semibold text-[var(--color-text-primary)] transition-colors duration-200">
+                    <div 
+                      className={`bg-[var(--color-input-bg)] border border-[var(--color-border)] rounded-lg p-3 sm:p-4 md:p-6 text-center flex flex-col justify-center min-h-[80px] sm:min-h-[100px] md:min-h-[120px] transition-all duration-200 cursor-pointer hover:bg-[var(--color-primary)] hover:text-white group relative ${
+                        downloadingResume.has(pairing.id) ? 'opacity-75 cursor-not-allowed' : ''
+                      } ${downloadSuccess === pairing.id ? 'ring-2 ring-green-500 ring-opacity-50' : ''}`}
+                      onClick={(e) => handleDownloadResume(pairing, e)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleDownloadResume(pairing, e)}
+                      title="Click to download resume"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Download resume file: ${pairing.resumeName}`}
+                    >
+                      {/* Loading State */}
+                      {downloadingResume.has(pairing.id) && (
+                        <div className="absolute inset-0 bg-[var(--color-primary)]/20 rounded-lg flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--color-primary)]"></div>
+                        </div>
+                      )}
+                      
+                      {/* Success State */}
+                      {downloadSuccess === pairing.id && (
+                        <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                      )}
+                      
+                      <FiFileText className="mx-auto mb-2 sm:mb-3 text-[var(--color-primary)] group-hover:text-white transition-all duration-200" size={24} />
+                      <p className="text-xs sm:text-sm md:text-base font-semibold text-[var(--color-text-primary)] group-hover:text-white transition-all duration-200">
                         {pairing.resumeName}
+                      </p>
+                      
+                      {/* Simple Status Text */}
+                      <p className="text-xs text-[var(--color-text-secondary)] group-hover:text-white/80 transition-all duration-200 mt-1">
+                        {downloadingResume.has(pairing.id) 
+                          ? 'Downloading...' 
+                          : downloadSuccess === pairing.id 
+                            ? 'Downloaded!' 
+                            : 'Click to download'
+                        }
                       </p>
                     </div>
                     
@@ -457,6 +604,8 @@ function DashboardPage() {
                            questionSet={questionSet}
                            pairing={pairing}
                            onRetakeRequest={handleRetakeRequest}
+                           isRegenerating={regeneratingQuestions.has(pairing.id)}
+                           isAnyRegenerating={isGeneratingQuestions}
                          />
                        ))}
                      </div>
@@ -466,17 +615,17 @@ function DashboardPage() {
                    <div className="flex justify-center">
                      <button
                        onClick={() => handleRegenerateQuestions(pairing)}
-                       disabled={regeneratingQuestions.has(pairing.id)}
+                       disabled={regeneratingQuestions.has(pairing.id) || isGeneratingQuestions}
                        className={`bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary)]/90 hover:from-[var(--color-primary)]/90 hover:to-[var(--color-primary)] text-white py-2 sm:py-3 md:py-4 px-4 sm:px-6 md:px-8 rounded-lg sm:rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center text-sm sm:text-base ${
-                         regeneratingQuestions.has(pairing.id) ? 'opacity-50 cursor-not-allowed' : ''
+                         (regeneratingQuestions.has(pairing.id) || isGeneratingQuestions) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                        }`}
                      >
                        <FiRefreshCw className={`mr-2 sm:mr-3 ${regeneratingQuestions.has(pairing.id) ? 'animate-spin' : ''}`} size={18} />
                        <span className="hidden sm:inline">
-                         {regeneratingQuestions.has(pairing.id) ? 'Regenerating...' : 'Regenerate Questions'}
+                         {regeneratingQuestions.has(pairing.id) ? 'Regenerating...' : isGeneratingQuestions ? 'Generation in Progress...' : 'Regenerate Questions'}
                        </span>
                        <span className="sm:hidden">
-                         {regeneratingQuestions.has(pairing.id) ? 'Regenerating...' : 'Regenerate'}
+                         {regeneratingQuestions.has(pairing.id) ? 'Regenerating...' : isGeneratingQuestions ? 'In Progress...' : 'Regenerate'}
                        </span>
                      </button>
                    </div>
@@ -500,7 +649,7 @@ function DashboardPage() {
               </h3>
               <button
                 onClick={closeModal}
-                className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors duration-200 p-1"
+                className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors duration-200 p-1 cursor-pointer"
               >
                 <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -521,7 +670,7 @@ function DashboardPage() {
             <div className="flex justify-end p-3 sm:p-4 md:p-6 border-t border-[var(--color-border)]">
               <button
                 onClick={closeModal}
-                className="px-3 sm:px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:opacity-90 transition-opacity duration-200 text-sm sm:text-base"
+                className="px-3 sm:px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:opacity-90 transition-opacity duration-200 text-sm sm:text-base cursor-pointer"
               >
                 Close
               </button>
@@ -529,6 +678,17 @@ function DashboardPage() {
           </div>
         </div>
       )}
+
+
+
+      {/* Success Modal */}
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal({ isOpen: false, title: '', message: '', details: null })}
+        title={successModal.title}
+        message={successModal.message}
+        details={successModal.details}
+      />
     </>
   );
 }

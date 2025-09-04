@@ -3,10 +3,13 @@ import { FiClock, FiCheckCircle, FiXCircle, FiPlay, FiRefreshCw } from 'react-ic
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
 
-const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
+const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegenerating, isAnyRegenerating = false }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [retakeModalOpen, setRetakeModalOpen] = useState(false);
+
+  // Check if this specific tile or any tile is regenerating
+  const isDisabled = isRegenerating || isAnyRegenerating;
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -116,7 +119,12 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
                   const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
                   window.location.href = dodoPaymentUrl;
                 }}
-                className="bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-105"
+                disabled={isDisabled}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-105 ${
+                  isDisabled
+                    ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                    : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white cursor-pointer'
+                }`}
               >
                 <FiPlay className="mr-1 sm:mr-2" size={12} />
                 <span className="hidden sm:inline">Schedule Interview</span>
@@ -128,9 +136,9 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
             {hasCompletedInterviews && (
               <button
                 onClick={handleRetakeClick}
-                disabled={loading}
-                className={`bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-105 ${
-                  loading ? 'opacity-50 cursor-not-allowed' : ''
+                disabled={loading || isDisabled}
+                className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-105 ${
+                  loading || isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-400' : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white cursor-pointer'
                 }`}
               >
                 <FiRefreshCw className={`mr-1 sm:mr-2 ${loading ? 'animate-spin' : ''}`} size={12} />
@@ -185,7 +193,12 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
                   {(interview.status === 'completed' || interview.status === 'ENDED') && (
                     <button
                       onClick={() => window.location.href = `/interview-feedback?interview_id=${interview.id}`}
-                      className="bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/90 text-white px-2 py-1 rounded text-xs font-medium transition-all duration-200 flex items-center shadow-sm hover:shadow-md transform hover:scale-105"
+                      disabled={isDisabled}
+                      className={`px-2 py-1 rounded text-xs font-medium transition-all duration-200 flex items-center shadow-sm hover:shadow-md transform hover:scale-105 ${
+                        isDisabled
+                          ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                          : 'bg-[var(--color-accent)] hover:bg-[var(--color-accent)]/90 text-white cursor-pointer'
+                      }`}
                     >
                       <FiPlay className="mr-1" size={10} />
                       <span className="hidden sm:inline">Summary</span>
@@ -208,7 +221,12 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
         <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 mt-3 sm:mt-4">
           <button
             onClick={() => window.location.href = `/questions?resume_id=${pairing.resume_id}&jd_id=${pairing.jd_id}&question_set=${questionSet.questionSetNumber}`}
-            className="bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-105"
+            disabled={isDisabled}
+            className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-105 ${
+              isDisabled
+                ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                : 'bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 text-white cursor-pointer'
+            }`}
           >
             <FiPlay className="mr-1 sm:mr-2" size={12} />
             <span className="hidden sm:inline">View Questions</span>
@@ -253,7 +271,7 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
                 <button
                   onClick={() => setRetakeModalOpen(false)}
-                  className="flex-1 px-3 sm:px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-primary)] rounded-lg hover:bg-[var(--color-input-bg)] transition-colors duration-200 text-sm"
+                  className="flex-1 px-3 sm:px-4 py-2 border border-[var(--color-border)] text-[var(--color-text-primary)] rounded-lg hover:bg-[var(--color-input-bg)] transition-colors duration-200 text-sm cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -261,7 +279,7 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest }) => {
                   onClick={handleRetakeConfirm}
                   disabled={loading}
                   className={`flex-1 px-3 sm:px-4 py-2 bg-[var(--color-primary)] text-white rounded-lg hover:bg-[var(--color-primary)]/90 transition-colors duration-200 text-sm ${
-                    loading ? 'opacity-50 cursor-not-allowed' : ''
+                    loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                   }`}
                 >
                   {loading ? 'Creating...' : 'Confirm Retake'}

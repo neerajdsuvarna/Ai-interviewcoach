@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
-import { FiSearch, FiFilter, FiCode, FiFileText, FiCopy, FiCreditCard, FiLoader } from 'react-icons/fi'; // Add FiLoader
+import { FiSearch, FiFilter, FiCode, FiFileText, FiCopy, FiCreditCard, FiLoader, FiRefreshCw, FiEye } from 'react-icons/fi'; // Add FiLoader, FiRefreshCw, FiEye
 import { useTheme } from '../hooks/useTheme';
 import Navbar from '../components/Navbar';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -191,6 +191,8 @@ export default function QuestionsPage() {
   const [paymentDebug, setPaymentDebug] = useState([]);
   const [currentResumeId, setCurrentResumeId] = useState(null);
   const [currentJdId, setCurrentJdId] = useState(null);
+  const [interviewHistory, setInterviewHistory] = useState([]);
+  const [hasExistingInterviews, setHasExistingInterviews] = useState(false);
 
   // ✅ Updated useEffect - now filters by resume_id + jd_id combination
   useEffect(() => {
@@ -278,6 +280,11 @@ export default function QuestionsPage() {
           setQuestions([]);
         }
 
+        // ✅ Fetch interview history for this question set
+        if (targetQuestionSet) {
+          await fetchInterviewHistory(resumeIdFromUrl, jdIdFromUrl, targetQuestionSet, session.access_token);
+        }
+
       } catch (error) {
         console.error('Error fetching questions:', error);
         setError(error.message);
@@ -288,6 +295,51 @@ export default function QuestionsPage() {
 
     fetchQuestions();
   }, [searchParams]); // ✅ Add searchParams as dependency
+
+  // ✅ New function to fetch interview history for the current question set
+  const fetchInterviewHistory = async (resumeId, jdId, questionSet, accessToken) => {
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      
+      // Fetch interview history for this specific question set
+      const response = await fetch(`${supabaseUrl}/functions/v1/dashboard`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.warn('Failed to fetch interview history, continuing without it');
+        return;
+      }
+
+      const result = await response.json();
+      const pairings = result.data || [];
+      
+      // Find the current resume + jd pairing
+      const currentPairing = pairings.find(p => 
+        p.resume_id === resumeId && p.jd_id === jdId
+      );
+
+      if (currentPairing) {
+        // Find the current question set
+        const currentQuestionSetData = currentPairing.questionSets.find(qs => 
+          qs.questionSetNumber === questionSet
+        );
+
+        if (currentQuestionSetData) {
+          setInterviewHistory(currentQuestionSetData.interviews || []);
+          setHasExistingInterviews(currentQuestionSetData.total_attempts > 0);
+          console.log('[DEBUG] Interview history for question set', questionSet, ':', currentQuestionSetData);
+        }
+      }
+    } catch (error) {
+      console.warn('Error fetching interview history:', error);
+      // Don't fail the entire page load if this fails
+    }
+  };
 
   // Group questions by question_text to show all strength levels together
   const groupedQuestions = questions.reduce((acc, item) => {
@@ -377,6 +429,36 @@ export default function QuestionsPage() {
     const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
     
     window.location.href = dodoPaymentUrl;
+  };
+
+  // ✅ New function to handle retake interview
+  const handleRetakeInterview = async () => {
+    if (!currentResumeId || !currentJdId || !currentQuestionSet) {
+      alert('Please ensure resume, job description, and question set are available.');
+      return;
+    }
+
+    try {
+      // Get the original interview ID for retake context
+      const originalInterview = interviewHistory.find(interview => 
+        interview.status === 'completed' || interview.status === 'ENDED'
+      );
+      
+      if (!originalInterview) {
+        alert('No completed interview found to retake from.');
+        return;
+      }
+
+      // Redirect to Dodo checkout with retake context
+      const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}&question_set=${currentQuestionSet}&retake_from=${originalInterview.id}`;
+      const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
+      
+      window.location.href = dodoPaymentUrl;
+      
+    } catch (error) {
+      console.error('Error initiating retake:', error);
+      alert(`Error: ${error.message}`);
+    }
   };
   
   
@@ -666,25 +748,51 @@ export default function QuestionsPage() {
             )}
           </motion.div>
 
-          {/* Payment Button - Bottom of Page */}
+
+
+          {/* Action Buttons - Bottom of Page */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.4 }}
-            className="flex justify-center mt-8 sm:mt-12"
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8 sm:mt-12"
           >
-            <button
-              onClick={handlePayment}
-              disabled={isPaymentLoading}
-              className={`inline-flex items-center gap-2 px-6 py-3 sm:px-8 sm:py-4 text-sm sm:text-base font-semibold rounded-xl sm:rounded-2xl transition-all duration-200 transform hover:scale-105 ${
-                isPaymentLoading
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-[var(--color-primary)] to-purple-600 hover:from-purple-600 hover:to-[var(--color-primary)] text-white shadow-lg hover:shadow-xl'
-              }`}
-            >
-              <FiCreditCard className="w-4 h-4 sm:w-5 sm:h-5" />
-              {isPaymentLoading ? 'Processing...' : 'Schedule Interview'}
-            </button>
+            {/* Show different buttons based on interview status */}
+            {hasExistingInterviews ? (
+              <>
+                {/* Retake Interview Button */}
+                <button
+                  onClick={handleRetakeInterview}
+                  className="inline-flex items-center gap-2 px-6 py-3 sm:px-8 sm:py-4 text-sm sm:text-base font-semibold rounded-xl sm:rounded-2xl transition-all duration-200 transform hover:scale-105 bg-gradient-to-r from-[var(--color-primary)] to-purple-600 hover:from-purple-600 hover:to-[var(--color-primary)] text-white shadow-lg hover:shadow-xl"
+                >
+                  <FiRefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
+                  Retake Interview
+                </button>
+                
+                {/* View Dashboard Button */}
+                <button
+                  onClick={() => window.location.href = '/dashboard'}
+                  className="inline-flex items-center gap-2 px-6 py-3 sm:px-8 sm:py-4 text-sm sm:text-base font-semibold rounded-xl sm:rounded-2xl transition-all duration-200 transform hover:scale-105 bg-[var(--color-card)] hover:bg-[var(--color-input-bg)] text-[var(--color-text-primary)] border border-[var(--color-border)] shadow-lg hover:shadow-xl"
+                >
+                  <FiEye className="w-4 h-4 sm:w-5 sm:h-5" />
+                  View Dashboard
+                </button>
+              </>
+            ) : (
+              /* Schedule Interview Button - Only show when no interviews exist */
+              <button
+                onClick={handlePayment}
+                disabled={isPaymentLoading}
+                className={`inline-flex items-center gap-2 px-6 py-3 sm:px-8 sm:py-4 text-sm sm:text-base font-semibold rounded-xl sm:rounded-2xl transition-all duration-200 transform hover:scale-105 ${
+                  isPaymentLoading
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-[var(--color-primary)] to-purple-600 hover:from-purple-600 hover:to-[var(--color-primary)] text-white shadow-lg hover:shadow-xl'
+                }`}
+              >
+                <FiCreditCard className="w-4 h-4 sm:w-5 sm:w-5" />
+                {isPaymentLoading ? 'Processing...' : 'Schedule Interview'}
+              </button>
+            )}
           </motion.div>
         </div>
       </div>
