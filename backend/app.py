@@ -103,8 +103,14 @@ class EyeContactDetector_Callib():
             "pitch": None,
         }
 
+        # ✅ ADD: Frame rate limiting to prevent overwhelming the system
+        self.last_process_time = 0
+        self.min_frame_interval = 0.1  # 100ms = 10 FPS max
+
         self.mp_face_mesh = mp.solutions.face_mesh
+        # ✅ FIX: Use static image mode to avoid timestamp issues
         self.face_mesh = self.mp_face_mesh.FaceMesh(
+            static_image_mode=True,  # Process individual frames without timestamp requirements
             max_num_faces=1,
             refine_landmarks=True,
             min_detection_confidence=0.5,
@@ -230,8 +236,21 @@ class EyeContactDetector_Callib():
         return eye_ok and head_ok
 
     def process(self, frame, is_calibrating=False):
+        # ✅ ADD: Frame rate limiting to prevent overwhelming the system
+        import time
+        current_time = time.time()
+        if current_time - self.last_process_time < self.min_frame_interval:
+            # Skip this frame to maintain frame rate limit
+            return {
+                "looking": False,
+                "message": "Frame rate limited"
+            }
+        self.last_process_time = current_time
+        
         h, w = frame.shape[:2]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # ✅ FIX: Process frame in static mode (no timestamp issues)
         results = self.face_mesh.process(rgb)
 
         if not results.multi_face_landmarks:
@@ -308,7 +327,14 @@ class EyeContactDetector_Callib():
                 }
 
 # Global detector instance
-detector = EyeContactDetector_Callib()
+try:
+    detector = EyeContactDetector_Callib()
+    print("[DEBUG] Head tracking detector initialized successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to initialize head tracking detector: {e}")
+    import traceback
+    traceback.print_exc()
+    detector = None
 
 def decode_image(img_data):
     try:
@@ -1490,9 +1516,15 @@ def handle_frame(data):
 
         frame = decode_image(img_data)
         if frame is None:
+            print("[ERROR] Failed to decode image data")
             emit("response", {"error": "Invalid image data"})
             return
-
+        
+        if detector is None:
+            print("[ERROR] Head tracking detector not initialized")
+            emit("response", {"error": "Head tracking detector not available"})
+            return
+        
         result = detector.process(frame, is_calibrating=calibrate)
         
         # Debug: Log calibration attempts
@@ -1514,10 +1546,11 @@ def handle_frame(data):
             
         emit("response", result)
     except Exception as e:
-        print(f"Error in handle_frame: {e}")
+        print(f"[ERROR] Exception in handle_frame: {e}")
+        print(f"[ERROR] Exception type: {type(e).__name__}")
         import traceback
         traceback.print_exc()
-        emit("response", {"error": "Internal server error"})
+        emit("response", {"error": f"Internal server error: {str(e)}"})
 
 # Socket.IO reset calibration handler
 @socketio.on("reset_calibration")

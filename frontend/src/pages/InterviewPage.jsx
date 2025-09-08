@@ -5,10 +5,10 @@ import { PhoneOff } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useHeadTracking } from '@/hooks/useHeadTracking';
 import { supabase } from '../supabaseClient';
-import Navbar from '@/components/Navbar';
 import ChatWindow from '@/components/interview/ChatWindow';
 import HeadTrackingAlert from '@/components/interview/HeadTrackingAlert';
 import WarningModal from '@/components/interview/WarningModal';
+import WaveAnimation from '@/components/interview/WaveAnimation';
 
 function InterviewPage() {
   const { isDark } = useTheme();
@@ -19,6 +19,21 @@ function InterviewPage() {
   
   // ✅ ADD: Separate loading state for ChatWindow
   const [isChatLoading, setIsChatLoading] = useState(false);
+  
+  // ✅ ADD: Audio state for wave animation
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  
+  // ✅ ADD: ChatWindow states for head tracking toggle
+  const [chatStates, setChatStates] = useState({
+    isRecording: false,
+    isResponseInProgress: false,
+    canEndInterview: true
+  });
+
+  // ✅ ADD: Callback to receive state changes from ChatWindow
+  const handleChatStateChange = useCallback((newStates) => {
+    setChatStates(newStates);
+  }, []);
   
   // ✅ ADD: Track if validation has been attempted
   const hasValidated = useRef(false);
@@ -461,15 +476,12 @@ function InterviewPage() {
   // Show loading while validating
   if (isValidating) { // ✅ FIXED: Use validation-specific loading state
     return (
-      <>
-        <Navbar />
-        <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-primary)] mx-auto mb-4"></div>
-            <p className="text-[var(--color-text-secondary)]">Validating interview session...</p>
-          </div>
+      <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-primary)] mx-auto mb-4"></div>
+          <p className="text-[var(--color-text-secondary)]">Validating interview session...</p>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -481,8 +493,6 @@ function InterviewPage() {
   // Original interview page content
   return (
     <>
-      <Navbar />
-      
       {/* Head Tracking Alert */}
       <HeadTrackingAlert 
         isCalibrated={isCalibrated}
@@ -591,47 +601,53 @@ function InterviewPage() {
       <div className="min-h-screen" style={{ backgroundColor: 'var(--color-bg)' }}>
         {/* Top Bar with End Interview Button */}
         <div 
-          className="flex items-center justify-between px-4 lg:px-6 py-3 border-b"
+          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 px-4 sm:px-6 lg:px-8 py-4 sm:py-5 border-b"
           style={{ 
             backgroundColor: 'var(--color-card)',
             borderColor: 'var(--color-border)' 
           }}
         >
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <h1 
-                className="text-lg lg:text-xl font-bold tracking-tight"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                AI Interview Session
-              </h1>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+              <div className="flex flex-col">
+                <h1 
+                  className="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight leading-tight"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
+                  AI Interview Session
+                </h1>
+              </div>
               
               {/* Monitoring Status */}
               {headTrackingStarted && headTrackingEnabled && (
-                <div className="flex items-center gap-1 bg-green-500/90 backdrop-blur-sm text-white px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-semibold shadow-md border border-green-400/30 mr-3 sm:mr-4">
-                  <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white rounded-full"></div>
-                  <span className="tracking-wide text-xs">HEAD TRACKING</span>
+                <div className="flex items-center gap-1.5 bg-green-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-green-400/30">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                  <span className="tracking-wide text-xs hidden xs:inline">HEAD TRACKING</span>
+                  <span className="tracking-wide text-xs xs:hidden">HT</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Head Tracking Toggle */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            <label className="flex items-center gap-2 sm:gap-3 cursor-pointer group">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
+            <label className={`flex items-center gap-2 sm:gap-3 ${!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress ? 'cursor-not-allowed opacity-60' : 'cursor-pointer group'}`}>
               <div className="relative">
                 <input
                   type="checkbox"
                   checked={headTrackingEnabled}
                   onChange={(e) => setHeadTrackingEnabled(e.target.checked)}
+                  disabled={!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress}
                   className="sr-only peer"
                 />
                 <div className={`
                   w-10 h-6 sm:w-12 sm:h-7 rounded-full transition-all duration-300 ease-in-out shadow-inner flex items-center
                   peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2
-                  ${headTrackingEnabled 
-                    ? 'bg-blue-500 peer-focus:ring-blue-500/20 shadow-lg' 
-                    : 'bg-gray-300 dark:bg-gray-600 peer-focus:ring-gray-500/20 shadow-inner'
+                  ${!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress
+                    ? 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed opacity-60'
+                    : headTrackingEnabled 
+                      ? 'bg-blue-500 peer-focus:ring-blue-500/20 shadow-lg' 
+                      : 'bg-gray-300 dark:bg-gray-600 peer-focus:ring-gray-500/20 shadow-inner'
                   }
                 `}>
                   <div className={`
@@ -640,17 +656,18 @@ function InterviewPage() {
                   `}></div>
                 </div>
               </div>
-              <span className="text-xs sm:text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
-                Head Tracking
+              <span className={`text-xs sm:text-sm font-medium ${!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress ? 'opacity-60' : ''}`} style={{ color: 'var(--color-text-primary)' }}>
+                <span className="hidden sm:inline">Head Tracking</span>
+                <span className="sm:hidden">Head Track</span>
               </span>
             </label>
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row h-[80vh] lg:h-[85vh]">
+        <div className="flex flex-col xl:flex-row min-h-0 xl:h-[calc(100vh-80px)]">
           {/* Left - Interviewer Video */}
           <div 
-            className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6"
+            className="w-full xl:w-1/3 border-b xl:border-b-0 xl:border-r p-3 sm:p-4 lg:p-6 flex-shrink-0"
             style={{ 
               backgroundColor: 'var(--color-card)', 
               borderColor: 'var(--color-border)' 
@@ -659,28 +676,68 @@ function InterviewPage() {
             <div className="h-full flex flex-col">
               {/* Interviewer Video Container */}
               <div 
-                className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
-                style={{ borderColor: 'var(--color-border)' }}
+                className="h-40 sm:h-52 md:h-64 lg:h-72 xl:flex-1 relative rounded-xl sm:rounded-2xl overflow-hidden shadow-lg border flex items-center justify-center"
+                style={{ 
+                  borderColor: isAudioPlaying ? 'var(--color-primary)' : 'var(--color-border)', 
+                  backgroundColor: 'var(--color-bg)',
+                  borderWidth: isAudioPlaying ? '3px' : '1px'
+                }}
               >
-                {/* Interviewer Image */}
-                <img
-                  src="/assets/interview/interviewer_1.png"
-                  alt="Sadhan"
-                  className="w-full h-full object-cover"
-                />
+                {/* Interviewer Image and Info Container */}
+                <div className="flex flex-col items-center">
+                  {/* Interviewer Image - Circular with Wave Animation */}
+                  <div className="relative mb-2 sm:mb-4">
+                    <motion.img
+                      src="/assets/interview/interviewer_1.png"
+                      alt="Sadhan"
+                      className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 lg:w-36 lg:h-36 xl:w-40 xl:h-40 object-cover rounded-full border-2 sm:border-4 shadow-xl relative z-10"
+                      style={{
+                        borderColor: isAudioPlaying ? 'var(--color-primary)' : 'white'
+                      }}
+                      animate={isAudioPlaying ? {
+                        borderWidth: ['2px', '3px', '2px', '4px', '2px', '3px', '2px'], // Responsive border changes
+                        scale: [1, 1.01, 1, 1.02, 1, 1.01, 1], // Very subtle breathing effect
+                      } : {
+                        borderWidth: '2px',
+                        scale: 1
+                      }}
+                      transition={isAudioPlaying ? {
+                        duration: 2.5, // Match the first wave timing
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                        times: [0, 0.2, 0.4, 0.6, 0.8, 0.9, 1], // Match the first wave timing
+                      } : {
+                        duration: 0.3
+                      }}
+                    />
+                    
+                    {/* Wave Animation Overlay */}
+                    <WaveAnimation 
+                      isActive={isAudioPlaying || isChatLoading} 
+                      size={140} // Base wave size (will be scaled responsively)
+                      imageSize={128} // Image size
+                      listening={isChatLoading} // Use listening pattern when processing
+                    />
+                  </div>
+                  
+                </div>
                 
-                {/* Interviewer Info Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
-                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Sadhan</h3>
-                  <p className="text-gray-200 text-sm md:text-base font-medium"></p>
+                {/* Live Indicator */}
+                <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
+                  <div className="flex items-center gap-1 sm:gap-2 bg-green-500/90 backdrop-blur-sm text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold shadow-lg border border-green-400/30">
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full animate-pulse"></div>
+                    <span className="tracking-wide text-xs">LIVE</span>
+                  </div>
                 </div>
 
-                {/* Live Indicator */}
-                <div className="absolute top-4 left-4">
-                  <div className="flex items-center gap-2 bg-green-500/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-green-400/30">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    <span className="tracking-wide">LIVE</span>
-                  </div>
+                {/* Interviewer Label */}
+                <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4">
+                  <h3 
+                    className="font-bold text-sm sm:text-base md:text-lg lg:text-xl mb-1 drop-shadow-lg"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
+                    Sadhan
+                  </h3>
                 </div>
               </div>
             </div>
@@ -688,7 +745,7 @@ function InterviewPage() {
 
           {/* Middle - User Camera */}
           <div 
-            className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r p-4 lg:p-6" 
+            className="w-full xl:w-1/3 border-b xl:border-b-0 xl:border-r p-3 sm:p-4 lg:p-6 flex-shrink-0" 
             style={{ 
               backgroundColor: 'var(--color-card)', 
               borderColor: 'var(--color-border)' 
@@ -697,7 +754,7 @@ function InterviewPage() {
             <div className="h-full flex flex-col">
               {/* User Video Container */}
               <div 
-                className="h-48 lg:flex-1 relative rounded-2xl overflow-hidden shadow-lg border"
+                className="h-40 sm:h-52 md:h-64 lg:h-72 xl:flex-1 relative rounded-xl sm:rounded-2xl overflow-hidden shadow-lg border"
                 style={{ borderColor: 'var(--color-border)' }}
               >
                 <video
@@ -708,47 +765,24 @@ function InterviewPage() {
                   className="w-full h-full object-cover"
                 />
 
-                {/* Processing State */}
-                {isChatLoading && (
-                  <motion.div
-                    className="absolute inset-0 flex items-center justify-center"
-                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div 
-                      className="rounded-xl p-6 text-center shadow-2xl"
-                      style={{ backgroundColor: 'var(--color-card)' }}
-                    >
-                      <div 
-                        className="w-10 h-10 border-3 border-t-transparent rounded-full animate-spin mx-auto mb-3"
-                        style={{ borderColor: 'var(--color-primary)' }}
-                      ></div>
-                      <p 
-                        className="font-medium"
-                        style={{ color: 'var(--color-text-primary)' }}
-                      >
-                        Processing...
-                      </p>
-                    </div>
-                  </motion.div>
-                )}
                 
                 {/* User Camera Label */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-6">
-                  <h3 className="text-white font-bold text-lg md:text-xl mb-1">Your Camera</h3>
-                  <p className="text-gray-200 text-sm md:text-base font-medium">Live Feed</p>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 sm:p-4 md:p-6">
+                  <h3 
+                    className="font-bold text-sm sm:text-base md:text-lg lg:text-xl mb-1 text-white drop-shadow-lg"
+                  >
+                    Your Camera
+                  </h3>
                 </div>
 
                 {/* Connection Status */}
-                <div className="absolute top-4 left-4">
+                <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
                   <div 
-                    className="flex items-center gap-2 text-white px-3 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-white/20 backdrop-blur-sm"
+                    className="flex items-center gap-1 sm:gap-2 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold shadow-lg border border-white/20 backdrop-blur-sm"
                     style={{ backgroundColor: 'var(--color-primary)' }}
                   >
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                    <span className="tracking-wide">CONNECTED</span>
+                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full"></div>
+                    <span className="tracking-wide text-xs">CONNECTED</span>
                   </div>
                 </div>
               </div>
@@ -757,7 +791,7 @@ function InterviewPage() {
 
           {/* Right - Chat Conversation */}
           <div 
-            className="w-full lg:w-1/3"
+            className="w-full xl:w-1/3 flex-1 min-h-0 flex flex-col"
             style={{ backgroundColor: 'var(--color-card)' }}
           >
             <ChatWindow
@@ -765,6 +799,9 @@ function InterviewPage() {
               setConversation={setConversation}
               isLoading={isChatLoading}
               setIsLoading={setIsChatLoading}
+              isAudioPlaying={isAudioPlaying}
+              setIsAudioPlaying={setIsAudioPlaying}
+              onStateChange={handleChatStateChange}
             />
           </div>
         </div>

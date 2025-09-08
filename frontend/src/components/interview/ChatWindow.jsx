@@ -5,7 +5,7 @@ import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
 
-function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) {
+function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, isAudioPlaying, setIsAudioPlaying, onStateChange }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   const mediaRecorderRef = useRef(null);
@@ -19,7 +19,6 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
 
   // Add this state for loading
   const [isEndingInterview, setIsEndingInterview] = useState(false);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [currentAudioElement, setCurrentAudioElement] = useState(null);
   const [canEndInterview, setCanEndInterview] = useState(true); // Start enabled
   const [isResponseInProgress, setIsResponseInProgress] = useState(false);
@@ -61,6 +60,17 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
     console.log('🔄 Loading state changed to:', isLoading);
   }, [isLoading]);
 
+  // Notify parent component of state changes for head tracking toggle
+  useEffect(() => {
+    if (onStateChange) {
+      onStateChange({
+        isRecording,
+        isResponseInProgress,
+        canEndInterview
+      });
+    }
+  }, [isRecording, isResponseInProgress, canEndInterview, onStateChange]);
+
   // Function to call Interview Manager API
   const callInterviewManager = async (userInput) => {
     try {
@@ -92,7 +102,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           timestamp: new Date().toLocaleTimeString()
         };
         
-        setConversation(prev => [...prev, newMessage]);
+        // Remove thinking message and add actual response
+        setConversation(prev => {
+          const filtered = prev.filter(msg => !msg.isThinking);
+          return [...filtered, newMessage];
+        });
         console.log('✅ Interviewer response added');
         
         // ✅ NEW: Play audio if available
@@ -205,7 +219,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             timestamp: new Date().toLocaleTimeString()
           };
           
-          setConversation(prev => [...prev, newMessage]);
+          // Remove thinking message and add final response
+          setConversation(prev => {
+            const filtered = prev.filter(msg => !msg.isThinking);
+            return [...filtered, newMessage];
+          });
           
           // ✅ NEW: Play audio for final response (if available)
           if (audio_url) {
@@ -346,6 +364,16 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
               setConversation(prev => [...prev, newMessage]);
               console.log('✅ Candidate message added');
               setIsLoading(false); // Stop loading immediately after user message appears
+              
+              // Add thinking indicator before backend call
+              const thinkingMessage = {
+                id: `thinking-${Date.now()}`,
+                speaker: 'interviewer',
+                message: 'Thinking...',
+                timestamp: new Date().toLocaleTimeString(),
+                isThinking: true
+              };
+              setConversation(prev => [...prev, thinkingMessage]);
               
               // Call Interview Manager API to get the next question/response
               setIsResponseInProgress(true); // ✅ NEW: Start response process
@@ -593,17 +621,17 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
 
   return (
     <div 
-      className="h-full flex flex-col p-4 lg:p-6"
+      className="h-full flex flex-col p-3 sm:p-4 lg:p-6 min-h-0"
       style={{ 
         backgroundColor: 'var(--color-card)',
         borderLeft: '1px solid var(--color-border)'
       }}
     >
       {/* Header with Title and Buttons */}
-      <div className="flex flex-col gap-4 mb-4">
-        <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:gap-4 mb-3 sm:mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3">
           <h2 
-            className="text-xl md:text-2xl font-bold tracking-tight"
+            className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight"
             style={{ color: 'var(--color-text-primary)' }}
           >
             Interview Conversation
@@ -613,7 +641,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           <button
             onClick={handleEndInterview}
             disabled={!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress}
-            className={`ml-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap ${
+            className={`w-full sm:w-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap ${
               !canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
                 ? 'bg-[var(--color-error)]/10 border-2 border-[var(--color-error)]/30 text-[var(--color-error)]/70 cursor-not-allowed'
                 : 'bg-[var(--color-error)]/10 border-2 border-[var(--color-error)] text-[var(--color-error)] hover:bg-[var(--color-error)] hover:text-white hover:border-[var(--color-error)]'
@@ -637,11 +665,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             </span>
             <span className="sm:hidden">
               {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
-                ? (isRecording ? "..." : 
-                   isAudioPlaying ? "..." : 
-                   isLoading ? "..." : 
-                   isResponseInProgress ? "..." : "...")
-                : "End"
+                ? (isRecording ? "Recording..." : 
+                   isAudioPlaying ? "Audio Playing..." : 
+                   isLoading ? "Generating..." : 
+                   isResponseInProgress ? "Processing..." : "Please Wait...")
+                : "End Interview"
               }
             </span>
           </button>
@@ -652,7 +680,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
           <button
             onClick={toggleRecording}
             disabled={isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress} // ✅ NEW: Also disable during response process
-            className={`w-full px-8 py-4 rounded-full flex items-center justify-center gap-3 text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-xl hover:scale-105 active:scale-95 ${
+            className={`w-full px-4 sm:px-6 md:px-8 py-3 sm:py-4 rounded-full flex items-center justify-center gap-2 sm:gap-3 text-white font-semibold transition-all duration-300 shadow-xl hover:shadow-xl hover:scale-105 active:scale-95 ${
               isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
                 ? 'bg-gray-400 cursor-not-allowed opacity-60' // ✅ NEW: Disabled state for all conditions
                 : isRecording 
@@ -667,8 +695,8 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
                 : (isRecording ? 'Stop Recording' : 'Speak Now')
             } // ✅ NEW: Dynamic tooltip for all disabled states
           >
-            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
-            <span className="text-sm font-medium">
+            {isRecording ? <MicOff size={18} className="sm:w-5 sm:h-5" /> : <Mic size={18} className="sm:w-5 sm:h-5" />}
+            <span className="text-xs sm:text-sm font-medium">
               {isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
                 ? (isAudioPlaying ? 'Audio Playing...' : 
                    isLoading ? 'Generating...' : 
@@ -683,22 +711,32 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
       {/* Messages */}
       <div 
         ref={messagesContainerRef}  // ✅ NEW: Add ref to messages container
-        className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2"
+        className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 mb-4 sm:mb-6 pr-1 sm:pr-2 min-h-0"
       >
         <AnimatePresence>
           {conversation.map((message) => (
             <motion.div
               key={message.id}
               initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
+              animate={{ 
+                opacity: 1,
+                y: message.isThinking ? [-3, 3] : 0
+              }}
+              transition={{ 
+                duration: message.isThinking ? 1 : 0.3,
+                repeat: message.isThinking ? Infinity : 0,
+                ease: "easeInOut",
+                repeatType: "reverse"
+              }}
               className={`flex ${message.speaker === 'interviewer' ? 'justify-start' : 'justify-end'}`}
             >
               <div
-                className={`max-w-[85%] p-5 rounded-2xl shadow-lg ${
-                  message.speaker === 'interviewer'
-                    ? 'border border-[var(--color-border)]'
-                    : 'border border-[var(--color-primary)]'
+                className={`max-w-[90%] sm:max-w-[85%] rounded-xl sm:rounded-2xl shadow-lg ${
+                  message.isThinking
+                    ? 'p-3 sm:p-4 md:p-5 border-2 sm:border-3 border-[var(--color-primary)]'
+                    : 'p-3 sm:p-4 md:p-5 border border-[var(--color-border)]'
+                } ${
+                  message.speaker === 'candidate' ? 'border border-[var(--color-primary)]' : ''
                 }`}
                 style={{
                   backgroundColor: message.speaker === 'interviewer' 
@@ -709,9 +747,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
                     : 'white',
                 }}
               >
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mb-2 sm:mb-3">
                   <span 
-                    className={`text-xs font-bold px-3 py-1 rounded-full tracking-wide ${
+                    className={`text-xs font-bold px-2 sm:px-3 py-1 rounded-full tracking-wide ${
                       message.speaker === 'interviewer'
                         ? 'bg-[var(--color-border)] text-[var(--color-text-secondary)]'
                         : 'bg-white/20 text-white'
@@ -726,7 +764,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
                     {message.timestamp}
                   </span>
                 </div>
-                <p className="text-sm md:text-base leading-relaxed font-medium">{message.message}</p>
+                <p className="text-xs sm:text-sm md:text-base leading-relaxed font-medium">{message.message}</p>
               </div>
             </motion.div>
           ))}
@@ -742,16 +780,16 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
             className="flex justify-end"
           >
             <div 
-              className="max-w-[85%] p-4 rounded-lg border"
+              className="max-w-[90%] sm:max-w-[85%] p-3 sm:p-4 rounded-lg border"
               style={{ 
                 backgroundColor: 'var(--color-primary)',
                 borderColor: 'var(--color-primary)',
                 color: 'white'
               }}
             >
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-2">
                 <span 
-                  className="text-xs font-bold px-3 py-1 rounded-full tracking-wide"
+                  className="text-xs font-bold px-2 sm:px-3 py-1 rounded-full tracking-wide"
                   style={{ 
                     backgroundColor: 'rgba(255,255,255,0.2)',
                     color: 'white'
@@ -768,18 +806,18 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
               </div>
               <div className="flex space-x-1">
                 <div 
-                  className="w-2 h-2 rounded-full animate-bounce"
+                  className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full animate-bounce"
                   style={{ backgroundColor: 'rgba(255,255,255,0.8)' }}
                 ></div>
                 <div 
-                  className="w-2 h-2 rounded-full animate-bounce" 
+                  className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full animate-bounce" 
                   style={{ 
                     backgroundColor: 'rgba(255,255,255,0.8)',
                     animationDelay: '0.1s' 
                   }}
                 ></div>
                 <div 
-                  className="w-2 h-2 rounded-full animate-bounce" 
+                  className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full animate-bounce" 
                   style={{ 
                     backgroundColor: 'rgba(255,255,255,0.8)',
                     animationDelay: '0.2s' 
@@ -796,11 +834,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
 
       {/* Instructions */}
       <div 
-        className="text-center border-t pt-4"
+        className="text-center border-t pt-3 sm:pt-4"
         style={{ borderColor: 'var(--color-border)' }}
       >
         <p 
-          className="text-sm"
+          className="text-xs sm:text-sm"
           style={{ color: 'var(--color-text-secondary)' }}
         >
           {isRecording 
@@ -812,7 +850,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading }) 
 
       {/* Session Info */}
       <div 
-        className="flex items-center justify-between text-xs pt-2 border-t mt-4"
+        className="flex items-center justify-between text-xs pt-2 border-t mt-3 sm:mt-4"
         style={{ 
           color: 'var(--color-text-secondary)',
           borderColor: 'var(--color-border)' 

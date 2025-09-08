@@ -59,14 +59,14 @@ const WarningModal = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4"
         onClick={onClose}
       >
         <motion.div
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
-          className="rounded-2xl p-6 max-w-md w-full shadow-2xl relative border"
+          className="rounded-xl sm:rounded-2xl p-4 sm:p-6 max-w-sm sm:max-w-md w-full shadow-2xl relative border"
           style={{ 
             backgroundColor: 'var(--color-card)',
             borderColor: 'var(--color-border)'
@@ -76,7 +76,7 @@ const WarningModal = ({
           {/* Close Button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-1 rounded-full transition-colors"
+            className="absolute top-3 sm:top-4 right-3 sm:right-4 p-1 rounded-full transition-colors"
             style={{ 
               color: 'var(--color-text-secondary)',
               backgroundColor: 'transparent'
@@ -88,18 +88,20 @@ const WarningModal = ({
               e.target.style.backgroundColor = 'transparent';
             }}
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
-          <div className="text-center mt-8">
+          <div className="text-center mt-6 sm:mt-8">
             {/* Warning Icon */}
-            <div className="flex justify-center mb-4">
-              {warning.icon}
+            <div className="flex justify-center mb-3 sm:mb-4">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center">
+                {warning.icon}
+              </div>
             </div>
             
             {/* Warning Title */}
             <h3 
-              className="text-xl font-bold mb-3"
+              className="text-lg sm:text-xl font-bold mb-2 sm:mb-3"
               style={{ color: 'var(--color-text-primary)' }}
             >
               {warning.title}
@@ -107,7 +109,7 @@ const WarningModal = ({
             
             {/* Warning Message */}
             <p 
-              className="mb-6 leading-relaxed"
+              className="mb-4 sm:mb-6 leading-relaxed text-sm sm:text-base"
               style={{ color: 'var(--color-text-secondary)' }}
             >
               {warning.message}
@@ -116,7 +118,7 @@ const WarningModal = ({
             {/* Action Button */}
             <button
               onClick={onClose}
-              className="text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl w-full"
+              className="text-white font-semibold py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg transition-colors duration-200 shadow-lg hover:shadow-xl w-full text-sm sm:text-base"
               style={{ 
                 backgroundColor: warning.buttonColor,
                 color: 'white'
