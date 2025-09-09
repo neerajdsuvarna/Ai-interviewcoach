@@ -37,13 +37,14 @@ from supabase import create_client, Client
 from pydub import AudioSegment
 import requests
 from urllib.parse import urlparse
+from supabase import create_client, Client
 
 # ─────────────────────────────────────────────────────
 #  Load environment variables from .env
 # ─────────────────────────────────────────────────────
 
-# Load environment variables from root .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+# Load environment variables from backend .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 # Ensure INTERVIEW folder is in Python path
 INTERVIEW_PATH = os.path.join(os.path.dirname(__file__), "INTERVIEW")
 if INTERVIEW_PATH not in sys.path:
@@ -355,13 +356,7 @@ def decode_image(img_data):
         print(f"decode_image error: {e}")
         return None
 
-# Add at the top with other imports
-import os
-from supabase import create_client, Client
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
 
 # Initialize Supabase client
 supabase_url = os.getenv("SUPABASE_URL")

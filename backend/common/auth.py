@@ -4,7 +4,7 @@ from functools import wraps
 from flask import request, jsonify
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join("common", ".env"))
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")

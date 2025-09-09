@@ -7,8 +7,8 @@ from enum import Enum
 import os
 from dotenv import load_dotenv
 
-# Load .env from the same folder
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+# Load .env from backend folder (parent directory)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 
 # Load environment variables
