@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { extractTokensFromHash, formatErrorMessage } from '../utils/emailVerificationUtils';
 
@@ -6,7 +6,7 @@ export const useEmailVerification = () => {
   const [verificationStatus, setVerificationStatus] = useState('idle'); // 'idle', 'pending', 'success', 'error'
   const [verificationMessage, setVerificationMessage] = useState('');
 
-  const handleEmailVerification = async (searchParams) => {
+  const handleEmailVerification = useCallback(async (searchParams) => {
     setVerificationStatus('pending');
     
     try {
@@ -35,7 +35,7 @@ export const useEmailVerification = () => {
         } else {
           setVerificationStatus('success');
           setVerificationMessage('Email verified successfully! Welcome to InterviewCoach.');
-          return { success: true, email: session.user.email };
+          return { success: true, email: data.session?.user?.email, user_id: data.session?.user?.id };
         }
       } else {
         // Handle the case where user clicks the verification link
@@ -49,7 +49,7 @@ export const useEmailVerification = () => {
           if (session.user.email_confirmed_at) {
             setVerificationStatus('success');
             setVerificationMessage('Email verified successfully! Welcome to InterviewCoach.');
-            return { success: true, email: session.user.email };
+            return { success: true, email: session.user.email, user_id: session.user.id };
           } else {
             setVerificationStatus('error');
             setVerificationMessage('Email verification is still pending. Please check your email and click the verification link.');
@@ -72,7 +72,7 @@ export const useEmailVerification = () => {
                     } else {
           setVerificationStatus('success');
           setVerificationMessage('Email verified successfully! Welcome to InterviewCoach.');
-          return { success: true, email: data.session?.user?.email };
+          return { success: true, email: data.session?.user?.email, user_id: data.session?.user?.id };
         }
           } else {
             setVerificationStatus('error');
@@ -87,7 +87,7 @@ export const useEmailVerification = () => {
       setVerificationMessage('An unexpected error occurred');
       return { success: false, error: err.message };
     }
-  };
+  }, []); // Empty dependency array since the function doesn't depend on any external values
 
   const resetVerification = () => {
     setVerificationStatus('idle');

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { FiSearch, FiFilter, FiCode, FiFileText, FiCopy, FiCreditCard, FiLoader, FiRefreshCw, FiEye } from 'react-icons/fi'; // Add FiLoader, FiRefreshCw, FiEye
 import { useTheme } from '../hooks/useTheme';
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useSearchParams } from 'react-router-dom';
+import { trackEvents } from '../services/mixpanel';
 
 
 const getLevelColor = (level) => {
@@ -193,6 +194,9 @@ export default function QuestionsPage() {
   const [currentJdId, setCurrentJdId] = useState(null);
   const [interviewHistory, setInterviewHistory] = useState([]);
   const [hasExistingInterviews, setHasExistingInterviews] = useState(false);
+  
+  // Prevent duplicate event tracking
+  const hasTrackedQuestionsAccessed = useRef(false);
 
   // ✅ Updated useEffect - now filters by resume_id + jd_id combination
   useEffect(() => {
@@ -276,6 +280,18 @@ export default function QuestionsPage() {
           const result = await questionsResponse.json();
           console.log('[DEBUG] Fetched questions from set', targetQuestionSet, 'for combination:', result);
           setQuestions(result.data || []);
+          
+          // Track questions accessed (only once)
+          if (!hasTrackedQuestionsAccessed.current) {
+            hasTrackedQuestionsAccessed.current = true;
+            trackEvents.questionsAccessed({
+              resume_id: resumeIdFromUrl,
+              jd_id: jdIdFromUrl,
+              question_set: targetQuestionSet,
+              total_questions: result.data?.length || 0,
+              access_timestamp: new Date().toISOString()
+            });
+          }
         } else {
           setQuestions([]);
         }
@@ -423,6 +439,14 @@ export default function QuestionsPage() {
       alert('Please ensure resume and job description are uploaded first.');
       return;
     }
+    
+    // Track payment page visit
+    trackEvents.paymentPage({
+      resume_id: currentResumeId,
+      jd_id: currentJdId,
+      question_set: currentQuestionSet,
+      payment_timestamp: new Date().toISOString()
+    });
     
     // ✅ Include question_set so interview-setup can attach only that set
     const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}&question_set=${currentQuestionSet}`;

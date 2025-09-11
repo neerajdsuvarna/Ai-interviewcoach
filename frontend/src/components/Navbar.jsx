@@ -4,6 +4,7 @@ import { FiUser, FiMenu, FiX, FiLogIn, FiLogOut } from 'react-icons/fi';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
+import { trackEvents } from '../services/mixpanel';
 
 function Navbar({ disableNavigation = false }) {
   const { user } = useAuth();
@@ -13,6 +14,18 @@ function Navbar({ disableNavigation = false }) {
 
   const handleLogout = async () => {
     if (disableNavigation) return; // Prevent logout during question generation
+    
+    // Capture user data BEFORE any auth state changes
+    const currentUserId = user?.id;
+    const currentUserEmail = user?.email;
+    
+    // Track sign out event with captured user data
+    trackEvents.signOut({
+      user_id: currentUserId,
+      user_email: currentUserEmail,
+      logout_timestamp: new Date().toISOString()
+    });
+    
     await supabase.auth.signOut();
     window.location.reload();
   };

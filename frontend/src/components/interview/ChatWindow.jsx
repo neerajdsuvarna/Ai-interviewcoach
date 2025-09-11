@@ -4,6 +4,7 @@ import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for e
 import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
+import { trackEvents } from '../../services/mixpanel';
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, isAudioPlaying, setIsAudioPlaying, onStateChange }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -225,6 +226,29 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             return [...filtered, newMessage];
           });
           
+          // ✅ NEW: Track events immediately when interview_done is true, regardless of audio
+          if (interview_done) {
+            console.log('🎯 Interview completed, tracking events...');
+            
+            // Track interview completion
+            console.log('📊 Tracking participatedInMockInterview...');
+            trackEvents.participatedInMockInterview({
+              interview_id: interviewId,
+              completion_timestamp: new Date().toISOString(),
+              completion_method: 'backend_confirmed'
+            });
+            
+            // Add small delay between events to avoid rate limiting
+            setTimeout(() => {
+              console.log('📊 Tracking mockInterviewFeedbackGenerated...');
+              trackEvents.mockInterviewFeedbackGenerated({
+                interview_id: interviewId,
+                generation_timestamp: new Date().toISOString(),
+                generation_method: 'backend_confirmed'
+              });
+            }, 100); // 100ms delay
+          }
+          
           // ✅ NEW: Play audio for final response (if available)
           if (audio_url) {
             console.log('🔊 Playing final audio response:', audio_url);
@@ -260,6 +284,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               // ✅ NEW: Redirect to feedback page after audio finishes
               if (interview_done) {
                 console.log('🎯 Interview completed, redirecting to feedback...');
+                
                 // Add a small delay to ensure audio deletion completes
                 setTimeout(() => {
                   window.location.href = `/interview-feedback?interview_id=${interviewId}`;

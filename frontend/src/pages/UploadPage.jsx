@@ -8,6 +8,7 @@ import { useTheme } from '../hooks/useTheme';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadFile } from '../api';
 import SuccessModal from '../components/SuccessModal';
+import { trackEvents } from '../services/mixpanel';
 
 function UploadPage() {
   const { theme } = useTheme();
@@ -219,9 +220,26 @@ function UploadPage() {
       console.log('[DEBUG] Step 1: Uploading resume to storage...');
       const resumeUrl = await uploadFileToStorage(resume, 'resumes', 'user_files');
 
+      // Track resume upload
+      trackEvents.resumeUploaded({
+        file_name: resume.name,
+        file_size: resume.size,
+        file_type: resume.type,
+        upload_timestamp: new Date().toISOString()
+      });
+
       // Step 2: Save resume and job description to database
       console.log('[DEBUG] Step 2: Saving to database...');
       const { resumeId, jdId } = await saveToDatabase(resumeUrl, resumeUrl);
+
+      // Track job description save
+      trackEvents.jobDescriptionSaved({
+        job_title: jobTitle,
+        job_description_length: jobDescription.length,
+        resume_id: resumeId,
+        jd_id: jdId,
+        save_timestamp: new Date().toISOString()
+      });
 
       // Step 3: Generate questions using backend API
       console.log('[DEBUG] Step 3: Generating questions...');
@@ -243,22 +261,31 @@ function UploadPage() {
         throw new Error(`Failed to save questions: ${questionsSaveResult.message}`);
       }
 
-      // Step 5: Show success message and redirect
-      console.log('[DEBUG] Step 5: Process completed successfully!');
-      console.log('[DEBUG] Resume ID:', resumeId);
-      console.log('[DEBUG] Job Description ID:', jdId);
-      console.log('[DEBUG] Questions saved:', questionsSaveResult.data.length);
-      
       // Get the question set number from the saved questions
       const savedQuestionSet = questionsSaveResult.data[0]?.question_set || 'unknown';
-      
-      // Count unique questions by grouping by question_text
+
+      // Track questions generated
       const uniqueQuestions = questionsSaveResult.data.reduce((acc, item) => {
         if (!acc.has(item.question_text)) {
           acc.add(item.question_text);
         }
         return acc;
       }, new Set());
+
+      trackEvents.questionsGenerated({
+        resume_id: resumeId,
+        jd_id: jdId,
+        question_set: savedQuestionSet,
+        total_questions: uniqueQuestions.size,
+        job_title: jobTitle,
+        generation_timestamp: new Date().toISOString()
+      });
+
+      // Step 5: Show success message and redirect
+      console.log('[DEBUG] Step 5: Process completed successfully!');
+      console.log('[DEBUG] Resume ID:', resumeId);
+      console.log('[DEBUG] Job Description ID:', jdId);
+      console.log('[DEBUG] Questions saved:', questionsSaveResult.data.length);
       
       // Store the created IDs for navigation
       setLastCreatedIds({

@@ -15,10 +15,14 @@ import PaymentStatus from './pages/PaymentsStatus';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
+import { useMixpanel } from './hooks/useMixpanel';
 
 // Add this route
 
 function App() {
+  // Initialize Mixpanel user identification
+  useMixpanel();
+  
   return (
     <>
       {/* <AuthDebug /> Add this temporarily for debugging */}

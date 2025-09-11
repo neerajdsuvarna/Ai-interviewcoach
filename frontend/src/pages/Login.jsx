@@ -5,6 +5,7 @@ import { useTheme } from '../hooks/useTheme';
 import { FiEye, FiEyeOff } from 'react-icons/fi';
 import Navbar from '../components/Navbar';
 import { performSmartRedirect } from '../utils/smartRouting';
+import { trackEvents } from '../services/mixpanel';
 
 function Login() {
   const navigate = useNavigate();
@@ -33,6 +34,13 @@ function Login() {
           setErrorMsg(error.message);
         }
       } else {
+        // Track successful sign in with user data
+        trackEvents.signIn({
+          email: email,
+          user_id: data.user?.id,
+          login_timestamp: new Date().toISOString()
+        });
+        
         // Smart redirect based on user's data
         performSmartRedirect(navigate);
       }

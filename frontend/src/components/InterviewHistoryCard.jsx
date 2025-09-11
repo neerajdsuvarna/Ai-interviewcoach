@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiClock, FiCheckCircle, FiXCircle, FiPlay, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
+import { trackEvents } from '../services/mixpanel';
 
 const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegenerating, isAnyRegenerating = false }) => {
   const { user } = useAuth();
@@ -73,6 +74,9 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
       if (!originalInterviewId) {
         throw new Error('No original interview found for retake');
       }
+      
+      // Note: Rescheduled Mock Interview event will be tracked after successful payment
+      // in PaymentsStatus.jsx when the interview is actually rescheduled
       
       // Redirect to Dodo checkout with retake context (no interview created yet)
       const redirectUrl = `${window.location.origin}/payment-status?resume_id=${pairing.resume_id}&jd_id=${pairing.jd_id}&question_set=${questionSet.questionSetNumber}&retake_from=${originalInterviewId}`;

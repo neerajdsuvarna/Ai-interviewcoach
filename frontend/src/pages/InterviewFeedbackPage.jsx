@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
@@ -18,6 +18,7 @@ import {
 import { useTheme } from '@/hooks/useTheme';
 import Navbar from '@/components/Navbar';
 import { supabase } from '@/supabaseClient';
+import { trackEvents } from '../services/mixpanel';
 
 // PDF generation functions
 const generateInterviewPDF = (feedbackData, transcriptData, getOverallRating, getRatingLabel, getInterviewDuration, getQuestionsAnswered, formatKeyStrengths, formatImprovementAreas) => {
@@ -241,6 +242,9 @@ function InterviewFeedbackPage() {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   
+  // Prevent duplicate "Interview Feedback Accessed" tracking for this page visit
+  const hasTrackedFeedbackAccessed = useRef(false);
+  
   // Fetch feedback data from the database
   const fetchFeedbackData = async () => {
     if (!interviewId) {
@@ -281,6 +285,12 @@ function InterviewFeedbackPage() {
         // Get the first feedback record for this interview
         setFeedbackData(result.data[0]);
         setShowLoading(false); // Hide loading when data is loaded
+        
+        // Note: Interview feedback generation is now tracked in InterviewPage.jsx and ChatWindow.jsx
+        // when the interview actually ends and feedback is generated, not when feedback is accessed
+        
+        // Note: Interview completion is now tracked in InterviewPage.jsx and ChatWindow.jsx
+        // when the interview actually ends, not when feedback is accessed
       } else {
         setError('No feedback data found for this interview');
         setShowLoading(false);
@@ -295,6 +305,15 @@ function InterviewFeedbackPage() {
   };
 
   useEffect(() => {
+    // Track interview feedback accessed (once per page visit)
+    if (!hasTrackedFeedbackAccessed.current) {
+      hasTrackedFeedbackAccessed.current = true;
+      trackEvents.interviewFeedbackAccessed({
+        interview_id: interviewId,
+        access_timestamp: new Date().toISOString()
+      });
+    }
+    
     // Start fetching data immediately
     fetchFeedbackData();
   }, [interviewId]);
