@@ -197,6 +197,7 @@ pip install python-docx
 pip install PyPDF2  
 pip install supabase
 pip install piper-tts
+pip install pydub
 
 echo.
 echo [INFO] Running model_download.py with matched Python interpreter...

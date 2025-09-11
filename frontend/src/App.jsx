@@ -15,13 +15,19 @@ import PaymentStatus from './pages/PaymentsStatus';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
+import { useHelpJam } from './hooks/useHelpJam'; // Add this import
+// import HelpJamDebug from './components/HelpJamDebug'; // Remove this import
 
 // Add this route
 
 function App() {
+  // Initialize HelpJam tracking
+  useHelpJam();
+
   return (
     <>
       {/* <AuthDebug /> Add this temporarily for debugging */}
+      {/* <HelpJamDebug /> Remove this debug component */}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />

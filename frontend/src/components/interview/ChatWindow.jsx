@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for end button
 import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
+import { useChatHistory } from '../../hooks/useChatHistory';
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, isAudioPlaying, setIsAudioPlaying, onStateChange }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -20,8 +21,12 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // Add this state for loading
   const [isEndingInterview, setIsEndingInterview] = useState(false);
   const [currentAudioElement, setCurrentAudioElement] = useState(null);
-  const [canEndInterview, setCanEndInterview] = useState(true); // Start enabled
+  const [canEndInterview, setCanEndInterview] = useState(false); // Start disabled
   const [isResponseInProgress, setIsResponseInProgress] = useState(false);
+  
+  // ✅ NEW: Add state to track interview stage and resume question answers
+  const [interviewStage, setInterviewStage] = useState('introduction');
+  const [hasAnsweredResumeQuestion, setHasAnsweredResumeQuestion] = useState(false);
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
@@ -51,7 +56,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       }
       setIsAudioPlaying(false);
       setCurrentAudioElement(null);
-      setCanEndInterview(true);
+      // ✅ FIXED: Don't unconditionally enable button - let stage logic handle it
     };
   }, []);
 
@@ -75,6 +80,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   const callInterviewManager = async (userInput) => {
     try {
       console.log('🤖 Calling Interview Manager API with:', userInput);
+      console.log('🔍 Current state before API call:', {
+        interviewStage,
+        hasAnsweredResumeQuestion,
+        canEndInterview
+      });
       
       // ✅ Get interview_id from URL
       const urlParams = new URLSearchParams(window.location.search);
@@ -93,21 +103,53 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       console.log('📥 Interview Manager response:', response);
       
       if (response.success) {
-        const { response: textResponse, audio_url, should_delete_audio } = response.data;
+        const { response: textResponse, audio_url, should_delete_audio, stage, interview_done } = response.data;
         
-        const newMessage = {
-          id: Date.now(),
-          speaker: 'interviewer',
-          message: textResponse,
-          timestamp: new Date().toLocaleTimeString()
-        };
+        console.log('🔍 Response data:', {
+          stage,
+          interview_done,
+          userInput: userInput.trim(),
+          currentInterviewStage: interviewStage
+        });
+        
+        // ✅ NEW: Track when user answers resume questions (check current stage before updating)
+        if (interviewStage === 'resume_discussion' && userInput.trim().length > 0) {
+          console.log('✅ User answered resume question - marking as answered');
+          setHasAnsweredResumeQuestion(true);
+        }
+        
+        // ✅ NEW: Update interview stage and control End Interview button
+        if (stage) {
+          console.log('📊 Interview stage updated from', interviewStage, 'to:', stage);
+          setInterviewStage(stage);
+          
+          // Enable End Interview button only when user has answered at least one resume question
+          if (stage === 'resume_discussion' && hasAnsweredResumeQuestion) {
+            console.log('✅ Resume question answered - enabling End Interview button');
+            setCanEndInterview(true);
+          } else if (stage === 'custom_questions' || stage === 'candidate_questions' || stage === 'wrapup_evaluation' || stage === 'manual_end' || stage === 'timeout') {
+            console.log('✅ Later stage reached - enabling End Interview button');
+            setCanEndInterview(true);
+          } else {
+            console.log('⏳ Waiting for resume question answer - keeping End Interview button disabled');
+            console.log('🔍 Debug info:', {
+              stage,
+              hasAnsweredResumeQuestion,
+              isResumeDiscussion: stage === 'resume_discussion'
+            });
+            setCanEndInterview(false);
+          }
+        }
         
         // Remove thinking message and add actual response
         setConversation(prev => {
           const filtered = prev.filter(msg => !msg.isThinking);
-          return [...filtered, newMessage];
+          return filtered;
         });
         console.log('✅ Interviewer response added');
+        
+        // Add message using the database function
+        await addMessageToConversation('interviewer', textResponse);
         
         // ✅ NEW: Play audio if available
         if (audio_url) {
@@ -117,14 +159,15 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           // ✅ NEW: Track audio playback state
           setIsAudioPlaying(true);
           setCurrentAudioElement(audio);
-          setCanEndInterview(false); // Disable end interview button while audio plays
+          // ✅ FIXED: Disable end interview button while audio plays
+          // setCanEndInterview(false); // This line is removed as per the edit hint
           
           // ✅ NEW: Delete audio file after playback
           audio.onended = async () => {
             console.log('✅ Audio playback completed');
             setIsAudioPlaying(false);
             setCurrentAudioElement(null);
-            setCanEndInterview(true); // Re-enable end interview button
+            // ✅ FIXED: Don't unconditionally enable button - let stage logic handle it
             setIsResponseInProgress(false); // ✅ NEW: Response process complete
             
             if (should_delete_audio) {
@@ -151,7 +194,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             console.error('❌ Audio playback failed:', error);
             setIsAudioPlaying(false);
             setCurrentAudioElement(null);
-            setCanEndInterview(true); // Re-enable button on error
+            // ✅ FIXED: Don't unconditionally enable button - let stage logic handle it
             setIsResponseInProgress(false); // ✅ NEW: Response process complete on error
           };
           
@@ -160,12 +203,12 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             console.error('❌ Failed to play audio:', error);
             setIsAudioPlaying(false);
             setCurrentAudioElement(null);
-            setCanEndInterview(true); // Re-enable button on error
+            // ✅ FIXED: Don't unconditionally enable button - let stage logic handle it
             setIsResponseInProgress(false); // ✅ NEW: Response process complete on error
           });
         } else {
           console.log('ℹ️ No audio URL provided in response');
-          setCanEndInterview(true); // No audio, so button can be enabled
+          // ✅ FIXED: Don't unconditionally enable button - let stage logic handle it
           setIsResponseInProgress(false); // ✅ NEW: Response process complete
         }
       } else {
@@ -182,6 +225,21 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
     
     if (confirmed) {
       console.log('✅ User confirmed ending interview');
+      
+      // ✅ NEW: Delete chat history for this interview
+      const urlParams = new URLSearchParams(window.location.search);
+      const interviewId = urlParams.get('interview_id');
+      
+      if (interviewId) {
+        try {
+          console.log('🗑️ Deleting chat history for interview:', interviewId);
+          await deleteChatHistory(interviewId);
+          console.log('✅ Chat history deleted successfully');
+        } catch (error) {
+          console.error('❌ Failed to delete chat history:', error);
+          // Continue with interview ending even if chat history deletion fails
+        }
+      }
       
       // ✅ NEW: Show loading state
       setIsEndingInterview(true);
@@ -211,19 +269,23 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
         if (response.success) {
           const { response: textResponse, audio_url, should_delete_audio, interview_done } = response.data;
           
-          // Add the final response to conversation
-          const newMessage = {
+          // Remove thinking message and add final response
+          setConversation(prev => {
+            const filtered = prev.filter(msg => !msg.isThinking);
+            return filtered;
+          });
+          
+          // Add final message using the database function
+          // await addMessageToConversation('interviewer', textResponse); // ❌ REMOVE THIS LINE
+
+          // Instead, just add to local state without saving to DB:
+          const finalMessage = {
             id: Date.now(),
             speaker: 'interviewer',
             message: textResponse,
             timestamp: new Date().toLocaleTimeString()
           };
-          
-          // Remove thinking message and add final response
-          setConversation(prev => {
-            const filtered = prev.filter(msg => !msg.isThinking);
-            return [...filtered, newMessage];
-          });
+          setConversation(prev => [...prev, finalMessage]);
           
           // ✅ NEW: Play audio for final response (if available)
           if (audio_url) {
@@ -354,14 +416,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             
             if (transcription && transcription.trim()) {
               // Add candidate's response to conversation
-              const newMessage = {
-                id: Date.now(), // Use timestamp as unique ID
-                speaker: 'candidate',
-                message: transcription,
-                timestamp: new Date().toLocaleTimeString()
-              };
-              
-              setConversation(prev => [...prev, newMessage]);
+              await addMessageToConversation('candidate', transcription);
               console.log('✅ Candidate message added');
               setIsLoading(false); // Stop loading immediately after user message appears
               
@@ -619,6 +674,49 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
     );
   };
 
+  // Update the useChatHistory hook usage
+  const { loadChatHistory, appendToChatHistory, deleteChatHistory } = useChatHistory();
+
+  // Load chat history when component mounts
+  useEffect(() => {
+    const loadHistory = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const interviewId = urlParams.get('interview_id');
+      if (interviewId) {
+        const history = await loadChatHistory(interviewId);
+        if (history && history.length > 0) {
+          setConversation(history);
+        }
+      }
+    };
+    
+    loadHistory();
+  }, [loadChatHistory]);
+
+  // Function to add message and save to database
+  const addMessageToConversation = useCallback(async (speaker, message) => {
+    // Add to local state immediately
+    const newMessage = {
+      id: Date.now(),
+      speaker,
+      message,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    
+    setConversation(prev => [...prev, newMessage]);
+    
+    // Save to database
+    const urlParams = new URLSearchParams(window.location.search);
+    const interviewId = urlParams.get('interview_id');
+    if (interviewId) {
+      await appendToChatHistory(interviewId, speaker, message);
+    }
+  }, [appendToChatHistory]);
+
+  // Update your existing message handling functions to use addMessageToConversation
+  // The callInterviewManager function already uses addMessageToConversation internally
+  // The handleEndInterview function already uses addMessageToConversation internally
+
   return (
     <div 
       className="h-full flex flex-col p-3 sm:p-4 lg:p-6 min-h-0"
@@ -650,27 +748,29 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               !canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
                 ? (isRecording ? "Wait for recording to finish" : 
                    isLoading ? "Wait for response to generate" : 
-                   isResponseInProgress ? "Response in progress..." : "Wait for audio to finish")
+                   isResponseInProgress ? "Response in progress..." : 
+                   isAudioPlaying ? "Wait for audio to finish" :
+                   interviewStage === 'introduction' ? "Complete the introduction first" : 
+                   interviewStage === 'resume_discussion' && !hasAnsweredResumeQuestion ? "Answer at least one resume & JD related question to end interview" : "Wait for resume questions to begin")
                 : "End Interview"
             }
+            onMouseEnter={() => {
+              console.log('🔍 Button hover - Current state:', {
+                canEndInterview,
+                isAudioPlaying,
+                isRecording,
+                isLoading,
+                isResponseInProgress,
+                interviewStage,
+                hasAnsweredResumeQuestion
+              });
+            }}
           >
             <span className="hidden sm:inline">
-              {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
-                ? (isRecording ? "Recording..." : 
-                   isAudioPlaying ? "Audio Playing..." : 
-                   isLoading ? "Generating..." : 
-                   isResponseInProgress ? "Response in progress..." : "Please Wait...")
-                : "End Interview"
-              }
+              End Interview
             </span>
             <span className="sm:hidden">
-              {!canEndInterview || isAudioPlaying || isRecording || isLoading || isResponseInProgress
-                ? (isRecording ? "Recording..." : 
-                   isAudioPlaying ? "Audio Playing..." : 
-                   isLoading ? "Generating..." : 
-                   isResponseInProgress ? "Processing..." : "Please Wait...")
-                : "End Interview"
-              }
+              End
             </span>
           </button>
         </div>
