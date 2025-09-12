@@ -1,43 +1,30 @@
 import os
 import sys
 import json
-import glob
-import random
 import time
-import threading
-import shutil
 import traceback
 import subprocess
-import uuid
 import soundfile as sf
 import cv2
 import numpy as np
 import mediapipe as mp
 import base64
-import re
-import unicodedata
-import logging
-import atexit
 import io
-from flask import send_file, request, jsonify
+from flask import request, jsonify
 from PIL import Image
 from dotenv import load_dotenv
 from datetime import datetime
-from flask import (
-    Flask, render_template, request, jsonify, redirect, url_for, flash, send_from_directory
-)
+from flask import Flask
 from faster_whisper import WhisperModel
 import tempfile
 from werkzeug.utils import secure_filename
-from RealtimeSTT import AudioToTextRecorder
 from flask_socketio import SocketIO, emit
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
 from supabase import create_client, Client
 from pydub import AudioSegment
 import requests
-from urllib.parse import urlparse
-from supabase import create_client, Client
+import hashlib
 
 # ─────────────────────────────────────────────────────
 #  Load environment variables from .env
@@ -54,25 +41,16 @@ if INTERVIEW_PATH not in sys.path:
 #  Global paths from .env (via os.getenv)
 # ─────────────────────────────────────────────────────
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-COMMON_DIR = os.path.abspath(os.path.join(BASE_DIR, os.getenv("COMMON_DIR")))
-INTERVIEW_DIR = os.path.abspath(os.path.join(BASE_DIR, os.getenv("INTERVIEW_DIR")))
-TTS_DIR = os.path.abspath(os.path.join(BASE_DIR, os.getenv("TTS_DIR")))
 DOMAIN = os.getenv("DOMAIN")
-
-#  Import NLP Model
-UVR_TTS_SCRIPT_PATH = os.path.abspath(os.path.join(BASE_DIR, os.getenv("UVR_TTS_SCRIPT")))
-BLANK_AUDIO_PATH = os.path.abspath(os.path.join(BASE_DIR, os.getenv("BLANK_AUDIO_PATH")))
-TTS_MODEL_SCRIPT = os.path.abspath(os.path.join(BASE_DIR, os.getenv("TTS_MODEL_SCRIPT")))
 
 # ─────────────────────────────────────────────────────
 # Imports that depend on environment paths
 # ─────────────────────────────────────────────────────
 
-from common.NLP_model import NLPModel, Status
 from common.GPU_Check import get_device
 # from TTS.Scripts.TTS_LOAD_MODEL import load_model, run_tts
 from flask_cors import CORS
-from common.auth import verify_supabase_token, optional_auth  # Import the decorator
+from common.auth import verify_supabase_token  # Import the decorator
 
 device = get_device()
 interview_instances = {}
@@ -465,83 +443,16 @@ def process_audio_file(file):
                     os.remove(path)
                 except Exception as e:
                     print(f"[WARNING] Failed to clean up {path}: {e}")
-def initialize_xtts_model(model_dir):
-    """Loads XTTS model from given directory if not already loaded."""
-    global tts_model_loaded
-    if not tts_model_loaded:
-        print("[INFO] Loading XTTS model once at startup...")
-        checkpoint = os.path.join(model_dir, "checkpoint.pth")
-        config = os.path.join(model_dir, "config.json")
-        vocab = os.path.join(model_dir, "vocab.json")
-        tts_model_loaded = load_model(checkpoint, config, vocab)
-        if tts_model_loaded:
-            print("[DONE] XTTS model loaded")
-        else:
-            print("[ERROR] Failed to load XTTS model")
-
-def resolve_model_path(model_name, username):
-    safe_name = secure_filename(model_name)
-
-    # User model path
-    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], username)
-    user_model_path = os.path.join(user_folder, safe_name)
-    if os.path.exists(user_model_path) and user_model_path.startswith(user_folder):
-        print(f"[DEBUG] Found model in user folder: {user_model_path}")
-        return user_model_path, "user"
-
-    # Global model path
-    global_model_path = os.path.join(app.config['UPLOAD_FOLDER'], "global_models", safe_name)
-    if os.path.exists(global_model_path):
-        print(f"[DEBUG] Found model in global folder: {global_model_path}")
-        return global_model_path, "global"
-
-    print(f"[DEBUG] Model '{model_name}' not found in user or global paths.")
-    return None, None
-
-def resolve_candidate_folder(model_name, candidate_name, username, resolve_model_path_fn):
-    safe_model = secure_filename(model_name)
-    safe_candidate = secure_filename(candidate_name)
-
-    model_folder, source = resolve_model_path_fn(safe_model, username)
-    if not model_folder:
-        return None, None, None, None  # candidate_folder, config_path, source, model_folder
-
-    if source == "global":
-        # Check user-specific shared candidate
-        user_candidate_folder = os.path.join(
-            app.config['UPLOAD_FOLDER'],
-            username,
-            "global_model_data",
-            safe_model,
-            safe_candidate
-        )
-        if os.path.exists(user_candidate_folder):
-            candidate_folder = user_candidate_folder
-        else:
-            candidate_folder = os.path.join(model_folder, safe_candidate)
-    else:
-        candidate_folder = os.path.join(model_folder, safe_candidate)
-
-    config_path = os.path.join(candidate_folder, "interview_config.json")
-    return candidate_folder, config_path, source, model_folder
 
 # ─────────────────────────────────────────────────────
 # Global flags and file tracking
 # ─────────────────────────────────────────────────────
 
-recorder = None
-is_recording = False
-model_ready = False
-recording_start_time = 0  #  Track when recording starts
-transcription_time = 0  #  Track transcription processing time
-SENTENCE_FILE = "sentences.json"  #  File to store user sentences
-is_processing = False  # [DONE] Fixed naming conflict
-
 # ─────────────────────────────────────────────────────
 #  Flask app config using env values
 # ─────────────────────────────────────────────────────
 
-app = Flask(__name__, template_folder="Flask_UI/templates", static_folder="Flask_UI/static")
+app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = os.getenv("UPLOAD_FOLDER", "uploads")
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 
@@ -561,8 +472,6 @@ CORS(app,
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-def get_static_url(rel_path):
-    return f"{DOMAIN}/api/uploads/{rel_path}"
 
 # ─────────────────────────────────────────────────────
 # Test API Route with Supabase Authentication
@@ -895,10 +804,8 @@ def transcribe_audio():
             "message": f"Failed to process audio: {str(e)}"
         }), 500
 
-# Add this import at the top with other imports
+# Import for voice synthesis
 from Piper.voiceCloner import synthesize_text_to_wav
-import hashlib
-from datetime import datetime
 
 # Modify the existing generate_response function
 @app.route('/api/generate-response', methods=['POST'])
@@ -1096,6 +1003,7 @@ def generate_response():
                 # Continue without audio if generation fails
         
         # ✅ NEW: Handle interview completion - Save everything to database
+        feedback_saved_successfully = False
         if response.get("interview_done", False):
             try:
                 print(f"[INFO] Interview completed - saving transcript, evaluation, and merging audio...")
@@ -1192,6 +1100,8 @@ def generate_response():
                             if status_update_response.status_code in [200, 201]:
                                 print(f"[INFO] Interview status updated to ENDED successfully")
                                 print(f"[DEBUG] Status update response: {status_update_response.status_code} - {status_update_response.text}")
+                                # ✅ NEW: Mark feedback as successfully saved only when everything is complete
+                                feedback_saved_successfully = True
                             else:
                                 print(f"[WARNING] Failed to update interview status: {status_update_response.status_code} - {status_update_response.text}")
                                 
@@ -1217,6 +1127,7 @@ def generate_response():
                 "response": response.get("message", "Sorry, something went wrong."),
                 "stage": response.get("stage", "unknown"),
                 "interview_done": response.get("interview_done", False),
+                "feedback_saved_successfully": feedback_saved_successfully,  # ✅ NEW: Include feedback save status
                 "audio_url": audio_url,  # ✅ NEW: Include audio URL
                 "audio_file_path": file_path if audio_url else None,  # ✅ NEW: Include file path for deletion
                 "should_delete_audio": False  # ✅ NEW: Keep audio files for merging later

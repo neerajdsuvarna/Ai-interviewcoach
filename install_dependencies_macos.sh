@@ -186,11 +186,13 @@ pip install python-dotenv
 
 echo
 echo "============================================"
-echo "[SECTION] Installing Model Downloader"
+echo "[SECTION] Installing Document Processing Dependencies"
 echo "============================================"
-pip install gdown
-pip install huggingface_hub[hf_xet]
+pip install python-docx
+pip install PyPDF2  
 pip install Flask-Session
+pip install supabase
+pip install piper-tts
 
 echo
 echo "============================================"
@@ -266,12 +268,6 @@ echo "[SECTION] Uninstalling eventlet to enforce gevent-only setup"
 echo "============================================"
 pip uninstall -y eventlet || true
 pip install gevent gunicorn
-pip install python-docx
-pip install PyPDF2  
-
-echo
-echo "[INFO] Running model_download.py..."
-python "$(dirname "$0")/backend/model_download.py"
 
 echo
 echo "============================================"

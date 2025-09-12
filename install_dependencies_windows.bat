@@ -190,22 +190,12 @@ pip install tiktoken
 
 echo.
 echo ============================================
-echo [SECTION] Installing Model Downloader and Downloading Models
+echo [SECTION] Installing Document Processing and TTS Dependencies
 echo ============================================
-python -m pip install gdown
 pip install python-docx
 pip install PyPDF2  
 pip install supabase
 pip install piper-tts
-
-echo.
-echo [INFO] Running model_download.py with matched Python interpreter...
-
-for /f "delims=" %%i in ('where python') do set "PYTHON=%%i" & goto breakloop
-:breakloop
-
-@REM echo [INFO] Using Python: %PYTHON%
-@REM "%PYTHON%" "%~dp0backend/model_download.py"
 
 echo.
 echo ============================================

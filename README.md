@@ -1,81 +1,72 @@
-# 🎭 AI Media Toolkit (Develop Branch)
+# 🎯 Interview Coach AI Platform
 
-This **AI-powered media processing suite** includes **Text-to-Speech, Lip-Sync, Avatar Swapping, and Audio Processing**, all within a single unified environment.
+This **AI-powered interview coaching platform** provides comprehensive mock interview experiences with real-time feedback, audio processing, and advanced analytics tracking.
 
 ---
 
 ## 🌟 **Features**
-- **Text-to-Speech (TTS)** – Generate speech with voice cloning  
-- **Lip-Sync (Wav2Lip)** – AI-driven lip movement synced with audio  
-- **Avatar Swapping** – High-quality face swapping for avatars  
-- **Audio Enhancement (UVR)** – Remove noise, separate vocals/instruments  
-- **One-Click Setup** – Fully automated dependency installation  
+- **AI Mock Interviews** – Personalized interview questions based on resume and job description
+- **Real-time Audio Processing** – Voice synthesis and transcription using Piper TTS and Whisper
+- **Comprehensive Feedback** – AI-generated performance analysis with strengths and improvement areas
+- **Payment Integration** – Secure payment processing with Dodo Payments
+- **Analytics Tracking** – Mixpanel integration for user behavior and conversion tracking
+- **Head Tracking** – Real-time eye contact and attention monitoring
+- **Audio Enhancement** – Noise removal and audio quality improvement
+- **One-Click Setup** – Fully automated dependency installation
 - **GPU Acceleration** – Supports **CUDA, MPS, or CPU**  
 
 ---
 
 ## 📂 **Project Structure**
 ```
-virtual_human_simulation/
+interviewcoach/
 ├── backend/                          # Backend Flask API and AI services
-│   ├── app.py                        # Main Flask application
+│   ├── app.py                        # Main Flask application with interview logic
 │   ├── common/                       # Shared utilities and models
-│   │   ├── config.py                 # Centralized configuration
-│   │   ├── GPU_Check.py              # Auto-detect GPU/CPU (CUDA, MPS, etc.)
-│   │   ├── auth.py                   # Authentication utilities
-│   │   ├── NLP_model.py              # NLP Model for AI responses
-│   │   ├── XTTS_MODEL/               # TTS Model files
-│   │   ├── audio-separator-models/   # UVR model files
-│   │   └── checkpoints_A2H/          # LipSync & General Model Checkpoints
+│   │   ├── auth.py                   # Supabase authentication utilities
+│   │   └── GPU_Check.py              # Auto-detect GPU/CPU (CUDA, MPS, etc.)
 │   ├── INTERVIEW/                    # Interview processing modules
 │   │   ├── Resumeparser.py           # Resume parsing and question generation
 │   │   ├── Interview_functions.py    # Interview management functions
-│   │   ├── Interview_manager.py      # Interview orchestration
+│   │   ├── Interview_manager.py      # Interview orchestration and evaluation
+│   │   ├── interview_config.json     # Interview configuration
 │   │   └── INTERVIEWBOT_CLI.py       # Command-line interview interface
-│   ├── TTS/                          # Text-to-Speech (XTTS)
-│   │   ├── Scripts/                  # TTS scripts and demos
-│   │   │   ├── tts_demo.py           # TTS demonstration
-│   │   │   ├── TTS_LOAD_MODEL.py     # Model loading and inference
-│   │   │   ├── TTS_TRAIN_MODEL.py    # Model training
-│   │   │   └── UVR_TTS.py            # Audio enhancement + TTS pipeline
-│   │   └── TTS/                      # TTS library files
-│   ├── UVR/                          # Audio Separation (Vocal/Instrument Split)
-│   │   ├── uvr/                      # UVR execution scripts and models
-│   │   └── audio_enhancer.py         # Main UVR processing script
-│   ├── Audio2Head/                   # Audio-to-Head movement synthesis
-│   │   ├── modules/                  # Audio2Head modules
-│   │   └── sync_batchnorm/           # Synchronized batch normalization
-│   ├── Flask_UI/                     # Flask-based Web UI
-│   │   ├── static/                   # Static files (CSS, JS, images)
-│   │   ├── models.py                 # Database models
-│   │   ├── import_secrets.py         # Secret management
-│   │   └── README.md                 # Flask UI documentation
-│   ├── model_download.py             # Model download utilities
-│   ├── start.sh                      # Backend startup script
+│   ├── Piper/                        # Text-to-Speech (Piper TTS)
+│   │   ├── voiceCloner.py            # Voice synthesis and TTS processing
+│   │   ├── en_US-kusal-medium.onnx   # Piper TTS model files
+│   │   └── en_US-kusal-medium.onnx.json
 │   └── README.md                     # Backend documentation
 ├── frontend/                         # React-based web application
 │   ├── src/                          # React source code
 │   │   ├── components/               # React components
-│   │   │   ├── AuthDebug.jsx         # Authentication debugging
 │   │   │   ├── Navbar.jsx            # Navigation component
 │   │   │   ├── ThemeToggle.jsx       # Theme switching
+│   │   │   ├── InterviewHistoryCard.jsx # Interview history display
 │   │   │   ├── interview/            # Interview-related components
+│   │   │   │   └── ChatWindow.jsx    # Main interview chat interface
 │   │   │   ├── landing/              # Landing page components
 │   │   │   ├── upload/               # File upload components
 │   │   │   └── ui/                   # UI components
 │   │   ├── pages/                    # Page components
 │   │   │   ├── InterviewPage.jsx     # Interview interface
+│   │   │   ├── InterviewFeedbackPage.jsx # Interview feedback display
+│   │   │   ├── PaymentsStatus.jsx    # Payment status handling
 │   │   │   ├── Landing.jsx           # Landing page
 │   │   │   ├── Login.jsx             # Login page
-│   │   │   ├── ProfilePage.jsx       # User profile
-│   │   │   ├── QuestionPage.jsx      # Question management
+│   │   │   ├── ProfilePage.jsx       # User profile and history
+│   │   │   ├── QuestionPage.jsx      # Question management and payment
 │   │   │   ├── SignUp.jsx            # Registration page
-│   │   │   ├── TestPage.jsx          # Testing page
 │   │   │   └── UploadPage.jsx        # File upload page
 │   │   ├── contexts/                 # React contexts
 │   │   │   └── AuthContext.jsx       # Authentication context
 │   │   ├── hooks/                    # Custom React hooks
-│   │   │   └── useTheme.js           # Theme management hook
+│   │   │   ├── useTheme.js           # Theme management hook
+│   │   │   ├── useMixpanel.js        # Mixpanel analytics hook
+│   │   │   ├── useHeadTracking.js    # Head tracking integration
+│   │   │   └── useEmailVerification.js # Email verification hook
+│   │   ├── services/                 # External services
+│   │   │   └── mixpanel.js           # Mixpanel analytics service
+│   │   ├── utils/                    # Utility functions
 │   │   ├── api.js                    # API integration
 │   │   ├── supabaseClient.js         # Supabase client configuration
 │   │   ├── App.jsx                   # Main App component
@@ -96,27 +87,21 @@ virtual_human_simulation/
 │   ├── migrations/                   # Database migrations
 │   └── functions/                    # Edge functions
 │       ├── create-user/              # User creation function
-│       ├── dodo-webhook/             # Webhook handler
+│       ├── dodo-webhook/             # Payment webhook handler
 │       ├── interview-feedback/       # Interview feedback processing
+│       ├── interview-setup/          # Interview initialization
 │       ├── interviews/               # Interview management
 │       ├── job-descriptions/         # Job description handling
 │       ├── payments/                 # Payment processing
 │       ├── questions/                # Question management
-│       ├── resume-test/              # Resume testing
 │       ├── resumes/                  # Resume processing
 │       ├── transcripts/              # Transcript management
 │       └── upload-file/              # File upload handling
-├── supabase_Scripts/                 # Supabase utility scripts
-│   ├── all_db_edge_operations.py     # Database operations
-│   ├── db_operations.py              # Database utilities
-│   ├── main.py                       # Main script runner
-│   ├── supabase_storage.py           # Storage utilities
-│   └── Test_Resumes/                 # Test resume files
-├── install_dependencies.bat          # Windows dependency installer
-├── install_dependencies.sh           # Linux/macOS dependency installer
+├── install_dependencies_windows.bat  # Windows dependency installer
+├── install_dependencies_linux.sh     # Linux dependency installer
+├── install_dependencies_macos.sh     # macOS dependency installer
 ├── start_dev.bat                     # Windows development server starter
 ├── start_dev.sh                      # Linux/macOS development server starter
-├── INSTALLATION_GUIDE.md             # Detailed installation guide
 └── README.md                         # This file
 ```
 
@@ -128,8 +113,8 @@ Ensure you have **Python 3.10** installed on your system.
 
 ### **1. Clone the Repository**
 ```bash
-git clone https://github.com/moback-ai/virtual_human_simulation.git
-cd virtual_human_simulation
+git clone https://github.com/moback-ai/interviewcoach.git
+cd interviewcoach
 ```
 
 ### **2. Create Virtual Environment**
@@ -160,13 +145,19 @@ source test1/bin/activate
 
 #### **For Windows:**
 ```bash
-.\install_dependencies.bat
+.\install_dependencies_windows.bat
 ```
 
-#### **For Linux/macOS:**
+#### **For Linux:**
 ```bash
-chmod +x install_dependencies.sh
-./install_dependencies.sh
+chmod +x install_dependencies_linux.sh
+./install_dependencies_linux.sh
+```
+
+#### **For macOS:**
+```bash
+chmod +x install_dependencies_macos.sh
+./install_dependencies_macos.sh
 ```
 
 ### **5. Install Ollama**
@@ -179,7 +170,13 @@ Ollama is required for AI model inference. Follow these steps:
 - Select your operating system (Windows, macOS, or Linux).
 - Follow the installation instructions provided on the website.
 
-#### Step 3: Verify Installation
+#### Step 3: Pull Required Models
+After installing Ollama, pull the required models:
+```bash
+ollama pull llama3
+```
+
+#### Step 4: Verify Installation
 - Open a terminal and run the following command:
 ```bash
 ollama --version
@@ -187,7 +184,7 @@ ollama --version
 - If the command returns a version number, Ollama has been installed successfully.
 
 ### **6. Install FFmpeg**
-The script uses `pydub`, which requires **FFmpeg**. Install it by following these steps:
+The application uses `pydub` for audio processing, which requires **FFmpeg**. Install it by following these steps:
 
 #### **For Windows:**
 
@@ -231,7 +228,19 @@ brew install ffmpeg       # macOS (Homebrew)
 ffmpeg -version
 ```
 
-### **7. Start Development Server**
+### **7. Environment Setup**
+Ensure your `.env` file in the backend directory contains the following variables:
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+DODO_WEBHOOK_SECRET=your_dodo_webhook_secret
+MIXPANEL_TOKEN=your_mixpanel_token
+```
+
+**Note**: The `.env` file should already exist in your backend directory. If you need to update any values, edit the existing file rather than creating a new one.
+
+### **8. Start Development Server**
 
 #### **For Windows:**
 ```bash
@@ -251,36 +260,37 @@ chmod +x start_dev.sh
 After completing the installation and setup steps above, the development server will automatically start and you can access the application through your web browser.
 
 The application includes:
-- **Frontend**: React-based web interface
-- **Backend**: Flask API server
-- **Database**: Supabase integration
-- **AI Services**: Ollama-powered interview and resume processing
+- **Frontend**: React-based web interface with interview coaching features
+- **Backend**: Flask API server with AI interview processing
+- **Database**: Supabase integration with user management and interview storage
+- **AI Services**: Ollama-powered interview questions and feedback generation
+- **Payment Processing**: Dodo Payments integration for interview access
+- **Analytics**: Mixpanel tracking for user behavior and conversion analytics
+- **Audio Processing**: Piper TTS for voice synthesis and Whisper for transcription
 
 ---
 
-## **Project Structure**
-All the necessary model files, your `backend/common/` folder should look like this:
+## **Key Features & Technologies**
 
-```
-backend/common/
-├── audio-separator-models/                                      # UVR model files
-│ ├── download_checks.json
-│ ├── Kim_Vocal_2.onnx
-│ ├── mdx_model_data.json
-│ ├── model_mel_band_roformer_ep_3005_sdr_11.4360.ckpt
-│ ├── model_mel_band_roformer_ep_3005_sdr_11.4360.yaml
-│ ├── vr_model_data.json
-├── XTTS_MODEL/                                                  # XTTS model files
-│ ├── config.json
-│ ├── dvae.pth
-│ ├── mel_stats.pth
-│ ├── model.pth
-│ ├── vocab.json
-├── checkpoints_A2H/                                                 # LipSync & General Model Checkpoints
-│ ├── audio2head.pth.tar
-├── config.py # Centralized configuration file
-├── GPU_Check.py # Auto-detects GPU/CPU (CUDA, MPS, etc.)
-```
+### **Interview Coaching System**
+- **Resume Analysis**: AI-powered resume parsing and job description matching
+- **Question Generation**: Dynamic interview questions based on role and experience level
+- **Real-time Interview**: Interactive chat interface with voice synthesis
+- **Performance Evaluation**: Comprehensive feedback with strengths and improvement areas
+- **Audio Recording**: Complete interview transcript with audio playback
+
+### **Payment & Analytics**
+- **Payment Processing**: Secure payment integration with Dodo Payments
+- **User Analytics**: Mixpanel tracking for user behavior and conversion metrics
+- **Interview History**: Complete record of all user interviews and feedback
+
+### **Technical Stack**
+- **Frontend**: React with Vite, Tailwind CSS, Framer Motion
+- **Backend**: Flask with Socket.IO for real-time communication
+- **Database**: Supabase with PostgreSQL
+- **AI Models**: Ollama (Llama3), Piper TTS, Whisper STT
+- **Authentication**: Supabase Auth with JWT tokens
+- **File Storage**: Supabase Storage for audio files and documents
 
 ---
 
@@ -291,9 +301,21 @@ backend/common/
 1. **Virtual Environment Not Activated**: Make sure you see `(test1)` at the beginning of your command prompt/terminal
 2. **Python Version**: Ensure you're using Python 3.10
 3. **FFmpeg Not Found**: Verify FFmpeg is properly installed and added to your system PATH
-4. **Ollama Not Running**: Start Ollama service before running the application
+4. **Ollama Not Running**: Start Ollama service and ensure llama3 model is pulled
+5. **Environment Variables**: Verify all required environment variables are set in `.env` file
+6. **Supabase Connection**: Check that Supabase URL and keys are correct
+7. **Payment Issues**: Ensure Dodo webhook secret is properly configured
+8. **Audio Processing**: Verify Piper TTS model files are in the correct directory
 
 ### **Getting Help:**
 - Check the logs in the terminal for specific error messages
 - Ensure all dependencies are properly installed
-- Verify that all required model files are in the correct directories
+- Verify that all required environment variables are set
+- Check Supabase dashboard for database connection issues
+- Review browser console for frontend errors
+
+### **Development Tips:**
+- Use browser developer tools to debug frontend issues
+- Check backend logs for API errors
+- Verify Mixpanel events in the Mixpanel dashboard
+- Test payment flow in Dodo's test environment

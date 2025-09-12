@@ -139,11 +139,13 @@ pip3 install python-dotenv
 
 echo
 echo "============================================"
-echo "[SECTION] Installing Model Downloader"
+echo "[SECTION] Installing Document Processing Dependencies"
 echo "============================================"
-pip3 install gdown
-pip3 install huggingface_hub[hf_xet]
+pip3 install python-docx
+pip3 install PyPDF2  
 pip3 install Flask-Session
+pip3 install supabase
+pip3 install piper-tts
 
 echo
 echo "============================================"
@@ -158,7 +160,6 @@ echo "============================================"
 echo "[SECTION] Installing Interview Dependencies"
 echo "============================================"
 pip3 install tiktoken
-
 
 echo
 echo "============================================"
@@ -208,19 +209,12 @@ echo "[SECTION] Installing HTTPS Dependencies (nginx + certbot)"
 echo "============================================"
 sudo apt install -y nginx certbot python3-certbot-nginx
 
-
 echo
 echo "============================================"
 echo "[SECTION] Uninstalling eventlet to enforce gevent-only setup"
 echo "============================================"
 pip3 uninstall -y eventlet || true
 pip3 install gevent gunicorn
-pip3 install python-docx
-pip3 install PyPDF2  
-
-echo
-echo "[INFO] Running model_download.py..."
-python3 "$(dirname "$0")/backend/model_download.py"
 
 
 echo

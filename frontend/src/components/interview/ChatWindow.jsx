@@ -210,7 +210,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
         console.log('📥 End interview response:', response);
         
         if (response.success) {
-          const { response: textResponse, audio_url, should_delete_audio, interview_done } = response.data;
+          const { response: textResponse, audio_url, should_delete_audio, interview_done, feedback_saved_successfully } = response.data;
           
           // Add the final response to conversation
           const newMessage = {
@@ -226,7 +226,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             return [...filtered, newMessage];
           });
           
-          // ✅ NEW: Track events immediately when interview_done is true, regardless of audio
+          // ✅ FIXED: Track events only when interview is done AND feedback is successfully saved
           if (interview_done) {
             console.log('🎯 Interview completed, tracking events...');
             
@@ -238,15 +238,20 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               completion_method: 'backend_confirmed'
             });
             
-            // Add small delay between events to avoid rate limiting
-            setTimeout(() => {
-              console.log('📊 Tracking mockInterviewFeedbackGenerated...');
-              trackEvents.mockInterviewFeedbackGenerated({
-                interview_id: interviewId,
-                generation_timestamp: new Date().toISOString(),
-                generation_method: 'backend_confirmed'
-              });
-            }, 100); // 100ms delay
+            // ✅ FIXED: Only track feedback generation when feedback is actually saved to database
+            if (feedback_saved_successfully) {
+              console.log('✅ Feedback successfully saved to database, tracking feedback generation...');
+              setTimeout(() => {
+                console.log('📊 Tracking mockInterviewFeedbackGenerated...');
+                trackEvents.mockInterviewFeedbackGenerated({
+                  interview_id: interviewId,
+                  generation_timestamp: new Date().toISOString(),
+                  generation_method: 'backend_confirmed'
+                });
+              }, 100); // 100ms delay
+            } else {
+              console.log('⚠️ Interview completed but feedback not saved yet, skipping feedback generation tracking');
+            }
           }
           
           // ✅ NEW: Play audio for final response (if available)
