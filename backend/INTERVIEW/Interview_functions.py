@@ -577,11 +577,13 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
 
     Please provide a comprehensive evaluation in JSON format with three sections:
 
-    1. SUMMARY: Write a short 4–5 sentence summary evaluating the candidate's overall fit for this job. Consider:
-       - Knowledge and clarity across questions
-       - Emotional tone (confidence, nervousness, etc.)
-       - Communication effectiveness
-       End the summary with a clear tone about whether they are a **strong**, **average**, or **weak** fit.
+    1. SUMMARY: Write a short 4–5 sentence summary evaluating the candidate's overall fit for this job. 
+    - Consider knowledge and clarity across questions
+    - Consider emotional tone (confidence, nervousness, etc.)
+    - Consider communication effectiveness
+    - The summary **must explicitly end with one of these exact words, in lowercase: "strong", "average", or "weak". 
+        This is mandatory, as it will be programmatically extracted.**
+
 
     2. KEY STRENGTHS: List 6–8 **specific, evidence-based strengths** the candidate demonstrated. 
         - Only include strengths if they are clearly supported by the evaluation log 

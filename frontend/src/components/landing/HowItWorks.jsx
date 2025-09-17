@@ -21,22 +21,22 @@ const steps = [
     icon: MagnifyingGlassIcon,
     title: "Analyze Fit",
     desc: "We match your skills with the job description using AI models.",
-    imageLight: "/assets/landing/steps/analyze-light.png",
-    imageDark: "/assets/landing/steps/analyze-dark.png",
+    imageLight: "/assets/landing/steps/step2_light.png",
+    imageDark: "/assets/landing/steps/step2_dark.png",
   },
   {
     icon: SparklesIcon,
     title: "Generate Q&A",
     desc: "Get tailored interview questions and answers to prepare smartly.",
-    imageLight: "/assets/landing/steps/generate-light.png",
-    imageDark: "/assets/landing/steps/generate-dark.png",
+    imageLight: "/assets/landing/steps/step3_light.png",
+    imageDark: "/assets/landing/steps/step3_dark.png",
   },
   {
     icon: PlayCircleIcon,
     title: "Mock Interview",
     desc: "Practice in a realistic, AI-powered interview environment.",
-    imageLight: "/assets/landing/steps/mock-light.png",
-    imageDark: "/assets/landing/steps/mock-dark.png",
+    imageLight: "/assets/landing/steps/step4_light.png",
+    imageDark: "/assets/landing/steps/step4_dark.png",
   },
 ];
 

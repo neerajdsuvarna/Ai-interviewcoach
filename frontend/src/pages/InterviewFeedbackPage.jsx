@@ -409,6 +409,9 @@ function InterviewFeedbackPage() {
     // Remove trailing punctuation if it ends with a period after cleaning
     cleanedSummary = cleanedSummary.replace(/\.$/, '');
     
+    // Replace **word** with <strong>word</strong> for weak, strong, average
+    cleanedSummary = cleanedSummary.replace(/\*\*(weak|strong|average)\*\*/gi, '<strong>$1</strong>');
+    
     return cleanedSummary;
   };
 
@@ -883,9 +886,8 @@ function InterviewFeedbackPage() {
                       <p 
                         className="text-base leading-relaxed text-justify"
                         style={{ color: 'var(--color-text-primary)' }}
-                      >
-                        {formatSummary(feedbackData.summary)}
-                      </p>
+                        dangerouslySetInnerHTML={{ __html: formatSummary(feedbackData.summary) }}
+                      />
                     </motion.div>
                   ) : (
                     <p style={{ color: 'var(--color-text-primary)' }}>
