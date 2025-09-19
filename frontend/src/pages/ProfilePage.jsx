@@ -462,19 +462,217 @@ const PaymentsSection = () => {
 
 // Component for Analytics Section
 const AnalyticsSection = () => {
-  return (
+    const [interviews, setInterviews] = useState([]);
+    const [resumes, setResumes] = useState([]);
+    const [job_descriptions, setJobDescriptions] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [refreshing, setRefreshing] = useState(false);
+
+    //Initialized structures to be used in RecentActivity
+    let searchableResumes;
+    let searchableJDs;
+    let searchableInterviews;
+
+    useEffect(() => {
+        fetchInterviewHistory();
+        fetchResumeHistory();
+        fetchJDHistory();
+    }, []);
+
+    const fetchInterviewHistory = async () => {
+        try{
+            setLoading(true);
+            setError(null);
+
+            // Get user session
+            const { data: {session} } = await supabase.auth.getSession();
+
+            if (!session?.access_token) {
+                setError('Authentication required');
+                setLoading(false);
+                return;
+            }
+
+            // Fetch all interviews for the user using the edge function
+            const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews`, {
+                method: 'GET',
+                headers:{
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                    }
+                });
+
+            const result = await response.json();
+
+            if (response.ok && result.success){
+                setInterviews(result.data || []);
+            } else {
+                setError(result.message || 'Failed to fetch interview history');
+            }
+        } catch (error) {
+            console.error('Error fetching interview history', error);
+            setError('Failed to load interview history');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchResumeHistory = async () => {
+        try{
+            setLoading(true);
+            setError(null);
+
+            // Get user session
+            const { data: {session} } = await supabase.auth.getSession();
+
+            if (!session?.access_token) {
+                setError('Authentication required');
+                setLoading(false);
+                return;
+            }
+
+            // Fetch all resume uploads for the user using the edge function
+            const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resumes`, {
+                method: 'GET',
+                headers:{
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                    }
+                });
+
+            const result = await response.json();
+
+            if (response.ok && result.success){
+                setResumes(result.data || []);
+            } else {
+                setError(result.message || 'Failed to fetch resume history');
+            }
+        } catch (error) {
+            console.error('Error fetching resume history', error);
+            setError('Failed to load resume history');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchJDHistory = async () => {
+        try{
+            setLoading(true);
+            setError(null);
+
+            // Get user session
+            const { data: {session} } = await supabase.auth.getSession();
+
+            if (!session?.access_token) {
+                setError('Authentication required');
+                setLoading(false);
+                return;
+            }
+
+            // Fetch all uploaded job descriptions for the user using the edge function
+            const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/job-descriptions`, {
+                method: 'GET',
+                headers:{
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                    }
+                });
+
+            const result = await response.json();
+
+            if (response.ok && result.success){
+                setJobDescriptions(result.data || []);
+            } else {
+                setError(result.message || 'Failed to fetch job description history');
+            }
+        } catch (error) {
+            console.error('Error fetching job description history', error);
+            setError('Failed to load job description history');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        await fetchInterviewHistory();
+        await fetchResumeHistory();
+        await fetchJDHistory();
+        setRefreshing(false);
+    };
+
+    // Reformat resumes and job_descriptions to be searchable
+    const makeSearchable = () => {
+        searchableResumes = JSON.parse(JSON.stringify(resumes));
+        searchableJDs = JSON.parse(JSON.stringify(job_descriptions));
+        searchableInterviews = JSON.parse(JSON.stringify(interviews));
+    };
+
+    // Filter resumes for a resume_id coming from Interviews
+    const searchResumes = (r_id) => {
+        let filteredResumes;
+        let Resume;
+
+        // Avoids undeclared structure errors
+        if (searchableResumes.length > 0){
+            filteredResumes = searchableResumes.filter((r) => r.id.includes(r_id));
+            Resume = filteredResumes[0];
+        } else {
+            return "None";
+        }
+        return Resume.file_name;
+    };
+
+    // Filter job descriptions for a jd_id coming from Interviews
+    const searchJobDescriptions = (jd_id) => {
+        let filteredJobDescriptions;
+        let JD;
+
+        //Avoids undeclared structure errors
+        if (searchableJDs.length > 0) {
+            filteredJobDescriptions = searchableJDs.filter((jd) => jd.id.includes(jd_id));
+            JD = filteredJobDescriptions[0];
+        } else {
+            return "None";
+        }
+        return JD.title;
+    };
+
+    const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+    // Calculate summary statistics
+    makeSearchable();
+
+    // Filter for interviews with an 'ENDED' status
+    const totalInterviews = (searchableInterviews.filter((interview) => interview.status.includes("ENDED"))).length;
+    const totalResumes = resumes.length;
+
+    // Concatenated array of all Recent Activity, limited to 5 most recent
+    const recentActivity = interviews.concat(resumes, job_descriptions).slice(0,5);
+
+    return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
         Analytics & Performance
       </h2>
 
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6 text-center">
-          <div className="text-2xl font-bold text-[var(--color-primary)] mb-2">0</div>
+          <div className="text-2xl font-bold text-[var(--color-primary)] mb-2">{totalInterviews}</div>
           <div className="text-sm text-[var(--color-text-secondary)]">Interviews Completed</div>
         </div>
         <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6 text-center">
-          <div className="text-2xl font-bold text-[var(--color-primary)] mb-2">0</div>
+          <div className="text-2xl font-bold text-[var(--color-primary)] mb-2">{totalResumes}</div>
           <div className="text-sm text-[var(--color-text-secondary)]">Resumes Uploaded</div>
         </div>
         <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6 text-center">
@@ -483,14 +681,174 @@ const AnalyticsSection = () => {
         </div>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="p-4 bg-red-100 border border-red-300 rounded-lg">
+          <p className="text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* Recent Activity List */}
       <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6">
         <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-4">
           Recent Activity
         </h3>
-        <div className="text-center py-8 text-[var(--color-text-secondary)]">
-          <FiBarChart size={48} className="mx-auto mb-4" />
-          <p>No recent activity to display</p>
+        {loading ? (
+            <div className="text-center py-12">
+                <FiLoader className="w-8 h-8 text-[var(--color-primary)] mx-auto mb-4 animate-spin" />
+                <p className="text-[var(--color-text-secondary)]">Loading recent activity...</p>
+            </div>
+        ) : recentActivity.length === 0 ? (
+        <div className="text-center py-12">
+            <FiBarChart size={48} className="mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
+            No recent activity found
+          </h3>
         </div>
+      ) : (
+          // Main Activity Info
+         <div className="space-y-4">
+          {recentActivity.map((ra) => (
+              //scheduled_at attribute is only present in an Interview */}
+              ra.scheduled_at ? (
+              <div key={ra.id}
+                className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-6 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-[var(--color-text-primary)] text-lg">
+                 Interview Created
+                    </h3>
+                    <div>
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                      {formatDate(ra.created_at)}
+                    </p>
+                  </div>
+
+                  {/* Interview Information Section */}
+                  <div className="bg-[var(--color-bg)] rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-[var(--color-text-primary)] mb-3 flex items-center">
+                  <FiHash className="w-4 h-4 mr-2" />
+                  Interview Information
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    {/* Resume File Name Card */}
+                    <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      Resume
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <p id="resume_file_name" className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {searchResumes(ra.resume_id)}
+                      </p>
+                    </div>
+                    </div>
+
+                    {/* Job Description Title Card */}
+                    <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      Job Description
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <p className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {searchJobDescriptions(ra.jd_id)}
+                      </p>
+                    </div>
+                    </div>
+              </div>
+              </div>
+              </div>
+              </div>
+              // title attribute is only present in Job Descriptions
+              ) : ra.title ? (
+                  <div key={ra.id}
+                    className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-6 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-4 space-x-2">
+                    <h3 className="font-semibold text-[var(--color-text-primary)] text-lg">
+                    Job Description Uploaded
+                    </h3>
+                    <div>
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                      {formatDate(ra.created_at)}
+                    </p>
+                  </div>
+
+                  {/* Job Description Information Section */}
+                  <div className="bg-[var(--color-bg)] rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-[var(--color-text-primary)] mb-3 flex items-center">
+                  <FiHash className="w-4 h-4 mr-2" />
+                  Job Description Information
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                  {/* Job Description Title Card */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      Title
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <p className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {ra.title}
+                      </p>
+                    </div>
+                    </div>
+
+                  {/* Job Description Preview Card */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      Description
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <p className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {/* Limited description to 35 characters */}
+                        {ra.description.slice(0,35) + "..."}
+                      </p>
+                    </div>
+                    </div>
+
+                  </div>
+                  </div>
+                  </div>
+                  </div>
+
+                  // If no title or scheduled_at attribute, activity is a Resume Upload
+              ) : (<div key={ra.id}
+                    className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-lg p-6 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-[var(--color-text-primary)] text-lg">
+                    Resume Uploaded
+                    </h3>
+                    <div>
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                      {formatDate(ra.uploaded_at)}
+                    </p>
+                  </div>
+
+                  {/* Resume Information Section */}
+                  <div className="bg-[var(--color-bg)] rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-[var(--color-text-primary)] mb-3 flex items-center">
+                  <FiHash className="w-4 h-4 mr-2" />
+                  Resume Information
+                </h4>
+
+                {/* Resume File Name Card */}
+                <div className="space-y-2">
+                    <label className="text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wide">
+                      File Name
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <p className="flex-1 bg-[var(--color-card)] px-3 py-2 rounded text-sm font-mono text-[var(--color-text-primary)] border border-[var(--color-border)]">
+                        {ra.file_name}
+                      </p>
+                    </div>
+                    </div>
+
+                  </div>
+                  </div>
+                  </div>
+                  )
+          ))}
+        </div>
+        )}
       </div>
     </div>
   );
