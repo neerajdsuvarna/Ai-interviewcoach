@@ -47,19 +47,19 @@ const cardVariants = {
 export default function FeatureHighlights() {
   return (
     <section
-      className="relative py-28 transition-colors overflow-hidden"
+      className="relative py-16 sm:py-20 md:py-24 lg:py-28 transition-colors overflow-hidden"
       style={{
         background: "linear-gradient(135deg, var(--color-bg), rgba(255,255,255,0.04))",
       }}
     >
 
-      <div className="relative max-w-6xl mx-auto px-6 z-10">
+      <div className="relative max-w-6xl mx-auto px-3 sm:px-4 md:px-6 z-10">
 <motion.h2
   initial={{ opacity: 0, y: 20 }}
   whileInView={{ opacity: 1, y: 0 }}
   transition={{ duration: 0.6, ease: 'easeOut' }}
   viewport={{ once: true }}
-  className="text-4xl md:text-5xl font-extrabold tracking-tight text-center mb-16 text-[var(--color-text-primary)]"
+  className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold tracking-tight text-center mb-8 sm:mb-12 md:mb-16 text-[var(--color-text-primary)]"
 >
   Everything You Need to Ace Your Interview
 </motion.h2>
@@ -70,27 +70,27 @@ export default function FeatureHighlights() {
           initial="hidden"
           whileInView="show"
           viewport={{ once: true }}
-          className="grid gap-10 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-2"
+          className="grid gap-6 sm:gap-8 md:gap-10 grid-cols-1 md:grid-cols-2"
         >
           {features.map(({ title, description, icon: Icon }, index) => (
             <motion.div
               key={index}
               variants={cardVariants}
-              className="group bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-1"
+              className="group bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl p-4 sm:p-6 md:p-8 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-1"
             >
               {/* Icon Glow */}
-            <div className="p-3 rounded-2xl bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-accent)] shadow-md mb-6 w-fit">
-              <Icon className="w-6 h-6 text-white" />
+            <div className="p-2 sm:p-3 rounded-2xl bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-accent)] shadow-md mb-4 sm:mb-6 w-fit">
+              <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
 
 
               {/* Title */}
-              <h3 className="text-xl font-semibold mb-2 text-[var(--color-text-primary)]">
+              <h3 className="text-lg sm:text-xl font-semibold mb-2 sm:mb-3 text-[var(--color-text-primary)]">
                 {title}
               </h3>
 
               {/* Description */}
-              <p className="text-base text-[var(--color-text-secondary)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--color-text-secondary)] leading-relaxed">
                 {description}
               </p>
             </motion.div>

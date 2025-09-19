@@ -12,6 +12,7 @@ import QuestionsPage from './pages/QuestionPage';
 import InterviewPage from './pages/InterviewPage';
 import InterviewFeedbackPage from './pages/InterviewFeedbackPage';
 import PaymentStatus from './pages/PaymentsStatus';
+import FAQPage from './pages/FAQPage';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
@@ -96,6 +97,7 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route path="/faq" element={<FAQPage />} />
       </Routes>
     </>
   );
