@@ -213,7 +213,7 @@ def format_user_context(user_data):
         context_parts.append(f"\nPAYMENT HISTORY ({len(payments)} payments):")
         for payment in payments[:5]:  # Show last 5 payments
             date = payment['paid_at'][:10] if payment['paid_at'] else 'Unknown date'
-            context_parts.append(f"- ${payment['amount']} on {date} (Status: {payment['payment_status']})")
+            context_parts.append(f"- ₹{payment['amount'] / 100:.2f} on {date} (Status: {payment['payment_status']})")
         if len(payments) > 5:
             context_parts.append(f"- ... and {len(payments) - 5} more payments")
     else:
