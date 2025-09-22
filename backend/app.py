@@ -1765,5 +1765,134 @@ def cleanup_individual_audio_files(user_id, interview_id, keep_merged_audio=True
         import traceback
         traceback.print_exc()
 
+# ─────────────────────────────────────────────────────
+# Support Bot API Endpoint
+# ─────────────────────────────────────────────────────
+
+@app.route('/api/support-bot', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def support_bot():
+    """Support bot endpoint that provides intelligent customer support"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+    
+    try:
+        # Get data from request
+        data = request.get_json()
+        user_message = data.get('message', '').strip()
+        
+        if not user_message:
+            return jsonify({
+                "success": False,
+                "message": "Message is required"
+            }), 400
+        
+        print(f"[DEBUG] Support bot request: {user_message[:100]}...")
+        
+        # Create a new support bot manager instance for each request
+        try:
+            import sys
+            import os
+            support_bot_path = os.path.join(os.path.dirname(__file__), "Support-bot")
+            if support_bot_path not in sys.path:
+                sys.path.append(support_bot_path)
+            
+            from Support_manager_enhanced import SupportBotManager
+            
+            # Create fresh instance for each request (URL will be read from env)
+            bot_manager = SupportBotManager(
+                model="llama3",
+                faq_path=os.path.join(support_bot_path, "support_bot.md")
+                # supabase_url will be read from environment automatically
+            )
+            
+            # Set the auth token for the bot (extracted from the request)
+            auth_token = request.headers.get('Authorization')
+            if auth_token:
+                bot_manager.set_auth_token(auth_token)
+            
+            # Process the user message
+            response = bot_manager.receive_input(user_message)
+            
+            print(f"[DEBUG] Support bot response: {response.get('message', '')[:100]}...")
+            
+            return jsonify({
+                "success": True,
+                "message": "Support response generated successfully",
+                "data": {
+                    "response": response.get("message", "Sorry, I couldn't process your request."),
+                    "session_id": response.get("session_id"),
+                    "conversation_length": response.get("conversation_length", 0),
+                    "retrieved_sections": response.get("retrieved_sections", []),
+                    "has_auth": response.get("has_auth", False)
+                }
+            })
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to create support bot manager: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                "success": False,
+                "message": "Support bot is currently unavailable"
+            }), 500
+        
+    except Exception as e:
+        print(f"[ERROR] Support bot error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Support bot error: {str(e)}"
+        }), 500
+
+# ─────────────────────────────────────────────────────
+# Model Preloading for Support Bot
+# ─────────────────────────────────────────────────────
+
+def preload_support_bot_model():
+    """Preload the support bot model at startup to avoid first-request delays"""
+    try:
+        print("[INFO] Preloading support bot model...")
+        
+        # Import the support bot manager
+        import sys
+        import os
+        support_bot_path = os.path.join(os.path.dirname(__file__), "Support-bot")
+        if support_bot_path not in sys.path:
+            sys.path.append(support_bot_path)
+        
+        from Support_manager_enhanced import SupportBotManager
+        
+        # Initialize the support bot manager (this will load the model)
+        global support_bot_manager
+        support_bot_manager = SupportBotManager(
+            model="llama3",
+            faq_path=os.path.join(support_bot_path, "support_bot.md"),
+            supabase_url=os.getenv("SUPABASE_URL", "http://localhost:54321")
+        )
+        
+        # Test the model with a simple query to ensure it's fully loaded
+        test_response = support_bot_manager.receive_input("Hello")
+        print(f"[SUCCESS] Support bot model preloaded successfully")
+        print(f"[DEBUG] Test response: {test_response.get('message', '')[:50]}...")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to preload support bot model: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Preload the support bot model at startup
+print("[INFO] Starting model preloading...")
+preload_success = preload_support_bot_model()
+if preload_success:
+    print("[SUCCESS] All models preloaded successfully")
+else:
+    print("[WARNING] Some models failed to preload, will initialize on first request")
+
 if __name__ == '__main__': 
     socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)

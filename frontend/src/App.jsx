@@ -15,19 +15,16 @@ import PaymentStatus from './pages/PaymentsStatus';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
-import { useHelpJam } from './hooks/useHelpJam'; // Add this import
-// import HelpJamDebug from './components/HelpJamDebug'; // Remove this import
+import SupportBot from './components/SupportBot'; // Add this import
+import { supabase } from './supabaseClient'
 
-// Add this route
+// TEMPORARY: Make supabase available in console for testing
+window.supabase = supabase
 
 function App() {
-  // Initialize HelpJam tracking
-  useHelpJam();
-
   return (
     <>
       {/* <AuthDebug /> Add this temporarily for debugging */}
-      {/* <HelpJamDebug /> Remove this debug component */}
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />
@@ -99,6 +96,9 @@ function App() {
           } 
         />
       </Routes>
+      
+      {/* Support Bot Widget - Available on all pages */}
+      <SupportBot />
     </>
   );
 }
