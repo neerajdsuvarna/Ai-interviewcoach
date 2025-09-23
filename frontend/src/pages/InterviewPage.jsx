@@ -636,19 +636,19 @@ function InterviewPage() {
 
           {/* Head Tracking Toggle */}
           <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
-            <label className={`flex items-center gap-2 sm:gap-3 ${!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress ? 'cursor-not-allowed opacity-60' : 'cursor-pointer group'}`}>
+            <label className={`flex items-center gap-2 sm:gap-3 ${isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress ? 'cursor-not-allowed opacity-60' : 'cursor-pointer group'}`}>
               <div className="relative">
                 <input
                   type="checkbox"
                   checked={headTrackingEnabled}
                   onChange={(e) => setHeadTrackingEnabled(e.target.checked)}
-                  disabled={!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress}
+                  disabled={isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress}
                   className="sr-only peer"
                 />
                 <div className={`
                   w-10 h-6 sm:w-12 sm:h-7 rounded-full transition-all duration-300 ease-in-out shadow-inner flex items-center
                   peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-offset-2
-                  ${!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress
+                  ${isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress
                     ? 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed opacity-60'
                     : headTrackingEnabled 
                       ? 'bg-blue-500 peer-focus:ring-blue-500/20 shadow-lg' 
@@ -661,9 +661,8 @@ function InterviewPage() {
                   `}></div>
                 </div>
               </div>
-              <span className={`text-xs sm:text-sm font-medium ${!chatStates.canEndInterview || isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress ? 'opacity-60' : ''}`} style={{ color: 'var(--color-text-primary)' }}>
-                <span className="hidden sm:inline">Head Tracking</span>
-                <span className="sm:hidden">Head Track</span>
+              <span className={`text-xs sm:text-sm font-medium ${isAudioPlaying || chatStates.isRecording || isChatLoading || chatStates.isResponseInProgress ? 'opacity-60' : ''}`} style={{ color: 'var(--color-text-primary)' }}>
+                Head Tracking
               </span>
             </label>
           </div>

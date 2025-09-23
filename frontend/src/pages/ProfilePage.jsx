@@ -11,7 +11,7 @@ import {
   FiCreditCard, 
   FiSettings, 
   FiBarChart, 
-  FiShield, 
+  FiShield,
   FiBell,
   FiChevronRight,
   FiMenu,

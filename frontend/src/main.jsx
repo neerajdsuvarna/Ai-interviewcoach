@@ -5,6 +5,8 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { validateEnvironment } from '../envValidation';
+import { supabase } from './supabaseClient';
+
 
 // Validate environment variables
 if (!validateEnvironment()) {

@@ -586,7 +586,7 @@ export default function QuestionsPage() {
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2 flex items-center">
                   <FiFilter className="mr-2" size={16} />
-                  Difficulty Level
+                  Question Difficulty
                 </label>
                  <div className="relative">
                 <select
@@ -610,7 +610,7 @@ export default function QuestionsPage() {
               <div>
                 <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2 flex items-center">
                   <FiFilter className="mr-2" size={16} />
-                   Experience Level
+                   Answer Depth
                 </label>
                  <div className="relative">
                 <select
