@@ -1,28 +1,38 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
 import { useEmailVerification } from '../hooks/useEmailVerification';
 import { FiCheckCircle, FiXCircle, FiLoader, FiUpload, FiArrowRight } from 'react-icons/fi';
 import Navbar from './Navbar';
 import { performSmartRedirect } from '../utils/smartRouting';
+import { trackEvents } from '../services/mixpanel';
 
 function EmailVerificationCallback() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { theme } = useTheme();
   const { verificationStatus, verificationMessage, handleEmailVerification } = useEmailVerification();
+  const hasTrackedEvent = useRef(false); // Prevent duplicate tracking
 
   useEffect(() => {
     const processVerification = async () => {
       const result = await handleEmailVerification(searchParams);
-      if (result.success) {
+      if (result.success && !hasTrackedEvent.current) {
+        // Track email verification success (only once)
+        hasTrackedEvent.current = true;
+        trackEvents.emailVerified({
+          email: result.email,
+          user_id: result.user_id,
+          verification_timestamp: new Date().toISOString()
+        });
+        
         // Smart redirect based on user's data
         setTimeout(() => performSmartRedirect(navigate), 2000);
       }
     };
 
     processVerification();
-  }, [searchParams, navigate, handleEmailVerification]);
+  }, [searchParams, navigate, handleEmailVerification]); // ✅ Now safe to include since it's memoized
 
   const getStatusIcon = () => {
     switch (verificationStatus) {

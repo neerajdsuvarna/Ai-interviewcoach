@@ -7,6 +7,7 @@ import Navbar from '../components/Navbar';
 import { isValidEmail, formatErrorMessage, resendVerificationEmail } from '../utils/emailVerificationUtils';
 import { useSimpleVerificationStatus } from '../hooks/useSimpleVerificationStatus';
 import { performSmartRedirect } from '../utils/smartRouting';
+import { trackEvents } from '../services/mixpanel';
 
 // Modal component for Terms & Conditions and Privacy Policy
 const LegalModal = ({ isOpen, onClose, type }) => {
@@ -217,6 +218,14 @@ function Signup() {
       } else {
         setShowVerificationMessage(true);
         setSuccessMsg('Account created successfully! Please check your email to verify your account and complete the signup process.');
+        
+        // Track successful sign up with user data
+        trackEvents.signUp({
+          email: email,
+          user_id: data.user?.id,
+          full_name: fullName.trim(),
+          signup_timestamp: new Date().toISOString()
+        });
       }
     } catch (err) {
       console.error(err);

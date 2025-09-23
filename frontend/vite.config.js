@@ -6,8 +6,8 @@ import { loadEnv } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file from root directory
-  const env = loadEnv(mode, path.resolve(__dirname, '..'), '')
+  // Load env file from frontend directory
+  const env = loadEnv(mode, path.resolve(__dirname), '')
   
   return {
     plugins: [react(), tailwindcss()],
@@ -19,6 +19,12 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 5173,
+      cors: true,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      },
     },
     define: {
       // Map Supabase variables to VITE_ prefixed versions for frontend

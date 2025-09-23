@@ -6,6 +6,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useHeadTracking } from '@/hooks/useHeadTracking';
 import { supabase } from '../supabaseClient';
 import ChatWindow from '@/components/interview/ChatWindow';
+import { trackEvents } from '../services/mixpanel';
 import HeadTrackingAlert from '@/components/interview/HeadTrackingAlert';
 import WarningModal from '@/components/interview/WarningModal';
 import WaveAnimation from '@/components/interview/WaveAnimation';
@@ -47,6 +48,7 @@ function InterviewPage() {
       timestamp: new Date().toLocaleTimeString()
     }
   ]);
+  
   
   // Head tracking state
   const [headTrackingEnabled, setHeadTrackingEnabled] = useState(false); // Start disabled
@@ -460,6 +462,9 @@ function InterviewPage() {
   };
 
   const endInterview = () => {
+    // Note: Interview completion and feedback generation events are tracked in ChatWindow.jsx
+    // when the backend confirms completion with interview_done: true, not here when button is clicked
+    
     // Stop monitoring
     stopMonitoring();
     

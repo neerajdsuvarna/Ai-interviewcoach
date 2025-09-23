@@ -25,9 +25,13 @@ import tempfile
 import hashlib
 from datetime import datetime
 from piper import PiperVoice
+from dotenv import load_dotenv
 
-# Use relative path for production
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "en_US-kusal-medium.onnx")
+# Load environment variables from backend .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+
+# Use environment variable if set, otherwise fall back to relative path
+MODEL_PATH = os.getenv("PIPER_MODEL_PATH", os.path.join(os.path.dirname(__file__), "en_US-kusal-medium.onnx"))
 
 # Initialize voice model globally
 voice = None

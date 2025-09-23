@@ -4,7 +4,11 @@ import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for e
 import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
+
 import { useChatHistory } from '../../hooks/useChatHistory';
+
+import { trackEvents } from '../../services/mixpanel';
+
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, isAudioPlaying, setIsAudioPlaying, onStateChange }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -267,7 +271,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
         console.log('📥 End interview response:', response);
         
         if (response.success) {
-          const { response: textResponse, audio_url, should_delete_audio, interview_done } = response.data;
+          const { response: textResponse, audio_url, should_delete_audio, interview_done, feedback_saved_successfully } = response.data;
           
           // Remove thinking message and add final response
           setConversation(prev => {
@@ -286,6 +290,34 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             timestamp: new Date().toLocaleTimeString()
           };
           setConversation(prev => [...prev, finalMessage]);
+          
+          // ✅ FIXED: Track events only when interview is done AND feedback is successfully saved
+          if (interview_done) {
+            console.log('🎯 Interview completed, tracking events...');
+            
+            // Track interview completion
+            console.log('📊 Tracking participatedInMockInterview...');
+            trackEvents.participatedInMockInterview({
+              interview_id: interviewId,
+              completion_timestamp: new Date().toISOString(),
+              completion_method: 'backend_confirmed'
+            });
+            
+            // ✅ FIXED: Only track feedback generation when feedback is actually saved to database
+            if (feedback_saved_successfully) {
+              console.log('✅ Feedback successfully saved to database, tracking feedback generation...');
+              setTimeout(() => {
+                console.log('📊 Tracking mockInterviewFeedbackGenerated...');
+                trackEvents.mockInterviewFeedbackGenerated({
+                  interview_id: interviewId,
+                  generation_timestamp: new Date().toISOString(),
+                  generation_method: 'backend_confirmed'
+                });
+              }, 100); // 100ms delay
+            } else {
+              console.log('⚠️ Interview completed but feedback not saved yet, skipping feedback generation tracking');
+            }
+          }
           
           // ✅ NEW: Play audio for final response (if available)
           if (audio_url) {
@@ -322,6 +354,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               // ✅ NEW: Redirect to feedback page after audio finishes
               if (interview_done) {
                 console.log('🎯 Interview completed, redirecting to feedback...');
+                
                 // Add a small delay to ensure audio deletion completes
                 setTimeout(() => {
                   window.location.href = `/interview-feedback?interview_id=${interviewId}`;

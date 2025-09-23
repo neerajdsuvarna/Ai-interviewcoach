@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiClock, FiCheckCircle, FiXCircle, FiPlay, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabaseClient';
+import { trackEvents } from '../services/mixpanel';
 
 const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegenerating, isAnyRegenerating = false }) => {
   const { user } = useAuth();
@@ -32,6 +33,8 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
         return <FiClock className="text-blue-500" size={16} />;
       case 'cancelled':
         return <FiXCircle className="text-red-500" size={16} />;
+      case 'STARTED':
+        return <FiPlay className="text-orange-500" size={16} />;
       default:
         return <FiClock className="text-gray-500" size={16} />;
     }
@@ -48,6 +51,8 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
         return 'Scheduled';
       case 'cancelled':
         return 'Cancelled';
+      case 'STARTED':
+        return 'Started';
       default:
         return status;
     }
@@ -69,6 +74,9 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
       if (!originalInterviewId) {
         throw new Error('No original interview found for retake');
       }
+      
+      // Note: Rescheduled Mock Interview event will be tracked after successful payment
+      // in PaymentsStatus.jsx when the interview is actually rescheduled
       
       // Redirect to Dodo checkout with retake context (no interview created yet)
       const redirectUrl = `${window.location.origin}/payment-status?resume_id=${pairing.resume_id}&jd_id=${pairing.jd_id}&question_set=${questionSet.questionSetNumber}&retake_from=${originalInterviewId}`;
@@ -180,6 +188,7 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
                     interview.status === 'completed' || interview.status === 'ENDED' ? 'bg-green-100 text-green-800' :
                     interview.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
                     interview.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                    interview.status === 'STARTED' ? 'bg-orange-100 text-orange-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>
                     {getStatusText(interview.status)}
@@ -189,6 +198,23 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
                       Retake
                     </span>
                   )}
+                  {/* Resume Interview Button - Only show for started interviews */}
+                  {interview.status === 'STARTED' && (
+                    <button
+                      onClick={() => window.location.href = `/interview?interview_id=${interview.id}`}
+                      disabled={isDisabled}
+                      className={`px-2 py-1 rounded text-xs font-medium transition-all duration-200 flex items-center shadow-sm hover:shadow-md transform hover:scale-105 ${
+                        isDisabled
+                          ? 'bg-gray-400 cursor-not-allowed opacity-50'
+                          : 'bg-orange-500 hover:bg-orange-600 text-white cursor-pointer'
+                      }`}
+                    >
+                      <FiPlay className="mr-1" size={10} />
+                      <span className="hidden sm:inline">Resume</span>
+                      <span className="sm:hidden">Resume</span>
+                    </button>
+                  )}
+                  
                   {/* View Summary Button - Only show for completed interviews */}
                   {(interview.status === 'completed' || interview.status === 'ENDED') && (
                     <button
@@ -259,6 +285,7 @@ const InterviewHistoryCard = ({ questionSet, pairing, onRetakeRequest, isRegener
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         interview.status === 'completed' || interview.status === 'ENDED' ? 'bg-green-100 text-green-800' :
                         interview.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                        interview.status === 'STARTED' ? 'bg-orange-100 text-orange-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {getStatusText(interview.status)}

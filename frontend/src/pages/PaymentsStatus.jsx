@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { FiCheckCircle, FiXCircle, FiLoader, FiClock, FiArrowLeft } from 'react-icons/fi';
 import Navbar from '../components/Navbar';
+import { trackEvents } from '../services/mixpanel';
 
 export default function PaymentStatus() {
   const [searchParams] = useSearchParams();
@@ -10,6 +11,11 @@ export default function PaymentStatus() {
   const [status, setStatus] = useState('processing');
   const [message, setMessage] = useState('Processing payment...');
   const [paymentDetails, setPaymentDetails] = useState(null);
+  const hasProcessedPayment = useRef(false); // Prevent duplicate processing
+  const hasTrackedPaymentCompleted = useRef(false); // Prevent duplicate payment tracking
+  const hasTrackedInterviewScheduled = useRef(false); // Prevent duplicate interview tracking
+  const hasTrackedPaymentFailure = useRef(false); // Prevent duplicate payment failure tracking
+  const hasTrackedRescheduledInterview = useRef(false); // Prevent duplicate reschedule tracking
 
   // Extract URL parameters at component level so they're accessible in JSX
   const resumeId = searchParams.get('resume_id');
@@ -22,6 +28,14 @@ export default function PaymentStatus() {
 
   useEffect(() => {
     const processPayment = async () => {
+      // Prevent duplicate processing
+      if (hasProcessedPayment.current) {
+        console.log('🛑 Payment already processed, skipping...');
+        return;
+      }
+      
+      hasProcessedPayment.current = true;
+      
       try {
         // Get URL parameters from Dodo redirect
         const paymentId = searchParams.get('payment_id');
@@ -171,6 +185,21 @@ export default function PaymentStatus() {
                   setStatus('success');
                   setMessage('Payment successful! Setting up interview...');
                   
+                  // Track payment completed (only once)
+                  if (!hasTrackedPaymentCompleted.current) {
+                    hasTrackedPaymentCompleted.current = true;
+                    trackEvents.paymentCompleted({
+                      payment_id: result.data.transaction_id,
+                      amount: result.data.amount,
+                      resume_id: resumeId,
+                      jd_id: jdId,
+                      question_set: questionSet,
+                      is_retake: isRetake,
+                      retake_from: retakeFrom,
+                      completion_timestamp: new Date().toISOString()
+                    });
+                  }
+                  
                   // ✅ Call interview setup function
                   try {
                     console.log('🚀 Setting up interview...');
@@ -207,6 +236,34 @@ export default function PaymentStatus() {
                      if (interviewSetupResponse.ok && interviewResult.success) {
                        console.log('✅ Interview setup successful, redirecting...');
                        
+                       // Track mock interview scheduled (only for original interviews, not retakes)
+                       if (!isRetake && !hasTrackedInterviewScheduled.current) {
+                         hasTrackedInterviewScheduled.current = true;
+                         trackEvents.mockInterviewScheduled({
+                           interview_id: interviewResult.data.interview_id,
+                           payment_id: result.data.transaction_id,
+                           resume_id: resumeId,
+                           jd_id: jdId,
+                           question_set: questionSet,
+                           is_retake: false,
+                           schedule_timestamp: new Date().toISOString()
+                         });
+                       }
+                       
+                       // Track rescheduled mock interview (only for retakes, only once)
+                       if (isRetake && !hasTrackedRescheduledInterview.current) {
+                         hasTrackedRescheduledInterview.current = true;
+                         trackEvents.rescheduledMockInterview({
+                           original_interview_id: retakeFrom,
+                           new_interview_id: interviewResult.data.interview_id,
+                           payment_id: result.data.transaction_id,
+                           resume_id: resumeId,
+                           jd_id: jdId,
+                           question_set: questionSet,
+                           reschedule_timestamp: new Date().toISOString()
+                         });
+                       }
+                       
                        setTimeout(() => {
                          console.log('🚀 Redirecting to interview...');
                          navigate(`/interview?interview_id=${interviewResult.data.interview_id}`);
@@ -222,6 +279,19 @@ export default function PaymentStatus() {
                 case 'failed':
                   setStatus('error');
                   setMessage('Payment failed. Please try again.');
+                  
+                  // Track payment failure (only once)
+                  if (!hasTrackedPaymentFailure.current) {
+                    hasTrackedPaymentFailure.current = true;
+                    trackEvents.paymentFailure({
+                      payment_id: result.data.transaction_id,
+                      amount: result.data.amount,
+                      resume_id: resumeId,
+                      jd_id: jdId,
+                      question_set: questionSet,
+                      failure_timestamp: new Date().toISOString()
+                    });
+                  }
                   break;
                 case 'pending':
                   setStatus('pending');

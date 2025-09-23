@@ -8,6 +8,7 @@ import InterviewHistoryCard from '../components/InterviewHistoryCard';
 import SuccessModal from '../components/SuccessModal';
 import { supabase } from '../supabaseClient';
 import { apiPost } from '../api';
+import { trackEvents } from '../services/mixpanel';
 
 function DashboardPage() {
   const { theme } = useTheme();
@@ -146,8 +147,17 @@ function DashboardPage() {
         throw new Error(`Failed to save questions: ${questionsSaveResult.message}`);
       }
 
-      // Step 5: Show success message and refresh data
+      // Step 5: Track questions regenerated event
       const savedQuestionSet = questionsSaveResult.data[0]?.question_set || 'unknown';
+      trackEvents.questionsRegenerated({
+        resume_id: pairing.resume_id,
+        jd_id: pairing.jd_id,
+        question_set: savedQuestionSet,
+        regeneration_timestamp: new Date().toISOString(),
+        questions_count: questionsResult.data.questions.length
+      });
+
+      // Step 6: Show success message and refresh data
       
       // Count unique questions by grouping by question_text
       const uniqueQuestions = questionsSaveResult.data.reduce((acc, item) => {

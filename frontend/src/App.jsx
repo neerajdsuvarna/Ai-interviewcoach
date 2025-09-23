@@ -12,16 +12,24 @@ import QuestionsPage from './pages/QuestionPage';
 import InterviewPage from './pages/InterviewPage';
 import InterviewFeedbackPage from './pages/InterviewFeedbackPage';
 import PaymentStatus from './pages/PaymentsStatus';
+import FAQPage from './pages/FAQPage';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
+
 import SupportBot from './components/SupportBot'; // Add this import
 import { supabase } from './supabaseClient'
+
+import { useMixpanel } from './hooks/useMixpanel';
+
 
 // TEMPORARY: Make supabase available in console for testing
 window.supabase = supabase
 
 function App() {
+  // Initialize Mixpanel user identification
+  useMixpanel();
+  
   return (
     <>
       {/* <AuthDebug /> Add this temporarily for debugging */}
@@ -95,6 +103,7 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route path="/faq" element={<FAQPage />} />
       </Routes>
       
       {/* Support Bot Widget - Available on all pages */}
