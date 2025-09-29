@@ -629,6 +629,19 @@ def generate_questions():
         job_title = data.get('job_title')
         job_desc_file_url = data.get('job_desc_file_url')
         
+        # Get new parameters for question generation
+        question_counts = data.get('question_counts', {
+            'beginner': 2,
+            'medium': 2,
+            'hard': 2
+        })
+        split_mode = data.get('split', False)
+        resume_pct = data.get('resume_pct', 50)
+        jd_pct = data.get('jd_pct', 50)
+        blend_mode = data.get('blend', False)
+        blend_pct_resume = data.get('blend_pct_resume', 50)
+        blend_pct_jd = data.get('blend_pct_jd', 50)
+        
         if not all([resume_url, job_description, job_title]):
             return jsonify({
                 "success": False,
@@ -636,6 +649,9 @@ def generate_questions():
             }), 400
         
         print(f"[DEBUG] Generating questions for job: {job_title}")
+        print(f"[DEBUG] Question counts: {question_counts}")
+        print(f"[DEBUG] Split mode: {split_mode} (Resume {resume_pct}% | JD {jd_pct}%)")
+        print(f"[DEBUG] Blend mode: {blend_mode} (Resume {blend_pct_resume}% | JD {blend_pct_jd}%)")
         
         # Download resume file from Supabase Storage
         import requests
@@ -666,20 +682,19 @@ def generate_questions():
             # Import and run the new resume pipeline
             from INTERVIEW.Resumeparser import run_pipeline_from_api
             
-            # Set question counts (can be made configurable from frontend)
-            question_counts = {
-                'beginner': 1,
-                'medium': 1,
-                'hard': 1
-            }
-            
-            # Run the pipeline with frontend data
+            # Run the pipeline with frontend data and new parameters
             result = run_pipeline_from_api(
                 resume_path=temp_resume_path,
                 job_title=job_title,
                 job_description=job_description,
                 question_counts=question_counts,
-                include_answers=True  # Generate answers by default
+                include_answers=True,  # Generate answers by default
+                split=split_mode,
+                resume_pct=resume_pct,
+                jd_pct=jd_pct,
+                blend=blend_mode,
+                blend_pct_resume=blend_pct_resume,
+                blend_pct_jd=blend_pct_jd
             )
             
             if not result.get('success'):

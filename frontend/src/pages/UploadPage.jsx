@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import Navbar from '../components/Navbar';
 import UploadBox from '../components/upload/UploadBox';
-import { FiTrash2, FiLoader, FiFileText, FiCheck } from 'react-icons/fi';
+import { FiTrash2, FiLoader, FiFileText, FiCheck, FiSettings } from 'react-icons/fi';
 import { useTheme } from '../hooks/useTheme';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadFile } from '../api';
@@ -27,6 +27,16 @@ function UploadPage() {
   const [clearCounter, setClearCounter] = useState(0);
   const [successModal, setSuccessModal] = useState({ isOpen: false, title: '', message: '', details: null });
   const [lastCreatedIds, setLastCreatedIds] = useState({ resumeId: null, jdId: null, questionSet: null });
+
+  // New state for question generation settings
+  const [easyQuestions, setEasyQuestions] = useState(2);
+  const [mediumQuestions, setMediumQuestions] = useState(2);
+  const [hardQuestions, setHardQuestions] = useState(2);
+  const [splitMode, setSplitMode] = useState(false);
+  const [blendMode, setBlendMode] = useState(false);
+  const [splitResumePercentage, setSplitResumePercentage] = useState(50);
+  const [blendResumePercentage, setBlendResumePercentage] = useState(50);
+  const [questionValidationError, setQuestionValidationError] = useState('');
 
   const handleClearAll = () => {
     setResume(null);
@@ -211,6 +221,26 @@ function UploadPage() {
       return;
     }
 
+    // Validate question counts based on mode
+    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+    
+    if (splitMode && blendMode) {
+      // Both modes on - need at least 6 total questions
+      if (totalQuestions < 6) {
+        setQuestionValidationError('When both Split and Blend modes are enabled, you need at least 6 total questions.');
+        return;
+      }
+    } else {
+      // Single mode - need at least 1 question in each category
+      if (easyQuestions < 1 || mediumQuestions < 1 || hardQuestions < 1) {
+        setQuestionValidationError('Each difficulty level must have at least 1 question.');
+        return;
+      }
+    }
+
+    // Clear any previous validation errors
+    setQuestionValidationError('');
+
     setLoading(true);
 
     try {
@@ -316,7 +346,7 @@ function UploadPage() {
     }
   };
 
-  // New function to call backend API for question generation
+  // Updated function to call backend API for question generation with new parameters
   const generateQuestionsFromBackend = async (resumeUrl, jobTitle, jobDescription) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -335,7 +365,19 @@ function UploadPage() {
         body: JSON.stringify({
           resume_url: resumeUrl,
           job_title: jobTitle,
-          job_description: jobDescription
+          job_description: jobDescription,
+          // New parameters for question generation
+          question_counts: {
+            beginner: easyQuestions,
+            medium: mediumQuestions,
+            hard: hardQuestions
+          },
+          split: splitMode,
+          resume_pct: splitResumePercentage,
+          jd_pct: 100 - splitResumePercentage,
+          blend: blendMode,
+          blend_pct_resume: blendResumePercentage,
+          blend_pct_jd: 100 - blendResumePercentage
         })
       });
 
@@ -426,7 +468,23 @@ function UploadPage() {
   };
 
   // Check if generate questions button should be enabled
-  const canGenerateQuestions = resume && jobTitle.trim() && jobDescription.trim() && jobDescParsed && !loading && !parsingJobDesc;
+  const canGenerateQuestions = () => {
+    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+    
+    // Basic requirements
+    if (!resume || !jobTitle.trim() || !jobDescription.trim() || !jobDescParsed || loading || parsingJobDesc) {
+      return false;
+    }
+    
+    // Question count validation
+    if (splitMode && blendMode) {
+      // Both modes on - need at least 6 total questions
+      return totalQuestions >= 6;
+    } else {
+      // Single mode - need at least 1 question in each category
+      return easyQuestions >= 1 && mediumQuestions >= 1 && hardQuestions >= 1;
+    }
+  };
 
   // Handle navigation to questions page (used by both buttons)
   const handleNavigateToQuestions = () => {
@@ -464,13 +522,24 @@ function UploadPage() {
     };
   }, [isCriticalOperationInProgress]);
 
-
+  // Helper function to get mode description
+  const getModeDescription = () => {
+    if (splitMode && blendMode) {
+      return "Hybrid Mode: Mix of split and blended questions";
+    } else if (splitMode) {
+      return "Split Mode: Separate questions from resume vs job description";
+    } else if (blendMode) {
+      return "Blend Mode: Questions that blend resume and job description content";
+    } else {
+      return "Standard Mode: Balanced questions from both sources";
+    }
+  };
 
   return (
     <>
       <Navbar disableNavigation={isCriticalOperationInProgress} />
       <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text-primary)] px-4 py-8 sm:py-12 md:py-16 flex justify-center">
-        <div className="w-full max-w-3xl bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-6 sm:p-8 md:p-10">
+        <div className="w-full max-w-4xl bg-[var(--color-card)] border border-[var(--color-border)] rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-6 sm:p-8 md:p-10">
           <div className="text-center mb-10">
             <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-[var(--color-primary)] mb-4">
             Prepare With Confidence
@@ -576,6 +645,260 @@ function UploadPage() {
                         required
                       />
                     </div>
+
+                    {/* Question Generation Settings */}
+                    <div className="bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl p-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <FiSettings className="w-5 h-5 text-[var(--color-primary)]" />
+                        <h3 className="text-lg font-semibold text-[var(--color-text-primary)]">
+                          Question Generation Settings
+                        </h3>
+                      </div>
+
+                      {/* Mode Description */}
+                      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                        <p className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+                          {getModeDescription()}
+                        </p>
+                      </div>
+
+                      {/* Question Counts */}
+                      <div className="space-y-4 mb-6">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-[var(--color-text-primary)]">
+                            Question Difficulty Distribution
+                          </h4>
+                          <div className="text-xs text-[var(--color-text-secondary)]">
+                            Total: {easyQuestions + mediumQuestions + hardQuestions} questions
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="bg-green-50/50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-green-700 dark:text-green-300">
+                                Easy Questions
+                              </label>
+                              <span className="text-xs text-green-600 dark:text-green-400 bg-green-100/70 dark:bg-green-800/30 px-2 py-1 rounded-full">
+                                {easyQuestions}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="5"
+                              value={easyQuestions}
+                              onChange={(e) => setEasyQuestions(parseInt(e.target.value))}
+                              disabled={loading}
+                              className="w-full h-2 bg-green-200/50 dark:bg-green-700/30 rounded-lg appearance-none cursor-pointer slider-green"
+                            />
+                            <div className="flex justify-between text-xs text-green-600/70 dark:text-green-400/70 mt-1">
+                              <span>1</span>
+                              <span>5</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-yellow-50/50 dark:bg-yellow-900/10 border border-yellow-200/50 dark:border-yellow-800/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-yellow-700 dark:text-yellow-300">
+                                Medium Questions
+                              </label>
+                              <span className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-100/70 dark:bg-yellow-800/30 px-2 py-1 rounded-full">
+                                {mediumQuestions}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="5"
+                              value={mediumQuestions}
+                              onChange={(e) => setMediumQuestions(parseInt(e.target.value))}
+                              disabled={loading}
+                              className="w-full h-2 bg-yellow-200/50 dark:bg-yellow-700/30 rounded-lg appearance-none cursor-pointer slider-yellow"
+                            />
+                            <div className="flex justify-between text-xs text-yellow-600/70 dark:text-yellow-400/70 mt-1">
+                              <span>1</span>
+                              <span>5</span>
+                            </div>
+                          </div>
+
+                          <div className="bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-medium text-red-700 dark:text-red-300">
+                                Hard Questions
+                              </label>
+                              <span className="text-xs text-red-600 dark:text-red-400 bg-red-100/70 dark:bg-red-800/30 px-2 py-1 rounded-full">
+                                {hardQuestions}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min="1"
+                              max="5"
+                              value={hardQuestions}
+                              onChange={(e) => setHardQuestions(parseInt(e.target.value))}
+                              disabled={loading}
+                              className="w-full h-2 bg-red-200/50 dark:bg-red-700/30 rounded-lg appearance-none cursor-pointer slider-red"
+                            />
+                            <div className="flex justify-between text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+                              <span>1</span>
+                              <span>5</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Validation Error Message */}
+                        {!canGenerateQuestions() && (splitMode || blendMode) && (
+                          <div className="p-3 bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 rounded-lg">
+                            <p className="text-sm text-red-700 dark:text-red-300">
+                              {splitMode && blendMode 
+                                ? 'When both Split and Blend modes are enabled, you need at least 6 total questions.'
+                                : 'Each difficulty level must have at least 1 question.'
+                              }
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Mode-specific validation hints */}
+                        {splitMode && blendMode && (
+                          <div className="p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 rounded-lg">
+                            <p className="text-sm text-blue-700 dark:text-blue-300">
+                              💡 <strong>Hybrid Mode:</strong> With both modes enabled, you need at least 6 total questions to ensure a good mix of split and blended questions.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mode Toggles */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                              Split Mode
+                            </label>
+                            <p className="text-xs text-[var(--color-text-secondary)]">
+                              Generate separate questions from resume vs job description
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSplitMode(!splitMode)}
+                            disabled={loading}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              splitMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                splitMode ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                              Blend Mode
+                            </label>
+                            <p className="text-xs text-[var(--color-text-secondary)]">
+                              Generate questions that blend resume and job description content
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setBlendMode(!blendMode)}
+                            disabled={loading}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              blendMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                blendMode ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Split Mode Slider */}
+                      <AnimatePresence>
+                        {splitMode && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="mt-4"
+                          >
+                            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                              <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-3">
+                                Split Mode Settings
+                              </h4>
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                                  <span>Resume</span>
+                                  <span>Job Description</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  value={splitResumePercentage}
+                                  onChange={(e) => setSplitResumePercentage(parseInt(e.target.value))}
+                                  disabled={loading}
+                                  className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                />
+                                <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
+                                  <span>{splitResumePercentage}%</span>
+                                  <span>{100 - splitResumePercentage}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Blend Mode Slider */}
+                      <AnimatePresence>
+                        {blendMode && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className="mt-4"
+                          >
+                            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                              <h4 className="text-sm font-medium text-purple-800 dark:text-purple-200 mb-3">
+                                Blend Mode Settings
+                              </h4>
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                                  <span>Resume Weight</span>
+                                  <span>Job Description Weight</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  value={blendResumePercentage}
+                                  onChange={(e) => setBlendResumePercentage(parseInt(e.target.value))}
+                                  disabled={loading}
+                                  className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                />
+                                <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
+                                  <span>{blendResumePercentage}%</span>
+                                  <span>{100 - blendResumePercentage}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -600,7 +923,7 @@ function UploadPage() {
               
                 <button
                 type="submit"
-                disabled={!canGenerateQuestions}
+                disabled={!canGenerateQuestions()}
                 className="w-full py-3 text-base sm:text-lg font-semibold bg-[var(--color-primary)] text-white rounded-xl transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
