@@ -12,7 +12,8 @@ from io import StringIO
 from textract import process
 import PyPDF2
 import docx
-
+from colorama import Fore, Style, init
+init(autoreset=True)
 
 ENABLE_LOGGING = False
 try:
@@ -445,6 +446,402 @@ def generate_core_questions(structured_resume, job_title, job_description, begin
         "hard": hard_qs
     }
 
+# === CORE QUESTION GENERATION WITH SPLIT INTEGRATED ===
+
+def generate_split_questions(structured_resume, job_title, job_description,
+                             beginner_count=2, medium_count=2, hard_count=2,
+                             resume_pct=50, jd_pct=50, model="llama3"):
+    def generate_questions_by_source(level, count, weight, source, retries=2):
+        if count <= 0:
+            return []
+        """Helper: generate questions from either resume or JD context"""
+        for attempt in range(retries):
+            if source == "resume":
+                context = f"Candidate's Resume (structured JSON):\n{json.dumps(structured_resume, indent=2)}"
+            else:  # JD
+                context = f"Job Title: {job_title}\nJob Description:\n{job_description}"
+
+            prompt = f"""
+            You are an expert AI interviewer preparing questions for a candidate.
+
+            Context Source: {source.upper()}
+            {context}
+
+            Task:
+            Generate {count} unique interview questions with difficulty: "{level}".
+
+            Rules:
+            - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+            - Only return a pure JSON array of {count} objects.
+            """
+            try:
+                response = try_ollama_chat(prompt.strip(), model=model)
+                raw = response["message"]["content"]
+                questions = extract_json_array(raw)
+                if len(questions) == count:
+                    return questions
+                else:
+                    print(f"[WARNING] Got {len(questions)} {level}-{source} questions instead of {count}. Retrying...")
+            except Exception as e:
+                print(f"[ERROR] Failed to generate {level}-{source} questions: {e}")
+        return []
+
+    # === Calculate totals ===
+    total = beginner_count + medium_count + hard_count
+    if total == 0:
+        return {"beginner": [], "medium": [], "hard": []}
+
+    resume_total = round(total * resume_pct / 100)
+    jd_total = total - resume_total
+
+    print(f"\n{Fore.BLUE}=== SPLIT MODE DEBUG ==={Style.RESET_ALL}")
+    print(f"{Fore.CYAN}[REQUESTED]{Style.RESET_ALL} Resume={resume_pct}% ({resume_total}), JD={jd_pct}% ({jd_total})")
+
+    # === Proportional split per difficulty ===
+    def distribute(bucket_total, total):
+        if bucket_total == 0:
+            return (0, 0, 0)
+        b = round(bucket_total * (beginner_count / total))
+        m = round(bucket_total * (medium_count / total))
+        h = round(bucket_total * (hard_count / total))
+        # Fix rounding drift
+        while b + m + h < bucket_total:
+            b += 1
+        while b + m + h > bucket_total:
+            if b > 0: b -= 1
+            elif m > 0: m -= 1
+            else: h -= 1
+        return (b, m, h)
+
+    resume_dist = list(distribute(resume_total, total))
+    jd_dist = list(distribute(jd_total, total))
+
+    print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
+    print(f"  {Fore.YELLOW}Resume -> Beginner={resume_dist[0]}, Medium={resume_dist[1]}, Hard={resume_dist[2]}{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}JD     -> Beginner={jd_dist[0]}, Medium={jd_dist[1]}, Hard={jd_dist[2]}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}=========================={Style.RESET_ALL}\n")
+
+    # === Generate questions ===
+    beginner_qs, medium_qs, hard_qs = [], [], []
+
+    beginner_qs.extend(generate_questions_by_source("beginner", resume_dist[0], 1, "resume"))
+    beginner_qs.extend(generate_questions_by_source("beginner", jd_dist[0], 1, "jd"))
+
+    medium_qs.extend(generate_questions_by_source("medium", resume_dist[1], 3, "resume"))
+    medium_qs.extend(generate_questions_by_source("medium", jd_dist[1], 3, "jd"))
+
+    hard_qs.extend(generate_questions_by_source("hard", resume_dist[2], 5, "resume"))
+    hard_qs.extend(generate_questions_by_source("hard", jd_dist[2], 5, "jd"))
+
+    print(f"[DONE] Final counts -> Beginner: {len(beginner_qs)}, Medium: {len(medium_qs)}, Hard: {len(hard_qs)}")
+
+    return {
+        "beginner": beginner_qs,
+        "medium": medium_qs,
+        "hard": hard_qs
+    }
+
+# === END OF CORE QUESTION GENERATION WITH SPLIT INTEGRATED ===
+
+
+
+# === CORE QUESTION GENERATION WITH BLEND INTEGRATED ===
+
+def generate_blend_questions(structured_resume, job_title, job_description,
+                             beginner_count=2, medium_count=2, hard_count=2,
+                             blend_pct_resume=50, blend_pct_jd=50, model="llama3"):
+    """
+    Generate interview questions where each question blends resume and JD info
+    according to given percentages.
+    """
+
+    def generate_questions_blend(level, count, weight, retries=2):
+        if count <= 0: 
+            return []
+        level_mapping = {
+            'beginner': 'easy',
+            'medium': 'medium',
+            'hard': 'hard'
+        }
+        db_level = level_mapping.get(level, level)
+
+        for attempt in range(retries):
+            prompt = f"""
+            You are an expert AI interviewer preparing questions for a candidate.
+
+            Blend Context:
+            - Use {blend_pct_resume}% of the candidate's resume:
+            {json.dumps(structured_resume, indent=2)}
+
+            - Use {blend_pct_jd}% of the job description:
+            Job Title: {job_title}
+            Job Description: {job_description}
+
+            Task:
+            Generate {count} unique interview questions with difficulty: "{level}".
+
+            Rules:
+            - Each question must naturally combine both resume and JD information.
+            - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+            - Only return a pure JSON array of {count} objects.
+            - No explanations, no markdown, no text before/after the JSON.
+
+            Format:
+            [
+              {{
+                "question": "...",
+                "difficulty": "{level}",
+                "weight": {weight}
+              }},
+              ...
+            ]
+            """
+            try:
+                response = try_ollama_chat(prompt.strip(), model=model)
+                raw = response["message"]["content"]
+                questions = extract_json_array(raw)
+                if len(questions) == count:
+                    return questions
+                else:
+                    print(f"[WARNING] Got {len(questions)} {level}-blend questions instead of {count}. Retrying...")
+            except Exception as e:
+                print(f"[ERROR] Failed to generate {level}-blend questions: {e}")
+        return []
+
+    print(f"[INFO] Generating blended questions (Resume {blend_pct_resume}% | JD {blend_pct_jd}%)")
+
+    beginner_qs, medium_qs, hard_qs = [], [], []
+
+    if beginner_count > 0:
+        beginner_qs = generate_questions_blend("beginner", beginner_count, 1)
+    if medium_count > 0:
+        medium_qs = generate_questions_blend("medium", medium_count, 3)
+    if hard_count > 0:
+        hard_qs = generate_questions_blend("hard", hard_count, 5)
+
+    return {
+        "beginner": beginner_qs,
+        "medium": medium_qs,
+        "hard": hard_qs
+    }
+
+# === END OF CORE QUESTION GENERATION WITH BLEND INTEGRATED ===
+
+
+# === CORE QUESTION GENERATION WITH HYBRID INTEGRATED ===
+
+def generate_hybrid_questions(structured_resume, job_title, job_description, 
+                              beginner_count=2, medium_count=2, hard_count=2,
+                              resume_pct=40, jd_pct=30,
+                              blend_pct_resume=50, blend_pct_jd=50, model="llama3"):
+    """
+    Hybrid mode: 40% blended questions, 60% split (resume vs JD).
+    Preserves user-requested beginner/medium/hard counts.
+    """
+
+    total = beginner_count + medium_count + hard_count
+    if total == 0:
+        return {"beginner": [], "medium": [], "hard": []}
+
+    # --- Step 1: Decide blend vs split buckets ---
+    blend_total = round(total * 0.4)   # fixed 40% blend
+    split_total = total - blend_total  # remaining 60%
+
+    # --- Step 2: Inside split, allocate Resume vs JD ---
+    resume_total = round(split_total * (resume_pct / 100))
+    jd_total = split_total - resume_total
+
+    print(f"[INFO] Hybrid distribution -> Resume-only: {resume_total}, JD-only: {jd_total}, Blend: {blend_total}")
+
+    # --- Step 3: Per-difficulty distribution ---
+    def distribute(bucket_total, total):
+        if bucket_total == 0 or total == 0:
+            return (0, 0, 0)
+
+        # Proportional allocation
+        b = round(bucket_total * (beginner_count / total))
+        m = round(bucket_total * (medium_count / total))
+        h = round(bucket_total * (hard_count / total))
+
+        # Adjust if rounding wiped everything out
+        if b + m + h == 0 and bucket_total > 0:
+            b = bucket_total
+
+        # Fix rounding drift
+        while b + m + h < bucket_total:
+            b += 1
+        while b + m + h > bucket_total:
+            if b > 0:
+                b -= 1
+            elif m > 0:
+                m -= 1
+            else:
+                h -= 1
+
+        return (b, m, h)
+
+    resume_dist = list(distribute(resume_total, total))
+    jd_dist = list(distribute(jd_total, total))
+    blend_dist = list(distribute(blend_total, total))
+
+    print(f"\n{Fore.BLUE}=== DISTRIBUTION DEBUG ==={Style.RESET_ALL}")
+
+    print(f"{Fore.CYAN}[REQUESTED]{Style.RESET_ALL}")
+    print(f"  Resume -> {Fore.YELLOW}BEGINNER={resume_total}, MEDIUM=?, HARD=? (pre-split){Style.RESET_ALL}")
+    print(f"  JD     -> {Fore.GREEN}BEGINNER={jd_total}, MEDIUM=?, HARD=? (pre-split){Style.RESET_ALL}")
+    print(f"  Blend  -> {Fore.MAGENTA}BEGINNER={blend_total}, MEDIUM=?, HARD=? (pre-split){Style.RESET_ALL}")
+
+    # --- Step 3b: Balance across buckets ---
+    def rebalance_buckets(resume_dist, jd_dist, blend_dist,
+                          beginner_count, medium_count, hard_count):
+        totals = [
+            resume_dist[0] + jd_dist[0] + blend_dist[0],
+            resume_dist[1] + jd_dist[1] + blend_dist[1],
+            resume_dist[2] + jd_dist[2] + blend_dist[2]
+        ]
+        requested = [beginner_count, medium_count, hard_count]
+
+        for _ in range(30):  # safeguard loop
+            for i in range(3):
+                if totals[i] > requested[i]:
+                    for j in range(3):
+                        if totals[j] < requested[j]:
+                            totals[i] -= 1
+                            totals[j] += 1
+                            # shift from JD first, then Resume, then Blend
+                            if jd_dist[i] > 0:
+                                jd_dist[i] -= 1
+                                jd_dist[j] += 1
+                            elif resume_dist[i] > 0:
+                                resume_dist[i] -= 1
+                                resume_dist[j] += 1
+                            elif blend_dist[i] > 0:
+                                blend_dist[i] -= 1
+                                blend_dist[j] += 1
+                            break
+            if totals == requested:
+                break
+
+        return resume_dist, jd_dist, blend_dist
+
+    resume_dist, jd_dist, blend_dist = rebalance_buckets(
+        resume_dist, jd_dist, blend_dist,
+        beginner_count, medium_count, hard_count
+    )
+
+    print(f"\n{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
+    print(f"  Resume -> {Fore.YELLOW}BEGINNER={resume_dist[0]}, MEDIUM={resume_dist[1]}, HARD={resume_dist[2]}{Style.RESET_ALL}")
+    print(f"  JD     -> {Fore.GREEN}BEGINNER={jd_dist[0]}, MEDIUM={jd_dist[1]}, HARD={jd_dist[2]}{Style.RESET_ALL}")
+    print(f"  Blend  -> {Fore.MAGENTA}BEGINNER={blend_dist[0]}, MEDIUM={blend_dist[1]}, HARD={blend_dist[2]}{Style.RESET_ALL}")
+
+    print(f"{Fore.BLUE}==========================\n{Style.RESET_ALL}")
+
+    beginner_qs, medium_qs, hard_qs = [], [], []
+
+    # --- Local helper: Resume-only or JD-only ---
+    def generate_from_source(level, count, weight, source):
+        if count <= 0:
+            return []
+        context = (
+            f"Candidate's Resume (structured JSON):\n{json.dumps(structured_resume, indent=2)}"
+            if source == "resume"
+            else f"Job Title: {job_title}\nJob Description:\n{job_description}"
+        )
+        prompt = f"""
+        You are an expert AI interviewer preparing questions for a candidate.
+
+        Context Source: {source.upper()}
+        {context}
+
+        Task:
+        Generate {count} unique interview questions with difficulty: "{level}".
+
+        Rules:
+        - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+        - Only return a pure JSON array of {count} objects.
+        """
+        try:
+            response = try_ollama_chat(prompt.strip(), model=model)
+            return extract_json_array(response["message"]["content"])
+        except Exception as e:
+            print(f"[ERROR] Failed to generate {level}-{source} questions: {e}")
+            return []
+
+    # --- Local helper: Blended ---
+    def generate_blended(level, count, weight):
+        if count <= 0:
+            return []
+        prompt = f"""
+        You are an expert AI interviewer preparing questions.
+
+        Blend Context:
+        - Use {blend_pct_resume}% of the candidate's resume:
+        {json.dumps(structured_resume, indent=2)}
+
+        - Use {blend_pct_jd}% of the job description:
+        Job Title: {job_title}
+        Job Description: {job_description}
+
+        Task:
+        Generate {count} unique interview questions with difficulty "{level}".
+
+        Rules:
+        - Each question must combine resume + JD naturally.
+        - Each question must be labeled with "difficulty": "{level}", "weight": {weight}.
+        - Only return a pure JSON array of {count} objects.
+        """
+        try:
+            response = try_ollama_chat(prompt.strip(), model=model)
+            return extract_json_array(response["message"]["content"])
+        except Exception as e:
+            print(f"[ERROR] Failed to generate {level}-blend questions: {e}")
+            return []
+
+    # --- Step 4–6: Generate Questions ---
+    beginner_qs.extend(generate_from_source("beginner", resume_dist[0], 1, "resume"))
+    medium_qs.extend(generate_from_source("medium", resume_dist[1], 3, "resume"))
+    hard_qs.extend(generate_from_source("hard", resume_dist[2], 5, "resume"))
+
+    beginner_qs.extend(generate_from_source("beginner", jd_dist[0], 1, "jd"))
+    medium_qs.extend(generate_from_source("medium", jd_dist[1], 3, "jd"))
+    hard_qs.extend(generate_from_source("hard", jd_dist[2], 5, "jd"))
+
+    beginner_qs.extend(generate_blended("beginner", blend_dist[0], 1))
+    medium_qs.extend(generate_blended("medium", blend_dist[1], 3))
+    hard_qs.extend(generate_blended("hard", blend_dist[2], 5))
+
+    # --- Step 7: Guarantee final counts match user input ---
+    def trim_or_pad(lst, target, level, weight):
+        if len(lst) > target:
+            return lst[:target]
+        while len(lst) < target:
+            new_qs = generate_from_source(level, 1, weight, "jd")
+            if not new_qs:
+                new_qs = generate_from_source(level, 1, weight, "resume")
+            if not new_qs:
+                new_qs = generate_blended(level, 1, weight)
+            if not new_qs:
+                new_qs = [{"question": f"Fallback {level} question", "difficulty": level, "weight": weight}]
+            lst.extend(new_qs)
+        return lst
+
+    beginner_qs = trim_or_pad(beginner_qs, beginner_count, "beginner", 1)
+    medium_qs   = trim_or_pad(medium_qs, medium_count, "medium", 3)
+    hard_qs     = trim_or_pad(hard_qs, hard_count, "hard", 5)
+
+    print(f"[DONE] Final counts -> Beginner: {len(beginner_qs)}, Medium: {len(medium_qs)}, Hard: {len(hard_qs)}")
+
+    return {
+        "beginner": beginner_qs,
+        "medium": medium_qs,
+        "hard": hard_qs
+    }
+
+# === END OF CORE QUESTION GENERATION WITH HYBRID INTEGRATED ===
+
+
+
+# === CORE QUESTION GENERATION WITH ANSWERS INTEGRATED ===
 
 def generate_answers_for_existing_questions(structured_resume, job_title, job_description, questions_csv_path, output_path, model="llama3"):
     if not os.path.exists(questions_csv_path):
@@ -488,6 +885,9 @@ Only respond with the answer text, no formatting.
                     print(f"[ERROR] ↳ {strength.capitalize()} answer failed for {row['question_id']}")
 
     print(f"[DONE] Answers written to: {output_path}")
+
+
+# === END OF CORE QUESTION GENERATION WITH ANSWERS INTEGRATED ===
 
 #---------------------------------------------------------------------------------------------------------------------------------------------
 # JD PARSING
@@ -633,65 +1033,129 @@ def main():
                 raise
             print("[INFO] Retrying from scratch...\n")
 
-# def run_resume_pipeline(resume_path, config_path):
-#     if not os.path.exists(resume_path):
-#         raise FileNotFoundError(f"Resume not found: {resume_path}")
-#     if not os.path.exists(config_path):
-#         raise FileNotFoundError(f"Config not found: {config_path}")
+# def run_pipeline_from_api(resume_path, job_title, job_description,
+#                           question_counts=None, include_answers=True,
+#                           split=False, resume_pct=50, jd_pct=50,
+#                           max_retries=1000):
+#     if question_counts is None:
+#         question_counts = {
+#             'beginner': 1,
+#             'medium': 1, 
+#             'hard': 1
+#         }
+    
+#     for attempt in range(max_retries):
+#         try:
+#             print(f"\n[INFO] API Attempt {attempt + 1} of {max_retries}")
+            
+#             # Validate inputs
+#             if not os.path.exists(resume_path):
+#                 raise FileNotFoundError(f"Resume not found: {resume_path}")
+            
+#             if not job_title or not job_description:
+#                 raise ValueError("Job title and description are required")
+            
+#             print(f"[INFO] Processing resume for: {job_title}")
+#             print(f"[INFO] Question counts: {question_counts}")
+#             print(f"[INFO] Include answers: {include_answers}")
+            
+#             # Extract resume text and parse into structured data
+#             resume_text = extract_text_from_resume(resume_path)
+#             structured_data = ask_ollama_for_structured_data_chunked(resume_text)
+            
+#             # Validate parsed data
+#             if not isinstance(structured_data, dict):
+#                 raise ResumeParseError("Resume parsing returned an invalid format.")
+            
+#             if (
+#                 not structured_data.get("work_experience") and
+#                 not structured_data.get("projects") and
+#                 not structured_data.get("education")
+#             ):
+#                 raise ResumeParseError("Parsed resume has no usable sections.")
+            
+#             # Generate candidate name for file naming
+#             candidate_name = structured_data.get("name", "candidate").replace(" ", "_")
+            
+#             # Create temporary output directory
+#             import tempfile
+#             temp_dir = tempfile.mkdtemp(prefix=f"resume_processing_{candidate_name}_")
+            
+#             # Generate file paths
+#             parsed_resume_path = os.path.join(temp_dir, "parsed_resume.json")
+#             questions_path = os.path.join(temp_dir, "questions.csv")
+#             qa_path = os.path.join(temp_dir, "interview_output.csv")
+            
+#             # Save parsed resume
+#             save_json_output(structured_data, parsed_resume_path)
+            
+#             # Generate questions with frontend data
+#             core_questions = generate_core_questions(
+#                 structured_data, 
+#                 job_title, 
+#                 job_description,
+#                 question_counts.get('beginner', 1),
+#                 question_counts.get('medium', 1), 
+#                 question_counts.get('hard', 1)
+#             )
+            
+#             # Save questions to CSV
+#             save_questions_to_csv(core_questions, questions_path)
+            
+#             # Generate answers if requested
+#             if include_answers:
+#                 generate_answers_for_existing_questions(
+#                     structured_data, 
+#                     job_title, 
+#                     job_description,
+#                     questions_path, 
+#                     qa_path
+#                 )
+#                 final_csv_path = qa_path
+#             else:
+#                 print("[INFO] Skipping answer generation as requested.")
+#                 final_csv_path = questions_path
+            
+#             # Read the generated questions for return
+#             questions = read_questions_from_csv(final_csv_path)
+            
+#             return {
+#                 "success": True,
+#                 "candidate": candidate_name,
+#                 "questions": questions,
+#                 "questions_count": len(questions),
+#                 "parsed_resume": structured_data,
+#                 "temp_dir": temp_dir,  # For cleanup if needed
+#                 "qa_csv": final_csv_path
+#             }
+            
+#         except Exception as e:
+#             print(f"[ERROR] Attempt {attempt + 1} failed: {e}")
+#             import traceback
+#             traceback.print_exc()
+            
+#             if attempt == max_retries - 1:
+#                 return {
+#                     "success": False,
+#                     "error": f"Max retries reached: {e}"
+#                 }
+#             print("[INFO] Retrying...\n")
 
-#     with open(config_path, "r") as f:
-#         config = json.load(f)
+def run_pipeline_from_api(
+    resume_path,
+    job_title,
+    job_description,
+    question_counts={'beginner': 1, 'medium': 1, 'hard': 1},
+    include_answers=True,
+    split=False,
+    resume_pct=50,
+    jd_pct=50,
+    blend=False,
+    blend_pct_resume=50,   # for blend mode: percentage weight of resume context
+    blend_pct_jd=50,       # for blend mode: percentage weight of JD context
+    max_retries=1000
+):
 
-#     job_title = config.get("job_title", "")
-#     job_description = config.get("job_description", "")
-#     beginner_count = config.get("beginner", 2)
-#     medium_count = config.get("medium", 2)
-#     hard_count = config.get("hard", 2)
-
-#     if not job_title or not job_description:
-#         raise ValueError("Job title or description missing in config file.")
-
-#     resume_text = extract_text_from_resume(resume_path)
-#     structured_data = ask_ollama_for_structured_data_chunked(resume_text)
-
-#     if not isinstance(structured_data, dict):
-#         raise ResumeParseError("Resume parsing returned an invalid format.")
-#     if (
-#         not structured_data.get("work_experience") and
-#         not structured_data.get("projects") and
-#         not structured_data.get("education")
-#     ):
-#         raise ResumeParseError("Parsed resume has no usable sections.")
-
-#     candidate_name = structured_data.get("name", "candidate").replace(" ", "_")
-#     base_dir = os.path.dirname(config_path)
-#     output_dir = base_dir  # flatten directory
-#     os.makedirs(output_dir, exist_ok=True)
-
-#     parsed_resume_path = os.path.join(base_dir, "parsed_resume.json")
-#     questions_path = os.path.join(base_dir, f"questions_{candidate_name}.csv")
-#     qa_path = os.path.join(base_dir, f"Q&A_{candidate_name}.csv")
-#     new_config_path = os.path.join(base_dir, f"config_{candidate_name}.json")
-
-#     save_json_output(structured_data, parsed_resume_path)
-
-#     core_questions = generate_core_questions(
-#         structured_data, job_title, job_description,
-#         beginner_count, medium_count, hard_count
-#     )
-#     save_questions_to_csv(core_questions, questions_path)
-
-#     generate_answers_for_existing_questions(
-#         structured_data, job_title, job_description,
-#         questions_path, qa_path
-#     )
-
-#     with open(new_config_path, "w") as f:
-#         json.dump(config, f, indent=2)
-#     print(f"[INFO] All files saved under: {output_dir}")
-#     return structured_data
-
-def run_pipeline_from_api(resume_path, job_title, job_description, question_counts=None, include_answers=True, max_retries=1000):
     """
     Run the resume pipeline with data from frontend instead of config file
     
@@ -701,16 +1165,10 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
         job_description: Job description from frontend  
         question_counts: Dict with 'beginner', 'medium', 'hard' counts (default: 1 each)
         include_answers: Whether to generate sample answers (default: True)
+        split: Whether to split questions by resume vs JD percentage
+        resume_pct, jd_pct: Percentage split when split=True
         max_retries: Number of retry attempts
     """
-    
-    # Set default question counts if not provided
-    if question_counts is None:
-        question_counts = {
-            'beginner': 1,
-            'medium': 1, 
-            'hard': 1
-        }
     
     for attempt in range(max_retries):
         try:
@@ -719,13 +1177,13 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
             # Validate inputs
             if not os.path.exists(resume_path):
                 raise FileNotFoundError(f"Resume not found: {resume_path}")
-            
             if not job_title or not job_description:
                 raise ValueError("Job title and description are required")
             
             print(f"[INFO] Processing resume for: {job_title}")
             print(f"[INFO] Question counts: {question_counts}")
             print(f"[INFO] Include answers: {include_answers}")
+            print(f"[INFO] Split mode: {split} (Resume {resume_pct}% | JD {jd_pct}%)")
             
             # Extract resume text and parse into structured data
             resume_text = extract_text_from_resume(resume_path)
@@ -734,7 +1192,6 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
             # Validate parsed data
             if not isinstance(structured_data, dict):
                 raise ResumeParseError("Resume parsing returned an invalid format.")
-            
             if (
                 not structured_data.get("work_experience") and
                 not structured_data.get("projects") and
@@ -742,14 +1199,14 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
             ):
                 raise ResumeParseError("Parsed resume has no usable sections.")
             
-            # Generate candidate name for file naming
+            # Candidate name for file naming
             candidate_name = structured_data.get("name", "candidate").replace(" ", "_")
             
             # Create temporary output directory
             import tempfile
             temp_dir = tempfile.mkdtemp(prefix=f"resume_processing_{candidate_name}_")
             
-            # Generate file paths
+            # File paths
             parsed_resume_path = os.path.join(temp_dir, "parsed_resume.json")
             questions_path = os.path.join(temp_dir, "questions.csv")
             qa_path = os.path.join(temp_dir, "interview_output.csv")
@@ -757,15 +1214,53 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
             # Save parsed resume
             save_json_output(structured_data, parsed_resume_path)
             
-            # Generate questions with frontend data
-            core_questions = generate_core_questions(
-                structured_data, 
-                job_title, 
-                job_description,
-                question_counts.get('beginner', 1),
-                question_counts.get('medium', 1), 
-                question_counts.get('hard', 1)
-            )
+            # === Generate questions ===
+            if split and blend:
+                core_questions = generate_hybrid_questions(
+                    structured_data,
+                    job_title,
+                    job_description,
+                    question_counts.get('beginner', 1),
+                    question_counts.get('medium', 1),
+                    question_counts.get('hard', 1),
+                    resume_pct,
+                    jd_pct,
+                    blend_pct_resume=blend_pct_resume,
+                    blend_pct_jd=blend_pct_jd
+                )
+            elif split:
+                core_questions = generate_split_questions(
+                    structured_data,
+                    job_title,
+                    job_description,
+                    question_counts.get('beginner', 1),
+                    question_counts.get('medium', 1),
+                    question_counts.get('hard', 1),
+                    resume_pct,
+                    jd_pct
+                )
+            elif blend:
+                core_questions = generate_blend_questions(
+                    structured_data,
+                    job_title,
+                    job_description,
+                    question_counts.get('beginner', 1),
+                    question_counts.get('medium', 1),
+                    question_counts.get('hard', 1),
+                    blend_pct_resume,
+                    blend_pct_jd
+                )
+            else:
+                core_questions = generate_core_questions(
+                    structured_data,
+                    job_title,
+                    job_description,
+                    question_counts.get('beginner', 1),
+                    question_counts.get('medium', 1),
+                    question_counts.get('hard', 1)
+                )
+
+
             
             # Save questions to CSV
             save_questions_to_csv(core_questions, questions_path)
@@ -773,10 +1268,10 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
             # Generate answers if requested
             if include_answers:
                 generate_answers_for_existing_questions(
-                    structured_data, 
-                    job_title, 
+                    structured_data,
+                    job_title,
                     job_description,
-                    questions_path, 
+                    questions_path,
                     qa_path
                 )
                 final_csv_path = qa_path
@@ -784,7 +1279,7 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
                 print("[INFO] Skipping answer generation as requested.")
                 final_csv_path = questions_path
             
-            # Read the generated questions for return
+            # Read back questions
             questions = read_questions_from_csv(final_csv_path)
             
             return {
@@ -793,14 +1288,13 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
                 "questions": questions,
                 "questions_count": len(questions),
                 "parsed_resume": structured_data,
-                "temp_dir": temp_dir,  # For cleanup if needed
+                "temp_dir": temp_dir,
                 "qa_csv": final_csv_path
             }
-            
+        
         except Exception as e:
             print(f"[ERROR] Attempt {attempt + 1} failed: {e}")
-            import traceback
-            traceback.print_exc()
+            import traceback; traceback.print_exc()
             
             if attempt == max_retries - 1:
                 return {
@@ -808,6 +1302,7 @@ def run_pipeline_from_api(resume_path, job_title, job_description, question_coun
                     "error": f"Max retries reached: {e}"
                 }
             print("[INFO] Retrying...\n")
+
 
 def read_questions_from_csv(csv_file_path):
     """
