@@ -29,14 +29,19 @@ function UploadPage() {
   const [lastCreatedIds, setLastCreatedIds] = useState({ resumeId: null, jdId: null, questionSet: null });
 
   // New state for question generation settings
-  const [easyQuestions, setEasyQuestions] = useState(2);
-  const [mediumQuestions, setMediumQuestions] = useState(2);
-  const [hardQuestions, setHardQuestions] = useState(2);
+  const [easyQuestions, setEasyQuestions] = useState(1); // ✅ Changed from 2 to 1
+  const [mediumQuestions, setMediumQuestions] = useState(1); // ✅ Changed from 2 to 1
+  const [hardQuestions, setHardQuestions] = useState(1); // ✅ Changed from 2 to 1
   const [splitMode, setSplitMode] = useState(false);
   const [blendMode, setBlendMode] = useState(false);
   const [splitResumePercentage, setSplitResumePercentage] = useState(50);
   const [blendResumePercentage, setBlendResumePercentage] = useState(50);
   const [questionValidationError, setQuestionValidationError] = useState('');
+
+  useEffect(() => {
+    console.log('Question counts:', { easyQuestions, mediumQuestions, hardQuestions });
+    console.log('Can generate questions:', canGenerateQuestions());
+  }, [easyQuestions, mediumQuestions, hardQuestions, resume, jobTitle, jobDescription, jobDescParsed, loading, parsingJobDesc, splitMode, blendMode]);
 
   const handleClearAll = () => {
     setResume(null);
@@ -216,6 +221,16 @@ function UploadPage() {
   const handleGenerateQuestions = async (e) => {
     e.preventDefault();
     
+    // ✅ ADD DEBUGGING
+    console.log('=== DEBUGGING QUESTION GENERATION ===');
+    console.log('easyQuestions:', easyQuestions);
+    console.log('mediumQuestions:', mediumQuestions);
+    console.log('hardQuestions:', hardQuestions);
+    console.log('splitMode:', splitMode);
+    console.log('blendMode:', blendMode);
+    console.log('totalQuestions:', easyQuestions + mediumQuestions + hardQuestions);
+    console.log('=====================================');
+    
     if (!resume || !jobTitle.trim() || !jobDescription.trim()) {
       alert('Please upload a resume and ensure job title and description are filled.');
       return;
@@ -223,17 +238,12 @@ function UploadPage() {
 
     // Validate question counts based on mode
     const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
-    
+
+    // Only validate when both split AND blend modes are enabled
     if (splitMode && blendMode) {
       // Both modes on - need at least 6 total questions
       if (totalQuestions < 6) {
         setQuestionValidationError('When both Split and Blend modes are enabled, you need at least 6 total questions.');
-        return;
-      }
-    } else {
-      // Single mode - need at least 1 question in each category
-      if (easyQuestions < 1 || mediumQuestions < 1 || hardQuestions < 1) {
-        setQuestionValidationError('Each difficulty level must have at least 1 question.');
         return;
       }
     }
@@ -476,14 +486,14 @@ function UploadPage() {
       return false;
     }
     
-    // Question count validation
+    // Only validate when both split AND blend modes are enabled
     if (splitMode && blendMode) {
       // Both modes on - need at least 6 total questions
       return totalQuestions >= 6;
-    } else {
-      // Single mode - need at least 1 question in each category
-      return easyQuestions >= 1 && mediumQuestions >= 1 && hardQuestions >= 1;
     }
+    
+    // In all other cases, button is enabled (no additional validation)
+    return true;
   };
 
   // Handle navigation to questions page (used by both buttons)
@@ -748,13 +758,10 @@ function UploadPage() {
                         </div>
 
                         {/* Validation Error Message */}
-                        {!canGenerateQuestions() && (splitMode || blendMode) && (
+                        {!canGenerateQuestions() && splitMode && blendMode && (
                           <div className="p-3 bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 rounded-lg">
                             <p className="text-sm text-red-700 dark:text-red-300">
-                              {splitMode && blendMode 
-                                ? 'When both Split and Blend modes are enabled, you need at least 6 total questions.'
-                                : 'Each difficulty level must have at least 1 question.'
-                              }
+                              When both Split and Blend modes are enabled, you need at least 6 total questions.
                             </p>
                           </div>
                         )}

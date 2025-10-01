@@ -320,7 +320,7 @@ deno_version = 1
 
 [edge_runtime.secrets]
 DODO_WEBHOOK_SECRET = "whsec_n/SZ2sXpvOO2VTGrtEreiCoYQ/Hq2ts2"
-
+DODO_API_KEY="3L6WO92ICkfR7qov.NsYmx4gZWsrrl04-r4_UzNiTeerkrbkbWm2UU0_aSsB37bgI"
 # Disable JWT verification for the dodo-webhook function
 [functions.dodo-webhook]
 verify_jwt = false

@@ -367,13 +367,21 @@ function InterviewPage() {
         
         const interview = result.data;
         
-        // ✅ NEW: Handle different interview statuses
+        // ✅ UPDATED: Handle PENDING status
+        if (interview.status === 'PENDING') {
+          console.log('⏳ Interview is pending payment confirmation...');
+          // Show loading state while waiting for payment confirmation
+          setIsValidating(true);
+          // You could add polling here or just show a message
+          return;
+        }
+
         if (interview.status === 'ENDED') {
           console.log('✅ Interview already completed, redirecting to feedback page');
           navigate(`/interview-feedback?interview_id=${interviewId}`);
           return;
         }
-        
+
         if (interview.status !== 'STARTED') {
           console.log('❌ Interview status is not STARTED:', interview.status);
           navigate('/upload');

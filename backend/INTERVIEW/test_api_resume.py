@@ -16,42 +16,42 @@
 #     print("[ERROR] Failed to process resume.")
 #     print(f"Reason: {result['error']}")
 
-from Resumeparser import run_pipeline_from_api, parse_job_description_file
+# from Resumeparser import run_pipeline_from_api, parse_job_description_file
 
-# Use your actual paths
-resume_path = r"C:\Users\neera\Downloads\anshuljs.pdf"
-job_description_path = r"C:\Users\neera\Downloads\Job Title- Elasticsearch senior engineer.docx"
+# # Use your actual paths
+# resume_path = r"C:\Users\neera\Downloads\anshuljs.pdf"
+# job_description_path = r"C:\Users\neera\Downloads\Job Title- Elasticsearch senior engineer.docx"
 
-# Parse job description
-job = parse_job_description_file(job_description_path)
+# # Parse job description
+# job = parse_job_description_file(job_description_path)
 
-# Define how many questions you want
-question_counts = {
-    'beginner': 2,
-    'medium': 2,
-    'hard': 2
-}
+# # Define how many questions you want
+# question_counts = {
+#     'beginner': 2,
+#     'medium': 2,
+#     'hard': 2
+# }
 
-# Run pipeline with split enabled (e.g., 60% resume, 40% JD)
-result = run_pipeline_from_api(
-    resume_path=resume_path,
-    job_title=job["job_title"],
-    job_description=job["job_description"],
-    question_counts=question_counts,
-    include_answers=True,
-    split=True,        # toggle ON the split mode
-    resume_pct=60,     # 60% resume-based
-    jd_pct=40          # 40% JD-based
-)
+# # Run pipeline with split enabled (e.g., 60% resume, 40% JD)
+# result = run_pipeline_from_api(
+#     resume_path=resume_path,
+#     job_title=job["job_title"],
+#     job_description=job["job_description"],
+#     question_counts=question_counts,
+#     include_answers=True,
+#     split=True,        # toggle ON the split mode
+#     resume_pct=60,     # 60% resume-based
+#     jd_pct=40          # 40% JD-based
+# )
 
-if result["success"]:
-    print("[SUCCESS] Resume processed successfully.")
-    print(f"Candidate Name: {result['candidate']}")
-    print(f"Questions Generated: {result['questions_count']}")
-    print(f"Final CSV Path: {result['qa_csv']}")
-else:
-    print("[ERROR] Failed to process resume.")
-    print(f"Reason: {result['error']}")
+# if result["success"]:
+#     print("[SUCCESS] Resume processed successfully.")
+#     print(f"Candidate Name: {result['candidate']}")
+#     print(f"Questions Generated: {result['questions_count']}")
+#     print(f"Final CSV Path: {result['qa_csv']}")
+# else:
+#     print("[ERROR] Failed to process resume.")
+#     print(f"Reason: {result['error']}")
 
 # from Resumeparser import run_pipeline_from_api, parse_job_description_file
 
