@@ -295,12 +295,29 @@ class InterviewManager:
 
                 # Immediately ask first resume question if available
                 if not self.current_resume_question and self.core_questions:
-                    self.current_resume_question = self.core_questions.pop(0)
+                    self.current_resume_question_obj = self.core_questions.pop(0)
+                    # Handle both string and object formats
+                    if isinstance(self.current_resume_question_obj, dict):
+                        self.current_resume_question = self.current_resume_question_obj.get('question_text', '')
+                    else:
+                        self.current_resume_question = self.current_resume_question_obj
+                        
                     self.resume_followup_retry_count = 0
                     self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
+                    
+                    # ✅ NEW: Check if this is a coding question
+                    question_requires_code = False
+                    code_language = None
+                    
+                    if isinstance(self.current_resume_question_obj, dict):
+                        question_requires_code = self.current_resume_question_obj.get('requires_code', False)
+                        code_language = self.current_resume_question_obj.get('code_language', None)
+                    
                     return {
                         "stage": "resume_discussion",
-                        "message": f"Thanks for sharing that! Let’s continue with your resume.\n\n{self.current_resume_question}"
+                        "message": f"Thanks for sharing that! Let's continue with your resume.\n\n{self.current_resume_question}",
+                        "requires_code": question_requires_code,
+                        "code_language": code_language
                     }
 
                 return {
@@ -350,12 +367,32 @@ class InterviewManager:
         if not self.current_resume_question:
             if not self.core_questions:
                 self.stage = "custom_questions"
-                return {"stage": "custom_questions", "message": "Great, let’s move on to some custom questions now."}
+                return {"stage": "custom_questions", "message": "Great, let's move on to some custom questions now."}
 
-            self.current_resume_question = self.core_questions.pop(0)
+            self.current_resume_question_obj = self.core_questions.pop(0)
+            # Handle both string and object formats
+            if isinstance(self.current_resume_question_obj, dict):
+                self.current_resume_question = self.current_resume_question_obj.get('question_text', '')
+            else:
+                self.current_resume_question = self.current_resume_question_obj
+                
             self.resume_followup_retry_count = 0  # Reset retry count for each question
             self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
-            return {"stage": "resume_discussion", "message": self.current_resume_question}
+            
+            # ✅ NEW: Check if this is a coding question
+            question_requires_code = False
+            code_language = None
+            
+            if isinstance(self.current_resume_question_obj, dict):
+                question_requires_code = self.current_resume_question_obj.get('requires_code', False)
+                code_language = self.current_resume_question_obj.get('code_language', None)
+            
+            return {
+                "stage": "resume_discussion", 
+                "message": self.current_resume_question,
+                "requires_code": question_requires_code,
+                "code_language": code_language
+            }
 
         # 2. Waiting for answer
         if not user_input.strip():

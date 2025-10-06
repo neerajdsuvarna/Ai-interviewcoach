@@ -1303,6 +1303,40 @@ def run_pipeline_from_api(
                 }
             print("[INFO] Retrying...\n")
 
+def classify_question_answer_pair(question, answer, model="llama3"):
+    """
+    Use an LLM to classify if a Q/A pair is coding-related and detect the language.
+    Returns dict with requires_code (bool) and code_language (str).
+    """
+    prompt = f"""
+    You are a strict JSON classifier.
+
+    Task: Decide if this interview question AND its answer require or contain programming code.
+
+    Question: "{question}"
+    Answer: "{answer}"
+
+    Rules:
+    - requires_code = true if the answer involves code, writing a function, query, or snippet.
+    - code_language = specific language if obvious (e.g., "python", "java", "sql").
+    - If no code is involved, requires_code = false and code_language = "".
+
+    Respond ONLY in JSON:
+    {{
+      "requires_code": true/false,
+      "code_language": "..."
+    }}
+    """
+
+    try:
+        response = try_ollama_chat(prompt.strip(), model=model)
+        raw = response["message"]["content"]
+        return json.loads(raw)
+    except Exception as e:
+        print(f"[ERROR] Classification failed: {e}")
+        return {"requires_code": False, "code_language": ""}
+
+
 
 def read_questions_from_csv(csv_file_path):
     """
@@ -1316,9 +1350,39 @@ def read_questions_from_csv(csv_file_path):
             print(f"[ERROR] CSV file not found: {csv_file_path}")
             return []
             
+        # First pass: Read all rows and group by question
+        question_groups = {}
+        
         with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
+                question_text = row['question']
+                
+                if question_text not in question_groups:
+                    question_groups[question_text] = []
+                
+                question_groups[question_text].append(row)
+        
+        # Second pass: Process each question group
+        for question_text, rows in question_groups.items():
+            print(f"[DEBUG] Processing question group: '{question_text[:50]}...' with {len(rows)} answers")
+            
+            # Check if ANY answer for this question requires code
+            question_requires_code = False
+            question_code_language = ""
+            
+            # Analyze all answers for this question
+            for row in rows:
+                if 'answer' in row and row['answer']:
+                    classification = classify_question_answer_pair(question_text, row['answer'])
+                    if classification.get("requires_code", False):
+                        question_requires_code = True
+                        question_code_language = classification.get("code_language", "")
+                        print(f"[DEBUG] Found coding requirement for question: {question_code_language}")
+                        break  # Found coding requirement, no need to check other answers
+            
+            # Create question data for each answer with consistent coding flags
+            for row in rows:
                 # Map CSV values to database constraint values
                 level_mapping = {
                     'beginner': 'easy',
@@ -1340,17 +1404,22 @@ def read_questions_from_csv(csv_file_path):
                 print(f"[DEBUG] Mapping CSV values: level='{row['level']}' -> difficulty_category='{difficulty_category}', strength='{row['strength']}' -> difficulty_experience='{difficulty_experience}'")
                 
                 question_data = {
-                    "question_text": row['question'],
-                    "difficulty_category": difficulty_category,  # easy, medium, hard
-                    "difficulty_experience": difficulty_experience  # beginner, intermediate, expert
+                    "question_text": question_text,
+                    "difficulty_category": difficulty_category,
+                    "difficulty_experience": difficulty_experience,
+                    "requires_code": question_requires_code,  # ✅ Apply to ALL answers of this question
+                    "code_language": question_code_language   # ✅ Apply to ALL answers of this question
                 }
-                
+
                 # Include answer if available
                 if 'answer' in row and row['answer']:
                     question_data["expected_answer"] = row['answer']
-                
+                else:
+                    question_data["expected_answer"] = ""
+
                 questions.append(question_data)
         
+        print(f"[DEBUG] Processed {len(question_groups)} unique questions into {len(questions)} total question-answer pairs")
         return questions
     except Exception as e:
         print(f"[ERROR] Failed to read questions from CSV: {e}")

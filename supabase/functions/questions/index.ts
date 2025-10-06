@@ -25,6 +25,8 @@ interface Database {
           difficulty_experience: string
           question_set: number
           created_at: string
+          requires_code?: boolean
+          code_language?: string
         }
         Insert: {
           id?: string
@@ -37,6 +39,8 @@ interface Database {
           difficulty_experience?: string
           question_set: number
           created_at?: string
+          requires_code?: boolean
+          code_language?: string
         }
         Update: {
           id?: string
@@ -49,6 +53,8 @@ interface Database {
           difficulty_experience?: string
           question_set?: number
           created_at?: string
+          requires_code?: boolean
+          code_language?: string
         }
       }
     }
@@ -64,6 +70,8 @@ interface CreateQuestionRequest {
     expected_answer?: string
     difficulty_category?: string
     difficulty_experience?: string
+    requires_code?: boolean
+    code_language?: string
   }>
   question_set: number
 }
@@ -225,7 +233,9 @@ async function handleCreateQuestions(supabaseClient: any, req: Request, authUser
       expected_answer: q.expected_answer || null,
       difficulty_category: q.difficulty_category || 'medium',
       difficulty_experience: q.difficulty_experience || 'beginner',
-      question_set: question_set
+      question_set: question_set,
+      requires_code: q.requires_code || false,
+      code_language: q.code_language || null
     }))
 
     // Insert questions

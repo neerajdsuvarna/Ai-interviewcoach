@@ -137,7 +137,7 @@ serve(async (req) => {
     if (effectiveQuestionSet !== null && effectiveQuestionSet !== undefined) {
       const { data: questionsBySet } = await supabaseClient
         .from('questions')
-        .select('id, question_text, expected_answer, difficulty_category, question_set')
+        .select('id, question_text, expected_answer, difficulty_category, question_set, requires_code, code_language')
         .eq('resume_id', effectiveResumeId)
         .eq('jd_id', effectiveJdId)
         .eq('question_set', effectiveQuestionSet)
@@ -149,7 +149,7 @@ serve(async (req) => {
     if ((!allQuestions || allQuestions.length === 0) && effectiveInterviewId) {
       const { data: questionsByInterview } = await supabaseClient
         .from('questions')
-        .select('id, question_text, expected_answer, difficulty_category, question_set')
+        .select('id, question_text, expected_answer, difficulty_category, question_set, requires_code, code_language')
         .eq('interview_id', effectiveInterviewId)
 
       allQuestions = questionsByInterview || []

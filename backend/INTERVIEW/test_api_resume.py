@@ -19,17 +19,17 @@
 from Resumeparser import run_pipeline_from_api, parse_job_description_file
 
 # Use your actual paths
-resume_path = r"C:\Users\neera\Downloads\anshuljs.pdf"
-job_description_path = r"C:\Users\neera\Downloads\Job Title- Elasticsearch senior engineer.docx"
+resume_path = r"C:\Users\Likhith-Moback\Downloads\YashRamani_Resume.pdf"
+job_description_path = r"C:\Users\Likhith-Moback\Downloads\Job D - Fullstack.docx"
 
 # Parse job description
 job = parse_job_description_file(job_description_path)
 
 # Define how many questions you want
 question_counts = {
-    'beginner': 2,
-    'medium': 2,
-    'hard': 2
+    'beginner': 1,
+    'medium': 1,
+    'hard': 1
 }
 
 # Run pipeline with split enabled (e.g., 60% resume, 40% JD)
@@ -40,15 +40,44 @@ result = run_pipeline_from_api(
     question_counts=question_counts,
     include_answers=True,
     split=True,        # toggle ON the split mode
-    resume_pct=60,     # 60% resume-based
-    jd_pct=40          # 40% JD-based
+    resume_pct=50,     # 60% resume-based
+    jd_pct=50          # 40% JD-based
 )
 
 if result["success"]:
     print("[SUCCESS] Resume processed successfully.")
     print(f"Candidate Name: {result['candidate']}")
     print(f"Questions Generated: {result['questions_count']}")
-    print(f"Final CSV Path: {result['qa_csv']}")
+    print(f"Original CSV Path: {result['qa_csv']}")
+    
+    # ✅ NEW: Copy CSV to current directory
+    import shutil
+    import os
+    from datetime import datetime
+    
+    # Create filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    local_csv_name = f"interview_questions_{result['candidate']}_{timestamp}.csv"
+    
+    # Copy the CSV file to current directory
+    try:
+        shutil.copy2(result['qa_csv'], local_csv_name)
+        print(f"✅ CSV saved to current directory: {os.path.abspath(local_csv_name)}")
+    except Exception as e:
+        print(f"❌ Failed to copy CSV to current directory: {e}")
+        print(f"Original file location: {result['qa_csv']}")
+    
+    # ✅ NEW: Show coding detection results
+    print("\n=== CODING DETECTION RESULTS ===")
+    coding_questions = [q for q in result['questions'] if q.get('requires_code', False)]
+    print(f"Total Questions: {len(result['questions'])}")
+    print(f"Coding Questions Found: {len(coding_questions)}")
+    
+    for i, q in enumerate(coding_questions, 1):
+        print(f"{i}. Question: {q['question_text'][:60]}...")
+        print(f"   Language: {q.get('code_language', 'Unknown')}")
+        print(f"   Difficulty: {q.get('difficulty_category', 'Unknown')}")
+        print()
 else:
     print("[ERROR] Failed to process resume.")
     print(f"Reason: {result['error']}")
