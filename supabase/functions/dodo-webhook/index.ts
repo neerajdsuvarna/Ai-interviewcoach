@@ -187,19 +187,31 @@ serve(async (req) => {
           amount_in_rupees: amountInRupees,
           status: paymentData.status,
           event_type: event.type,
+          metadata: paymentData.metadata, // ✅ Log metadata
           processed_at: new Date().toISOString()
+        });
+        
+        // Extract metadata including interview_id
+        const metadata = paymentData.metadata || {};
+        const resumeId = metadata.resume_id;
+        const jdId = metadata.jd_id;
+        const questionSet = metadata.question_set;
+        const retakeFrom = metadata.retake_from;
+        const userId = metadata.user_id;
+        const interviewId = metadata.interview_id; // ✅ Get the existing interview ID
+
+        console.log('[WEBHOOK] Extracted metadata:', {
+          resume_id: resumeId,
+          jd_id: jdId,
+          question_set: questionSet,
+          retake_from: retakeFrom,
+          user_id: userId,
+          interview_id: interviewId // ✅ Log the interview ID
         });
         
         // Store payment in database
         const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
         const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-        
-        console.log("[WEBHOOK] Supabase credentials check:", {
-          hasUrl: !!supabaseUrl,
-          hasServiceKey: !!supabaseServiceKey,
-          urlLength: supabaseUrl.length,
-          keyLength: supabaseServiceKey.length
-        });
         
         if (supabaseUrl && supabaseServiceKey) {
           const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -211,15 +223,13 @@ serve(async (req) => {
             payment_status: paymentData.status,
             transaction_id: paymentData.payment_id,
             paid_at: paymentData.created_at || new Date().toISOString(),
-            user_id: null,
+            user_id: userId, // ✅ Use metadata user_id
             interview_id: null
           };
           
           console.log("[WEBHOOK] Data to insert:", JSON.stringify(paymentDataToInsert, null, 2));
           
           try {
-            console.log("[WEBHOOK] Attempting database insert...");
-            
             // Check if payment already exists to avoid duplicates
             const { data: existingPayment, error: checkError } = await supabase
               .from('payments')
@@ -227,6 +237,8 @@ serve(async (req) => {
               .eq('transaction_id', paymentData.payment_id)
               .single();
               
+            let paymentRecord;
+            
             if (existingPayment) {
               console.log("[WEBHOOK] Payment already exists, updating status:", {
                 existing_id: existingPayment.id,
@@ -239,7 +251,8 @@ serve(async (req) => {
                 .from('payments')
                 .update({ 
                   payment_status: paymentData.status,
-                  paid_at: paymentData.created_at || new Date().toISOString()
+                  paid_at: paymentData.created_at || new Date().toISOString(),
+                  user_id: userId // ✅ Update user_id from metadata
                 })
                 .eq('transaction_id', paymentData.payment_id)
                 .select()
@@ -249,12 +262,15 @@ serve(async (req) => {
                 console.error("[WEBHOOK] Error updating payment:", updateError);
               } else {
                 console.log("[WEBHOOK] Payment status updated successfully:", updatedPayment);
+                paymentRecord = updatedPayment;
               }
             } else {
               // Insert new payment
               const { data, error } = await supabase
                 .from('payments')
-                .insert(paymentDataToInsert);
+                .insert(paymentDataToInsert)
+                .select()
+                .single();
                 
               if (error) {
                 console.error("[WEBHOOK] DATABASE ERROR DETAILS:", {
@@ -267,26 +283,109 @@ serve(async (req) => {
               } else {
                 console.log("[WEBHOOK] Payment stored in database successfully:", {
                   payment_id: paymentData.payment_id,
-                  database_id: data?.[0]?.id,
+                  database_id: data?.id,
                   inserted_data: data,
                   transaction_id_stored: paymentData.payment_id,
                   status: paymentData.status
                 });
+                paymentRecord = data;
               }
             }
             
-            // Verify the payment was actually stored/updated
-            const { data: verifyData, error: verifyError } = await supabase
-              .from('payments')
-              .select('*')
-              .eq('transaction_id', paymentData.payment_id)
-              .single();
+            // ✅ UPDATED: Update existing interview (we always create blank interview upfront)
+            if (interviewId) {
+              console.log('[WEBHOOK] Updating existing interview:', interviewId);
               
-            console.log("[WEBHOOK] Verification query result:", {
-              found: !!verifyData,
-              payment: verifyData,
-              error: verifyError
-            });
+              // ✅ FIXED: Check payment status FIRST before doing anything else
+              const isPaymentSuccessful = paymentData.status === 'succeeded' || 
+                                         paymentData.status === 'success' || 
+                                         paymentData.status === 'completed';
+
+              console.log('[WEBHOOK] Payment status check:', {
+                status: paymentData.status,
+                isSuccessful: isPaymentSuccessful
+              });
+
+              // ✅ Handle based on payment status
+              if (isPaymentSuccessful) {
+                // ✅ PAYMENT SUCCESSFUL: Update interview with all details
+                console.log('[WEBHOOK] Payment successful - updating interview:', interviewId);
+                
+                // Calculate attempt number from existing interviews
+                const { data: existingInterviews } = await supabase
+                  .from('interviews')
+                  .select('attempt_number')
+                  .eq('resume_id', resumeId)
+                  .eq('jd_id', jdId)
+                  .eq('question_set', questionSet ? Number(questionSet) : null)
+                  .order('attempt_number', { ascending: false })
+                  .limit(1);
+                
+                const nextAttemptNumber = existingInterviews && existingInterviews.length > 0 
+                  ? existingInterviews[0].attempt_number + 1 
+                  : 1;
+                
+                // Update interview with all the details from payment metadata
+                const { data: updatedInterview, error: interviewError } = await supabase
+                  .from('interviews')
+                  .update({
+                    status: 'STARTED',
+                    resume_id: resumeId,        // ✅ From payment metadata
+                    jd_id: jdId,               // ✅ From payment metadata
+                    question_set: questionSet ? Number(questionSet) : null, // ✅ From payment metadata
+                    retake_from: retakeFrom || null, // ✅ From payment metadata
+                    attempt_number: nextAttemptNumber // ✅ Calculate from existing interviews
+                  })
+                  .eq('id', interviewId)
+                  .eq('user_id', userId)
+                  .select()
+                  .single();
+                
+                if (interviewError) {
+                  console.error('[WEBHOOK] Error updating interview:', interviewError);
+                } else {
+                  console.log('[WEBHOOK] Interview updated successfully:', updatedInterview);
+                  
+                  // Update payment with interview_id
+                  await supabase
+                    .from('payments')
+                    .update({ interview_id: interviewId })
+                    .eq('transaction_id', paymentData.payment_id);
+                  
+                  // Update questions to associate with this interview
+                  if (questionSet) {
+                    console.log('[WEBHOOK] Updating questions to link with interview:', interviewId);
+                    
+                    const { error: questionsError } = await supabase
+                      .from('questions')
+                      .update({ interview_id: interviewId })
+                      .eq('resume_id', resumeId)
+                      .eq('jd_id', jdId)
+                      .eq('question_set', Number(questionSet));
+                    
+                    if (questionsError) {
+                      console.error('[WEBHOOK] Error updating questions:', questionsError);
+                    } else {
+                      console.log('[WEBHOOK] Questions updated successfully for interview:', interviewId);
+                    }
+                  }
+                }
+              } else {
+                // ✅ PAYMENT FAILED: Only delete the blank interview
+                console.log('[WEBHOOK] Payment failed - deleting blank interview:', interviewId);
+                
+                await supabase
+                  .from('interviews')
+                  .delete()
+                  .eq('id', interviewId)
+                  .eq('user_id', userId); // ✅ Security: ensure user owns the interview
+                  
+                console.log('[WEBHOOK] Blank interview deleted successfully');
+              }
+            } else {
+              // ✅ This should never happen since we always create blank interview upfront
+              console.error('[WEBHOOK] No interview_id provided - this should not happen with new flow!');
+            }
             
           } catch (dbError) {
             console.error("[WEBHOOK] DATABASE EXCEPTION:", {

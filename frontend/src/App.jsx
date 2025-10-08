@@ -11,7 +11,7 @@ import TestPage from './pages/TestPage';
 import QuestionsPage from './pages/QuestionPage';
 import InterviewPage from './pages/InterviewPage';
 import InterviewFeedbackPage from './pages/InterviewFeedbackPage';
-import PaymentStatus from './pages/PaymentsStatus';
+import PaymentSuccess from './pages/PaymentSuccess';
 import FAQPage from './pages/FAQPage';
 // import AuthDebug from './components/AuthDebug'; // Add this temporarily
 import './index.css';
@@ -96,10 +96,10 @@ function App() {
           } 
         />
         <Route 
-          path="/payment-status" 
+          path="/payment-success" 
           element={
             <ProtectedRoute>
-              <PaymentStatus />
+              <PaymentSuccess />
             </ProtectedRoute>
           } 
         />

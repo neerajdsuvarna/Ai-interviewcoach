@@ -59,12 +59,12 @@ interface Database {
 }
 
 interface InterviewRequest {
-  resume_id: string
-  jd_id: string
+  resume_id?: string  // ✅ Make optional
+  jd_id?: string     // ✅ Make optional
   status?: string
-  question_set?: number  // ✅ ADD: question_set field for linking to question sets
-  retake_from?: string   // ✅ ADD: retake_from field for referencing original interview
-  attempt_number?: number // ✅ ADD: attempt_number field for tracking attempts
+  question_set?: number
+  retake_from?: string
+  attempt_number?: number
   scheduled_at?: string
 }
 
@@ -395,14 +395,14 @@ async function handleGetInterview(supabaseClient: any, user: any, interviewId: s
 async function handleCreateInterview(supabaseClient: any, req: Request, user: any) {
   try {
     const body = await req.json()
-    const { resume_id, jd_id, question_set, retake_from, attempt_number, scheduled_at }: InterviewRequest = body
+    const { resume_id, jd_id, question_set, retake_from, attempt_number, scheduled_at, status }: InterviewRequest = body
 
-    // Validate required fields
-    if (!resume_id || !jd_id) {
+    // ✅ UPDATED: Only require resume_id and jd_id for non-PENDING interviews
+    if (status !== 'PENDING' && (!resume_id || !jd_id)) {
       return new Response(
         JSON.stringify({ 
           error: 'Bad request', 
-          message: 'resume_id and jd_id are required' 
+          message: 'resume_id and jd_id are required for non-PENDING interviews' 
         }),
         {
           status: 400,
@@ -411,45 +411,29 @@ async function handleCreateInterview(supabaseClient: any, req: Request, user: an
       )
     }
 
-    // Validate retake logic
-    if (retake_from && (!question_set || !attempt_number)) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Bad request', 
-          message: 'question_set and attempt_number are required for retake interviews' 
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      )
-    }
-
-    // If scheduled_at is not provided, set it to current timestamp
+    // ✅ UPDATED: For PENDING interviews, we can create with minimal data
     const interviewData = {
       user_id: user.id,
-      resume_id: resume_id.trim(),
-      jd_id: jd_id.trim(),
-      question_set: question_set || null,
-      retake_from: retake_from || null,
-      attempt_number: attempt_number || 1,
-      scheduled_at: scheduled_at || new Date().toISOString()
-    }
+      status: status || 'PENDING',
+      scheduled_at: scheduled_at || new Date().toISOString(),
+      ...(resume_id && { resume_id }),
+      ...(jd_id && { jd_id }),
+      ...(question_set && { question_set: Number(question_set) }),
+      ...(retake_from && { retake_from }),
+      ...(attempt_number && { attempt_number: Number(attempt_number) })
+    };
 
-    // Create new interview
-    const { data: newInterview, error } = await supabaseClient
+    // Create the interview
+    const { data: interview, error } = await supabaseClient
       .from('interviews')
       .insert(interviewData)
       .select()
-      .single()
+      .single();
 
     if (error) {
-      console.error('Database error:', error)
+      console.error('Error creating interview:', error);
       return new Response(
-        JSON.stringify({ 
-          error: 'Database error', 
-          message: error.message 
-        }),
+        JSON.stringify({ error: 'Failed to create interview', details: error.message }),
         {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -458,23 +442,20 @@ async function handleCreateInterview(supabaseClient: any, req: Request, user: an
     }
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        data: newInterview,
-        message: 'Interview created successfully'
+      JSON.stringify({ 
+        success: true, 
+        data: interview 
       }),
       {
         status: 201,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     )
+
   } catch (error) {
-    console.error('Error creating interview:', error)
+    console.error('Error in handleCreateInterview:', error);
     return new Response(
-      JSON.stringify({ 
-        error: 'Failed to create interview', 
-        message: error.message 
-      }),
+      JSON.stringify({ error: 'Internal server error' }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

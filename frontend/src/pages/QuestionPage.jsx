@@ -448,14 +448,77 @@ export default function QuestionsPage() {
       payment_timestamp: new Date().toISOString()
     });
     
-    // ✅ Include question_set so interview-setup can attach only that set
-    const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}&question_set=${currentQuestionSet}`;
-    const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
-    
-    window.location.href = dodoPaymentUrl;
+    try {
+      // ✅ STEP 1: Create blank interview record first
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No active session');
+      }
+
+      // Create blank interview with minimal data
+      const blankInterviewResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          // ✅ Only store what we need to identify the interview
+          user_id: session.user.id, // For security/ownership
+          status: 'PENDING', // Status to track payment state
+          scheduled_at: new Date().toISOString() // Timestamp
+          // ❌ Don't store resume_id, jd_id, question_set, retake_from here
+        })
+      });
+
+      if (!blankInterviewResponse.ok) {
+        throw new Error('Failed to create interview record');
+      }
+
+      const blankInterviewResult = await blankInterviewResponse.json();
+      const blankInterviewId = blankInterviewResult.data.id;
+
+      console.log('✅ Blank interview created:', blankInterviewId);
+
+      // ✅ STEP 2: Create payment with interview_id in metadata
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resume_id: currentResumeId,
+          jd_id: currentJdId,
+          question_set: currentQuestionSet,
+          interview_id: blankInterviewId // ✅ Pass the blank interview ID
+        })
+      });
+      
+      if (!response.ok) {
+        // ✅ If payment creation fails, delete the blank interview
+        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews/${blankInterviewId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        throw new Error('Failed to create payment');
+      }
+      
+      const result = await response.json();
+      console.log('Payment created:', result);
+      
+      // ✅ STEP 3: Redirect to Dodo payment page
+      window.location.href = result.payment_url;
+      
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      alert(`Error: ${error.message}`);
+    }
   };
 
-  // ✅ New function to handle retake interview
+  // ✅ Updated function to handle retake interview
   const handleRetakeInterview = async () => {
     if (!currentResumeId || !currentJdId || !currentQuestionSet) {
       alert('Please ensure resume, job description, and question set are available.');
@@ -473,11 +536,85 @@ export default function QuestionsPage() {
         return;
       }
 
-      // Redirect to Dodo checkout with retake context
-      const redirectUrl = `${window.location.origin}/payment-status?resume_id=${currentResumeId}&jd_id=${currentJdId}&question_set=${currentQuestionSet}&retake_from=${originalInterview.id}`;
-      const dodoPaymentUrl = `https://test.checkout.dodopayments.com/buy/pdt_ZysPWYwaLlqpLOyatwjHv?quantity=1&redirect_url=${encodeURIComponent(redirectUrl)}`;
+      // ✅ STEP 1: Create blank interview record first
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('No active session');
+      }
+
+      // Find existing interviews to determine attempt number
+      const existingInterviewsResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews?resume_id=${currentResumeId}&jd_id=${currentJdId}&question_set=${currentQuestionSet}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+
+      const existingInterviewsResult = await existingInterviewsResponse.json();
+      const existingInterviews = existingInterviewsResult.data || [];
       
-      window.location.href = dodoPaymentUrl;
+      const nextAttemptNumber = existingInterviews.length > 0 
+        ? Math.max(...existingInterviews.map(i => i.attempt_number || 1)) + 1
+        : 1;
+
+      // Create blank interview with PENDING status
+      const blankInterviewResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resume_id: currentResumeId,
+          jd_id: currentJdId,
+          question_set: currentQuestionSet,
+          retake_from: originalInterview.id,
+          attempt_number: nextAttemptNumber,
+          status: 'PENDING', // ✅ PENDING status until payment is confirmed
+          scheduled_at: new Date().toISOString()
+        })
+      });
+
+      if (!blankInterviewResponse.ok) {
+        throw new Error('Failed to create interview record');
+      }
+
+      const blankInterviewResult = await blankInterviewResponse.json();
+      const blankInterviewId = blankInterviewResult.data.id;
+
+      console.log('✅ Blank interview created:', blankInterviewId);
+
+      // ✅ STEP 2: Create payment with interview_id in metadata
+      const paymentResponse = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resume_id: currentResumeId,
+          jd_id: currentJdId,
+          question_set: currentQuestionSet,
+          retake_from: originalInterview.id,
+          interview_id: blankInterviewId // ✅ Pass the blank interview ID
+        })
+      });
+      
+      if (!paymentResponse.ok) {
+        // ✅ If payment creation fails, delete the blank interview
+        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/interviews/${blankInterviewId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
+        throw new Error('Failed to create payment');
+      }
+      
+      const paymentResult = await paymentResponse.json();
+      console.log('Payment created:', paymentResult);
+      
+      // ✅ STEP 3: Redirect to Dodo payment page
+      window.location.href = paymentResult.payment_url;
       
     } catch (error) {
       console.error('Error initiating retake:', error);
