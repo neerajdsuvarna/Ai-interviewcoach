@@ -30,8 +30,8 @@ import hashlib
 #  Load environment variables from .env
 # ─────────────────────────────────────────────────────
 
-# Load environment variables from backend .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+# Load environment variables from root .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 # Ensure INTERVIEW folder is in Python path
 INTERVIEW_PATH = os.path.join(os.path.dirname(__file__), "INTERVIEW")
 if INTERVIEW_PATH not in sys.path:
@@ -1780,9 +1780,9 @@ def preload_support_bot_model():
         )
         
         # Test the model with a simple query to ensure it's fully loaded
-        test_response = support_bot_manager.receive_input("Hello")
-        print(f"[SUCCESS] Support bot model preloaded successfully")
-        print(f"[DEBUG] Test response: {test_response.get('message', '')[:50]}...")
+        # test_response = support_bot_manager.receive_input("Hello")
+        # print(f"[SUCCESS] Support bot model preloaded successfully")
+        # print(f"[DEBUG] Test response: {test_response.get('message', '')[:50]}...")
         
         return True
         
@@ -1801,4 +1801,5 @@ else:
     print("[WARNING] Some models failed to preload, will initialize on first request")
 
 if __name__ == '__main__': 
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)
+    port = int(os.getenv("BACKEND_PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port, debug=True, allow_unsafe_werkzeug=True)

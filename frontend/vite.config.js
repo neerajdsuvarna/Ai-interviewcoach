@@ -6,8 +6,8 @@ import { loadEnv } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file from frontend directory
-  const env = loadEnv(mode, path.resolve(__dirname), '')
+  // Load env file from root directory (.env)
+  const env = loadEnv(mode, path.resolve(__dirname, '..'), '')
   
   return {
     plugins: [react(), tailwindcss()],
@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '0.0.0.0',
-      port: 5173,
+      port: parseInt(env.VITE_DEV_SERVER_PORT) || 5173,
       cors: true,
       headers: {
         'Access-Control-Allow-Origin': '*',

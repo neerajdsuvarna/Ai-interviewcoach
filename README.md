@@ -229,16 +229,16 @@ ffmpeg -version
 ```
 
 ### **7. Environment Setup**
-Ensure your `.env` file in the backend directory contains the following variables:
+Ensure your `.env` file in the project root directory contains the following variables:
 ```env
 SUPABASE_URL=your_supabase_url
 SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-DODO_WEBHOOK_SECRET=your_dodo_webhook_secret
+DODO_WEBHOOK_SECRET=whsec_your_webhook_secret_here
 MIXPANEL_TOKEN=your_mixpanel_token
 ```
 
-**Note**: The `.env` file should already exist in your backend directory. If you need to update any values, edit the existing file rather than creating a new one.
+**Note**: The `.env` file should be in your project root directory. Copy from `env.local`, `env.development`, or `env.production` as needed.
 
 ### **8. Start Development Server**
 

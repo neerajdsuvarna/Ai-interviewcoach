@@ -27,8 +27,8 @@ from datetime import datetime
 from piper import PiperVoice
 from dotenv import load_dotenv
 
-# Load environment variables from backend .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+# Load environment variables from root .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
 # Use environment variable if set, otherwise fall back to relative path
 MODEL_PATH = os.getenv("PIPER_MODEL_PATH", os.path.join(os.path.dirname(__file__), "en_US-kusal-medium.onnx"))

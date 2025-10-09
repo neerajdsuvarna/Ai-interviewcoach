@@ -83,7 +83,7 @@ All backend dependencies are managed through the installation scripts in the pro
 
 ## Configuration
 
-The backend uses environment variables for configuration. Create a `.env` file in the backend directory with the necessary settings:
+The backend uses environment variables for configuration. The `.env` file is located in the project root directory with the necessary settings:
 - `SUPABASE_URL`: Supabase project URL
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key
 - `SUPABASE_ANON_KEY`: Supabase anonymous key

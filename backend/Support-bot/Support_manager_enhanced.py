@@ -3,9 +3,9 @@ import time
 import os
 from Support_functions_enhanced import load_faq_sections, build_faq_index, generate_support_reply
 
-# Load environment variables
+# Load environment variables from root .env file
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
 # Get Supabase URL from environment
 SUPABASE_URL = os.getenv("SUPABASE_URL", "http://localhost:54321")

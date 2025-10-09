@@ -7,8 +7,8 @@ import tempfile
 from datetime import datetime
 import hashlib
 
-# Load environment variables from backend .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+# Load environment variables from root .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
 # Initialize Supabase client with SERVICE ROLE KEY (bypasses RLS)
 supabase_url = os.getenv("SUPABASE_URL")

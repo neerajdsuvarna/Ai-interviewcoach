@@ -7,9 +7,9 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 
-# Load environment variables
+# Load environment variables from root .env file
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 
 # Get Supabase URL from environment
 SUPABASE_URL = os.getenv("SUPABASE_URL", "http://localhost:54321")
