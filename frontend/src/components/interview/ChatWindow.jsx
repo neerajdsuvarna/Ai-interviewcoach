@@ -26,6 +26,8 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   const [isEndingInterview, setIsEndingInterview] = useState(false);
   const [currentAudioElement, setCurrentAudioElement] = useState(null);
   const [canEndInterview, setCanEndInterview] = useState(false); // Start disabled
+  const [isCodingQuestion, setIsCodingQuestion] = useState(false); // Start disabled
+  const [codingLanguage, setCodingLanguage] = useState(""); // Start with empty string
   const [isResponseInProgress, setIsResponseInProgress] = useState(false);
   
   // ✅ NEW: Add state to track interview stage and resume question answers
@@ -75,10 +77,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       onStateChange({
         isRecording,
         isResponseInProgress,
-        canEndInterview
+        canEndInterview,
+        isCodingQuestion
       });
     }
-  }, [isRecording, isResponseInProgress, canEndInterview, onStateChange]);
+  }, [isRecording, isResponseInProgress, canEndInterview, isCodingQuestion, onStateChange]);
 
   // Function to call Interview Manager API
   const callInterviewManager = async (userInput) => {
@@ -87,7 +90,8 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       console.log('🔍 Current state before API call:', {
         interviewStage,
         hasAnsweredResumeQuestion,
-        canEndInterview
+        canEndInterview,
+        isCodingQuestion
       });
       
       // ✅ Get interview_id from URL
@@ -107,13 +111,27 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       console.log('📥 Interview Manager response:', response);
       
       if (response.success) {
-        const { response: textResponse, audio_url, should_delete_audio, stage, interview_done } = response.data;
-        
+        const { response: textResponse, code_required, coding_language, audio_url, should_delete_audio, stage, interview_done } = response.data;
+
+        console.log('Response: ', textResponse);
+        console.log('Code Requirement: ', code_required);
+        console.log('Coding Language: ', coding_language);
+
+        // Update state for Code Editor
+        if (code_required == true) {
+            setIsCodingQuestion(true);
+            setCodingLanguage(coding_language);
+        } else {
+            setIsCodingQuestion(false);
+            setCodingLanguage("");
+        }
+
         console.log('🔍 Response data:', {
           stage,
           interview_done,
           userInput: userInput.trim(),
-          currentInterviewStage: interviewStage
+          currentInterviewStage: interviewStage,
+          isCodingQuestion
         });
         
         // ✅ NEW: Track when user answers resume questions (check current stage before updating)
@@ -387,6 +405,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       }
     }
   };
+
+  const handleOpenCodeEditor = async() => {
+      console.log('[DEBUG] Code Editor Opens');
+      console.log('[DEBUG] Coding Language: ', codingLanguage);
+  }
 
   // Update the toggleRecording function (around line 266)
   const toggleRecording = async () => {
@@ -767,7 +790,44 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           >
             Interview Conversation
           </h2>
-          
+
+          {/* Code Editor Button */}
+          <button
+           onClick={handleOpenCodeEditor}
+            disabled={!isCodingQuestion || isAudioPlaying || isRecording || isLoading || isResponseInProgress}
+            className={`w-full sm:w-auto px-3 sm:px-4 md:px-6 py-2 sm:py-2.5 text-xs sm:text-sm md:text-base font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 whitespace-nowrap ${
+              !isCodingQuestion || isAudioPlaying || isRecording || isLoading || isResponseInProgress
+                ? 'bg-[var(DodgerBlue)]/10 border-2 border-[var(DodgerBlue)]/30 text-[var(DodgerBlue)]/70 cursor-not-allowed'
+                : 'bg-[var(DodgerBlue)]/10 border-2 border-[var(DodgerBlue)] text-[var(DodgerBlue)] hover:bg-[var(DodgerBlue)] hover:text-white hover:border-[var(DodgerBlue)]'
+            }`}
+            title={
+              !isCodingQuestion || isAudioPlaying || isRecording || isLoading || isResponseInProgress
+                ? (isRecording ? "Wait for recording to finish" :
+                   isLoading ? "Wait for response to generate" :
+                   isResponseInProgress ? "Response in progress..." :
+                   isAudioPlaying ? "Wait for audio to finish" :
+                   !isCodingQuestion ? "Question does not require code" : "Open Code Editor")
+                : "Code Editor"
+            }
+            onMouseEnter={() => {
+              console.log('🔍 Button hover - Current state:', {
+                isCodingQuestion,
+                isAudioPlaying,
+                isRecording,
+                isLoading,
+                isResponseInProgress,
+                interviewStage,
+              });
+            }}
+          >
+          <span className="hidden sm:inline">
+              Code Editor
+            </span>
+            <span className="sm:hidden">
+              Open
+            </span>
+          </button>
+
           {/* End Interview Button */}
           <button
             onClick={handleEndInterview}

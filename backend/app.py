@@ -901,9 +901,16 @@ def generate_response():
             job_title = interview_data['job_description']['title']
             job_description = interview_data['job_description']['description']
             questions = interview_data['questions']
-            
+
             # Extract core questions
             core_questions = [q['question_text'] for q in questions]
+
+            #Extract code detection for core questions
+            coding_requirement = [q['requires_code'] for q in questions]
+            coding_language = [q['code_language'] for q in questions]
+            # print(f"[DEBUG] Coding requirement: {coding_requirement}")
+            # print(f"[DEBUG] Coding language: {coding_language}")
+
             
             print(f"[DEBUG] Fetched interview config: job_title='{job_title}', questions_count={len(core_questions)}")
             
@@ -927,6 +934,8 @@ def generate_response():
             "job_title": job_title,
             "job_description": job_description,
             "core_questions": core_questions,
+            "coding_requirement": coding_requirement,
+            "coding_language": coding_language,
             "time_limit_minutes": 30,
             "custom_questions": [],
         }
@@ -954,6 +963,16 @@ def generate_response():
         # ✅ NEW: Generate audio for the interview response
         audio_url = None
         audio_file_path = None
+
+        # Retrieve requirements from Interview Manager
+        code_requirement = response.get('code_requirement')
+        code_language = response.get('coding_language')
+        stage = response.get('stage')
+
+
+        if stage == 'resume_discussion':
+            print(f"[DEBUG] Code requirement: {code_requirement}")
+            print(f"[DEBUG] Code language: {code_language}")
         
         if response.get("message") and not response.get("interview_done", False):
             try:
@@ -966,6 +985,7 @@ def generate_response():
                     return f"interview_response_{interview_id}_{text_hash}_{timestamp}.wav"
                 
                 response_text = response.get("message", "")
+                print(f"[DEBUG] Response.text: {response_text}")
                 filename = generate_filename(response_text, user_id, interview_id)
                 file_path = f"{user_id}/{interview_id}/interviewer_{filename}"
                 
@@ -1145,7 +1165,9 @@ def generate_response():
                 "feedback_saved_successfully": feedback_saved_successfully,  # ✅ NEW: Include feedback save status
                 "audio_url": audio_url,  # ✅ NEW: Include audio URL
                 "audio_file_path": file_path if audio_url else None,  # ✅ NEW: Include file path for deletion
-                "should_delete_audio": False  # ✅ NEW: Keep audio files for merging later
+                "should_delete_audio": False, # ✅ NEW: Keep audio files for merging later
+                "code_required": code_requirement, # Include Code Requirement for question
+                "coding_language": code_language
             }
         })
         

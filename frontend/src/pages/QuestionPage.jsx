@@ -366,6 +366,7 @@ export default function QuestionsPage() {
         question_id: item.id, // Use database ID
         question: item.question_text,
         level: item.difficulty_category, // Map from database field
+        isCodingQuestion: item.requires_code,
         answers: []
       };
     }

@@ -42,6 +42,8 @@ interface Database {
           expected_answer?: string
           difficulty_category: string
           difficulty_experience: string
+          requires_code?: boolean
+          code_language?: string
           question_set: number
           created_at: string
         }

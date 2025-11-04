@@ -2,6 +2,8 @@
 import argparse
 import os
 import json
+import shutil
+
 import textract
 import ollama
 import re
@@ -851,7 +853,7 @@ def generate_answers_for_existing_questions(structured_resume, job_title, job_de
     with open(questions_csv_path, "r", encoding="utf-8") as infile, open(output_path, "w", newline='', encoding="utf-8") as outfile:
         reader = csv.DictReader(infile)
         writer = csv.writer(outfile)
-        writer.writerow(["question_id", "question", "level", "strength", "answer"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language"])
 
         for row in reader:
             if row["strength"]:  # Skip rows that already have answers
@@ -878,7 +880,7 @@ Only respond with the answer text, no formatting.
                 try:
                     response = try_ollama_chat(prompt.strip(), model=model)
                     answer = response["message"]["content"].strip().replace('"', "'")
-                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer])
+                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer, False, ""])
                     print(f"[DEBUG] ↳ {strength.capitalize()} answer generated.")
                 except Exception as e:
                     print(f"[ERROR] Failed generating answer for {row['question_id']} [{strength}]: {e}")
@@ -996,11 +998,11 @@ def deduplicate_string_list(lst):
 def save_questions_to_csv(questions_by_level, output_path):
     with open(output_path, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["question_id", "question", "level", "strength", "answer"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language"])
         qid_counter = 1
         for level in ["beginner", "medium", "hard"]:
             for q in questions_by_level.get(level, []):
-                writer.writerow([f"q{qid_counter}", q["question"], level, "", ""])
+                writer.writerow([f"q{qid_counter}", q["question"], level, "", "", False, ""])
                 qid_counter += 1
     print(f"[DEBUG] Saving questions. "
           f"Beginner: {len(questions_by_level.get('beginner', []))}, "
@@ -1261,7 +1263,6 @@ def run_pipeline_from_api(
                 )
 
 
-            
             # Save questions to CSV
             save_questions_to_csv(core_questions, questions_path)
             
@@ -1278,7 +1279,9 @@ def run_pipeline_from_api(
             else:
                 print("[INFO] Skipping answer generation as requested.")
                 final_csv_path = questions_path
-            
+
+            #Classify Questions for Code Detection, Currently Overwrites questions.csv
+            handle_classification(final_csv_path, questions_path)
             # Read back questions
             questions = read_questions_from_csv(final_csv_path)
             
@@ -1303,6 +1306,84 @@ def run_pipeline_from_api(
                 }
             print("[INFO] Retrying...\n")
 
+def handle_classification(csv_path, final_path):
+    # print(f"[INFO] Reading questions from CSV: {csv_path}")
+    try:
+        if not os.path.exists(csv_path):
+            print(f"[ERROR] CSV file not found: {csv_path}")
+            return []
+
+        question_groups = {}
+        question_requires_code = []
+        question_code_language = []
+
+        with open(csv_path, 'r', encoding='utf-8') as infile:
+            csv_reader = csv.DictReader(infile)
+            for row in csv_reader:
+                question_text = row["question"]
+
+                if question_text not in question_groups:
+                    question_groups[question_text] = []
+
+                question_groups[question_text].append(row)
+        for question_text, rows in question_groups.items():
+            # print(f"[DEBUG] Processing question group: '{question_text[:50]}...' with {len(rows)} answers")
+            # print(f"[INFO] Reading questions from CSV: {csv_path}")
+            # print(f"[INFO] Writing questions to CSV: {csv_path + '.tmp'})")
+            question_code = False
+            question_lang = ""
+            for row in rows:
+                if 'answer' in row and row['answer']:
+                    # print(f"[DEBUG] Answer found: {row['answer']}")
+                    classification = classify_question_answer_pair(row['question'], row['answer'])
+                    if classification.get("requires_code"):
+                        question_code = True
+                        question_lang = classification.get("code_language", "")
+                        # print(f"[DEBUG] Found coding requirement for question: {question_lang}")
+                        if question_lang != "":
+                            break
+            question_requires_code.append(question_code)
+            question_code_language.append(question_lang)
+        with open(csv_path + ".tmp", "w", newline='', encoding="utf-8") as outfile:
+            csv_writer = csv.writer(outfile)
+            csv_writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language"])
+            # print(f"[DEBUG] Question Code Required: {question_requires_code}")
+            # print(f"[DEBUG] Question Code Language: {question_code_language}")
+            for question_text, rows in question_groups.items():
+                question_code_req = question_requires_code.pop(0)
+                question_code_lang = question_code_language.pop(0)
+                for row in rows:
+                    # print(f"[DEBUG] Reading Question from CSV: {row['question_id']}, Level: {row['level']}, Strength: {row['strength']}, Code Required: {question_code_req}")
+                    csv_writer.writerow([row["question_id"], row['question'], row['level'], row['strength'], row['answer'], question_code_req, question_code_lang])
+        print("[INFO] Successfully updated CSV file.")
+        shutil.move(csv_path + ".tmp", csv_path)
+        shutil.copyfile(csv_path, final_path)
+    except Exception as e:
+        print(f"[DEBUG] Failed to classify questions: {e}")
+
+
+def classify_question_answer_pair(question, answer):
+    try:
+        # Find signifying character for a code block
+        char_index = answer.find("```")
+        if char_index != -1:
+            code_block = answer[char_index+3:]
+
+            # Find a closing signifying character for a code block
+            end_char_index = code_block.find("```")
+            if end_char_index != -1:
+                code_block = code_block[:end_char_index]
+
+                # If listed, language appears after first signifying character
+                lang_index = code_block.find("\n")
+                return {"requires_code": True, "code_language": code_block[:lang_index]}
+            else:
+                return {"requires_code": False, "code_language": ""}
+        else:
+            return {"requires_code": False, "code_language": ""}
+    except Exception as e:
+        print(f"[ERROR] Classification Failed: {e}")
+        return {"requires_code": False, "code_language": ""}
 
 def read_questions_from_csv(csv_file_path):
     """
@@ -1310,16 +1391,41 @@ def read_questions_from_csv(csv_file_path):
     This is a simple wrapper to read the existing CSV output
     """
     questions = []
-    
+    print(f"[INFO] Reading questions from CSV: {csv_file_path}")
     try:
         if not os.path.exists(csv_file_path):
             print(f"[ERROR] CSV file not found: {csv_file_path}")
             return []
+
+        question_groups = {}
             
         with open(csv_file_path, 'r', encoding='utf-8') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                # Map CSV values to database constraint values
+                question_text = row["question"]
+
+                if question_text not in question_groups:
+                    question_groups[question_text] = []
+
+                question_groups[question_text].append(row)
+        for question_text, rows in question_groups.items():
+            print(f"[DEBUG] Processing question group: '{question_text[:50]}...' with {len(rows)} answers")
+
+            # question_requires_code = False
+            # question_code_language = ""
+            #
+            # for row in rows:
+            #     if 'answer' in row and row['answer']:
+            #         # print(f"[DEBUG] Answer found: {row['answer']}")
+            #         classification = classify_question_answer_pair(question_text, row['answer'])
+            #         if classification.get("requires_code", False):
+            #             question_requires_code = True
+            #             question_code_language = classification.get("code_language", "")
+            #             # print(f"[DEBUG] Found coding requirement for question: {question_code_language}")
+            #             # break
+
+            # Map CSV values to database constraint values
+            for row in rows:
                 level_mapping = {
                     'beginner': 'easy',
                     'medium': 'medium', 
@@ -1342,15 +1448,21 @@ def read_questions_from_csv(csv_file_path):
                 question_data = {
                     "question_text": row['question'],
                     "difficulty_category": difficulty_category,  # easy, medium, hard
-                    "difficulty_experience": difficulty_experience  # beginner, intermediate, expert
+                    "difficulty_experience": difficulty_experience,  # beginner, intermediate, expert
+                    "requires_code": row['requires_code'],
+                    "code_language": row['code_language']
                 }
-                
+
+                # print(f"[DEBUG] Question Coding Requirement: {question_data['requires_code']}")
+
+
                 # Include answer if available
                 if 'answer' in row and row['answer']:
                     question_data["expected_answer"] = row['answer']
                 
                 questions.append(question_data)
-        
+
+        print(f"[DEBUG] Processed {len(question_groups)} unique questions into {len(questions)} total question-answer pairs")
         return questions
     except Exception as e:
         print(f"[ERROR] Failed to read questions from CSV: {e}")
