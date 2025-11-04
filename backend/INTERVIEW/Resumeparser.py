@@ -1411,19 +1411,6 @@ def read_questions_from_csv(csv_file_path):
         for question_text, rows in question_groups.items():
             print(f"[DEBUG] Processing question group: '{question_text[:50]}...' with {len(rows)} answers")
 
-            # question_requires_code = False
-            # question_code_language = ""
-            #
-            # for row in rows:
-            #     if 'answer' in row and row['answer']:
-            #         # print(f"[DEBUG] Answer found: {row['answer']}")
-            #         classification = classify_question_answer_pair(question_text, row['answer'])
-            #         if classification.get("requires_code", False):
-            #             question_requires_code = True
-            #             question_code_language = classification.get("code_language", "")
-            #             # print(f"[DEBUG] Found coding requirement for question: {question_code_language}")
-            #             # break
-
             # Map CSV values to database constraint values
             for row in rows:
                 level_mapping = {
