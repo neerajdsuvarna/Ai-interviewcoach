@@ -384,7 +384,179 @@ def extract_json_array(text):
     return []
 
 
-def generate_core_questions(structured_resume, job_title, job_description, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
+def generate_topic_list(structured_resume, job_title, job_description, split, blend, beginner_count = 2, medium_count = 2, hard_count = 2, jd_pct=50, resume_pct=50,
+                        blend_pct_jd=50, blend_pct_resume=50, model = "llama3"):
+    beginner_topics = None
+    medium_topics = None
+    hard_topics = None
+    def generate_hybrid_topics(level, count, retries = 2):
+        blend_count = round(count * .5)
+        split_count = count - blend_count
+        topics = []
+        blend_topics = generate_blend_topics(level, blend_count, retries)
+        split_topics = generate_split_topics(level, split_count, retries)
+        topics.extend(blend_topics)
+        topics.extend(split_topics)
+        return topics
+
+    def generate_split_topics(level, count, retries = 2):
+        prompt = f""" 
+            You are an expert AI interviewer preparing a list of topics to discuss for a candidate applying for the role of **{job_title}**.
+
+            Job Description: 
+            {job_description}
+
+            Candidate's Resume (structured JSON):
+            {json.dumps(structured_resume, indent=2)}
+
+            Your Task:
+            Generate {count} unique topics to be discussed during the interview with {jd_pct}% of the topics from the Job Description and {resume_pct}% of the topics from the Candidate's Resume and difficulty {level}.
+
+            Rules:
+            - Topics should not be full sentences, they should be no more than 3 words.
+            - No topic, similar topic, or reworded form of a topic should appear more than once in {beginner_topics}, {medium_topics}, and {hard_topics} combined.
+            - Each topic must be labeled with "difficulty": "{level}".
+            - Return a pure JSON Array with length {count}.
+            - No explanations, no markdown, no text before/after the JSON.
+            
+                Format:
+        [
+        {{
+            "topic": "...",
+            "difficulty": "{level}"
+        }},
+        ...
+        ]
+        """
+        try:
+            response = try_ollama_chat(prompt.strip(), model=model)
+            raw = response["message"]["content"]
+            topics = extract_json_array(raw)
+            if len(topics) == count:
+                return topics
+            else:
+                print(f"[WARNING] Got {len(topics)} {level} questions instead of {count}. Retrying...")
+        except Exception as e:
+            print(f"[ERROR] Failed to get valid {level} questions after {retries} attempts.")
+            return []
+
+    def generate_blend_topics(level, count, retries = 2):
+        prompt = f"""
+            You are an expert AI interviewer preparing a list of topics to discuss for a candidate applying for the role of **{job_title}**.
+
+            Blend Context:
+            - Use {blend_pct_resume}% of the candidate's resume:
+            {json.dumps(structured_resume, indent=2)}
+
+            - Use {blend_pct_jd}% of the job description:
+            Job Title: {job_title}
+            Job Description: {job_description}
+
+            Your Task:
+            Generate {count} unique topics to be discussed during the interview with difficulty "{level}".
+
+            Rules:
+            - Each topic must naturally combine both resume and JD information.
+            - Topics should not be full sentences, they should be no more than 3 words.
+            - No topic, similar topic, or reworded form of a topic should appear more than once in {beginner_topics}, {medium_topics}, and {hard_topics} combined.
+            - Each topic must be labeled with "difficulty": "{level}".
+            - Return a pure JSON Array with length {count}.
+            - No explanations, no markdown, no text before/after the JSON.
+            
+                Format:
+        [
+        {{
+            "topic": "...",
+            "difficulty": "{level}"
+        }},
+        ...
+        ]
+        """
+        try:
+            response = try_ollama_chat(prompt.strip(), model=model)
+            raw = response["message"]["content"]
+            topics = extract_json_array(raw)
+            if len(topics) == count:
+                return topics
+            else:
+                print(f"[WARNING] Got {len(topics)} {level} questions instead of {count}. Retrying...")
+        except Exception as e:
+            print(f"[ERROR] Failed to get valid {level} questions after {retries} attempts.")
+            return []
+
+    def generate_core_topics(level, count, retries = 2):
+
+        for attempt in range(retries):
+            prompt = f"""
+            You are an expert AI interviewer preparing a list of topics to discuss for a candidate applying for the role of **{job_title}**.
+
+            Job Description: 
+            {job_description}
+
+            Candidate's Resume (structured JSON):
+            {json.dumps(structured_resume, indent=2)}
+
+            Your Task:
+            Generate {count} unique topics to be discussed during the interview with difficulty "{level}".
+
+            Rules:
+            - Topics should not be full sentences, they should be no more than 3 words.
+            - No repeated topics, similar topics, or reworded forms of a topic should appear more than once in {beginner_topics}, {medium_topics}, and {hard_topics} combined.
+            - Each topic must be labeled with "difficulty": "{level}".
+            - Return a pure JSON Array with length {count}.
+            - No explanations, no markdown, no text before/after the JSON.
+            
+            Format:
+        [
+        {{
+            "topic": "...",
+            "difficulty": "{level}"
+        }},
+        ...
+        ]
+        """
+            try:
+                response = try_ollama_chat(prompt.strip(), model=model)
+                raw = response["message"]["content"]
+                topics = extract_json_array(raw)
+                if len(topics) == count:
+                    return topics
+                else:
+                    print(f"[WARNING] Got {len(topics)} {level} questions instead of {count}. Retrying...")
+            except Exception as e:
+                print(f"[ERROR] Failed to get valid {level} questions after {retries} attempts.")
+                return []
+    print(f"[DEBUG] Beginner Count: {beginner_count}")
+    print(f"[DEBUG] Medium Count: {medium_count}")
+    print(f"[DEBUG] Hard Count: {hard_count}")
+    if split and blend:
+        beginner_topics = generate_hybrid_topics('beginner', beginner_count, 1)
+        medium_topics = generate_hybrid_topics('medium', medium_count, 3)
+        hard_topics = generate_hybrid_topics('hard', hard_count, 5)
+    elif split:
+        beginner_topics = generate_split_topics('beginner', beginner_count, 1)
+        medium_topics = generate_split_topics('medium', medium_count, 3)
+        hard_topics = generate_split_topics('hard', hard_count, 5)
+    elif blend:
+        beginner_topics = generate_blend_topics('beginner', beginner_count, 1)
+        medium_topics = generate_blend_topics('medium', medium_count, 3)
+        hard_topics = generate_blend_topics('hard', hard_count, 5)
+    else:
+        beginner_topics = generate_core_topics('beginner', beginner_count, 1)
+        medium_topics = generate_core_topics('medium', medium_count, 3)
+        hard_topics = generate_core_topics('hard', hard_count, 5)
+    print(f"[DEBUG] Topic List Length: {len(beginner_topics) + len(medium_topics) + len(hard_topics)}")
+    print(f"[DEBUG] Beginner Topic List: {beginner_topics}")
+    print(f"[DEBUG] Medium Topic List: {medium_topics}")
+    print(f"[DEBUG] Hard Topic List: {hard_topics}")
+    return {
+        "beginner": beginner_topics,
+        "medium": medium_topics,
+        "hard": hard_topics
+    }
+
+
+def generate_core_questions(structured_resume, job_title, job_description, topics_list, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
     def generate_questions_by_level(level, count, weight, retries=2):
         # Map the level to the correct database constraint values
         level_mapping = {
@@ -405,10 +577,12 @@ def generate_core_questions(structured_resume, job_title, job_description, begin
         {json.dumps(structured_resume, indent=2)}
 
         Your task:
-        Generate {count} unique interview questions with difficulty: "{level}".
+        Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
 
         Rules:
         - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+        - Each question must come from a topic with the same level of difficulty.
+        - Each topic in {topics_list.get(level, 1)} must only be used once.
         - Only return a pure JSON array of {count} objects.
         - No explanations, no markdown, no text before/after the JSON.
 
@@ -450,7 +624,7 @@ def generate_core_questions(structured_resume, job_title, job_description, begin
 
 # === CORE QUESTION GENERATION WITH SPLIT INTEGRATED ===
 
-def generate_split_questions(structured_resume, job_title, job_description,
+def generate_split_questions(structured_resume, job_title, job_description, topics_list,
                              beginner_count=2, medium_count=2, hard_count=2,
                              resume_pct=50, jd_pct=50, model="llama3"):
     def generate_questions_by_source(level, count, weight, source, retries=2):
@@ -470,10 +644,12 @@ def generate_split_questions(structured_resume, job_title, job_description,
             {context}
 
             Task:
-            Generate {count} unique interview questions with difficulty: "{level}".
+            Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
 
             Rules:
             - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+            - Each question must come from a topic with the same level of difficulty.
+            - Each topic in {topics_list.get(level, 1)} must only be used once.
             - Only return a pure JSON array of {count} objects.
             """
             try:
@@ -549,7 +725,7 @@ def generate_split_questions(structured_resume, job_title, job_description,
 
 # === CORE QUESTION GENERATION WITH BLEND INTEGRATED ===
 
-def generate_blend_questions(structured_resume, job_title, job_description,
+def generate_blend_questions(structured_resume, job_title, job_description, topics_list,
                              beginner_count=2, medium_count=2, hard_count=2,
                              blend_pct_resume=50, blend_pct_jd=50, model="llama3"):
     """
@@ -580,11 +756,13 @@ def generate_blend_questions(structured_resume, job_title, job_description,
             Job Description: {job_description}
 
             Task:
-            Generate {count} unique interview questions with difficulty: "{level}".
+            Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
 
             Rules:
             - Each question must naturally combine both resume and JD information.
             - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+            - Each question must come from a topic with the same level of difficulty.
+            - Each topic in {topics_list.get(level, 1)} must only be used once.
             - Only return a pure JSON array of {count} objects.
             - No explanations, no markdown, no text before/after the JSON.
 
@@ -632,7 +810,7 @@ def generate_blend_questions(structured_resume, job_title, job_description,
 
 # === CORE QUESTION GENERATION WITH HYBRID INTEGRATED ===
 
-def generate_hybrid_questions(structured_resume, job_title, job_description, 
+def generate_hybrid_questions(structured_resume, job_title, job_description, topics_list,
                               beginner_count=2, medium_count=2, hard_count=2,
                               resume_pct=40, jd_pct=30,
                               blend_pct_resume=50, blend_pct_jd=50, model="llama3"):
@@ -756,10 +934,12 @@ def generate_hybrid_questions(structured_resume, job_title, job_description,
         {context}
 
         Task:
-        Generate {count} unique interview questions with difficulty: "{level}".
+        Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
 
         Rules:
         - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+        - Each question must come from a topic with the same level of difficulty.
+        - Each topic in {topics_list.get(level, 1)} must only be used once.
         - Only return a pure JSON array of {count} objects.
         """
         try:
@@ -785,11 +965,13 @@ def generate_hybrid_questions(structured_resume, job_title, job_description,
         Job Description: {job_description}
 
         Task:
-        Generate {count} unique interview questions with difficulty "{level}".
+        Generate {count} unique interview questions with difficulty "{level}" from the list of topics {topics_list.get(level, 1)}.
 
         Rules:
         - Each question must combine resume + JD naturally.
         - Each question must be labeled with "difficulty": "{level}", "weight": {weight}.
+        - Each question should come from a topic with the same level of difficulty.
+        - Each topic in {topics_list.get(level, 1)} must only be used once.
         - Only return a pure JSON array of {count} objects.
         """
         try:
@@ -1212,7 +1394,10 @@ def run_pipeline_from_api(
             parsed_resume_path = os.path.join(temp_dir, "parsed_resume.json")
             questions_path = os.path.join(temp_dir, "questions.csv")
             qa_path = os.path.join(temp_dir, "interview_output.csv")
-            
+
+            topics = generate_topic_list(structured_data, job_title, job_description, split, blend,
+                                         question_counts.get('beginner', 1), question_counts.get('medium', 1), question_counts.get('hard', 1),
+                                         jd_pct, resume_pct, blend_pct_jd, blend_pct_resume)
             # Save parsed resume
             save_json_output(structured_data, parsed_resume_path)
             
@@ -1222,6 +1407,7 @@ def run_pipeline_from_api(
                     structured_data,
                     job_title,
                     job_description,
+                    topics,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1),
@@ -1235,6 +1421,7 @@ def run_pipeline_from_api(
                     structured_data,
                     job_title,
                     job_description,
+                    topics,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1),
@@ -1246,6 +1433,7 @@ def run_pipeline_from_api(
                     structured_data,
                     job_title,
                     job_description,
+                    topics,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1),
@@ -1257,6 +1445,7 @@ def run_pipeline_from_api(
                     structured_data,
                     job_title,
                     job_description,
+                    topics,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1)
