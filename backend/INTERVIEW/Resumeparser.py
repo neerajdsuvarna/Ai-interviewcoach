@@ -11,6 +11,8 @@ from datetime import datetime
 from collections import defaultdict
 import csv
 from io import StringIO
+
+from sympy import resultant
 from textract import process
 import PyPDF2
 import docx
@@ -384,7 +386,7 @@ def extract_json_array(text):
     return []
 
 
-def generate_topic_list(structured_resume, job_title, job_description, split, blend, beginner_count = 2, medium_count = 2, hard_count = 2, jd_pct=50, resume_pct=50,
+def generate_topic_list(structured_resume, job_title, job_description, split, blend, technical, technical_pct, beginner_count = 2, medium_count = 2, hard_count = 2, jd_pct=50, resume_pct=50,
                         blend_pct_jd=50, blend_pct_resume=50, model = "llama3"):
     beginner_topics = None
     medium_topics = None
@@ -416,6 +418,8 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
             - Topics should not be full sentences, they should be no more than 3 words.
             - No topic, similar topic, or reworded form of a topic should appear more than once in {beginner_topics}, {medium_topics}, and {hard_topics} combined.
             - Each topic must be labeled with "difficulty": "{level}".
+            - If {technical} is True and if a topic could include a technical example as a response, it must be labeled with "Technical", otherwise it must be labelled with "Non-Technical".
+            - If {technical} is True, then {technical_pct}% of the generated topics must be technical.
             - Return a pure JSON Array with length {count}.
             - No explanations, no markdown, no text before/after the JSON.
             
@@ -423,7 +427,8 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
         [
         {{
             "topic": "...",
-            "difficulty": "{level}"
+            "difficulty": "{level}",
+            "q_type": "..."
         }},
         ...
         ]
@@ -460,6 +465,8 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
             - Topics should not be full sentences, they should be no more than 3 words.
             - No topic, similar topic, or reworded form of a topic should appear more than once in {beginner_topics}, {medium_topics}, and {hard_topics} combined.
             - Each topic must be labeled with "difficulty": "{level}".
+            - If {technical} is True and if a topic could include a technical example as a response, it must be labeled with "Technical", otherwise it must be labelled with "Non-Technical".
+            - If {technical} is True, then {technical_pct}% of the generated topics must be technical.
             - Return a pure JSON Array with length {count}.
             - No explanations, no markdown, no text before/after the JSON.
             
@@ -467,7 +474,8 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
         [
         {{
             "topic": "...",
-            "difficulty": "{level}"
+            "difficulty": "{level}",
+            "q_type": "..."
         }},
         ...
         ]
@@ -485,7 +493,6 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
             return []
 
     def generate_core_topics(level, count, retries = 2):
-
         for attempt in range(retries):
             prompt = f"""
             You are an expert AI interviewer preparing a list of topics to discuss for a candidate applying for the role of **{job_title}**.
@@ -495,6 +502,7 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
 
             Candidate's Resume (structured JSON):
             {json.dumps(structured_resume, indent=2)}
+            
 
             Your Task:
             Generate {count} unique topics to be discussed during the interview with difficulty "{level}".
@@ -503,6 +511,8 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
             - Topics should not be full sentences, they should be no more than 3 words.
             - No repeated topics, similar topics, or reworded forms of a topic should appear more than once in {beginner_topics}, {medium_topics}, and {hard_topics} combined.
             - Each topic must be labeled with "difficulty": "{level}".
+            - If {technical} is True and if a topic could include a technical example as a response, it must be labeled with "Technical", otherwise it must be labelled with "Non-Technical".
+            - If {technical} is True, then {technical_pct}% of the generated topics must be technical.
             - Return a pure JSON Array with length {count}.
             - No explanations, no markdown, no text before/after the JSON.
             
@@ -510,7 +520,8 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
         [
         {{
             "topic": "...",
-            "difficulty": "{level}"
+            "difficulty": "{level}",
+            "q_type": "..."
         }},
         ...
         ]
@@ -529,22 +540,25 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
     print(f"[DEBUG] Beginner Count: {beginner_count}")
     print(f"[DEBUG] Medium Count: {medium_count}")
     print(f"[DEBUG] Hard Count: {hard_count}")
+
+
     if split and blend:
-        beginner_topics = generate_hybrid_topics('beginner', beginner_count, 1)
-        medium_topics = generate_hybrid_topics('medium', medium_count, 3)
-        hard_topics = generate_hybrid_topics('hard', hard_count, 5)
+        beginner_topics = generate_hybrid_topics('beginner', beginner_count)
+        medium_topics = generate_hybrid_topics('medium', medium_count)
+        hard_topics = generate_hybrid_topics('hard', hard_count)
     elif split:
-        beginner_topics = generate_split_topics('beginner', beginner_count, 1)
-        medium_topics = generate_split_topics('medium', medium_count, 3)
-        hard_topics = generate_split_topics('hard', hard_count, 5)
+        beginner_topics = generate_split_topics('beginner', beginner_count)
+        medium_topics = generate_split_topics('medium', medium_count)
+        hard_topics = generate_split_topics('hard', hard_count)
     elif blend:
-        beginner_topics = generate_blend_topics('beginner', beginner_count, 1)
-        medium_topics = generate_blend_topics('medium', medium_count, 3)
-        hard_topics = generate_blend_topics('hard', hard_count, 5)
+        beginner_topics = generate_blend_topics('beginner', beginner_count)
+        medium_topics = generate_blend_topics('medium', medium_count)
+        hard_topics = generate_blend_topics('hard', hard_count)
     else:
-        beginner_topics = generate_core_topics('beginner', beginner_count, 1)
-        medium_topics = generate_core_topics('medium', medium_count, 3)
-        hard_topics = generate_core_topics('hard', hard_count, 5)
+        beginner_topics = generate_core_topics('beginner', beginner_count)
+        medium_topics = generate_core_topics('medium', medium_count)
+        hard_topics = generate_core_topics('hard', hard_count)
+
     print(f"[DEBUG] Topic List Length: {len(beginner_topics) + len(medium_topics) + len(hard_topics)}")
     print(f"[DEBUG] Beginner Topic List: {beginner_topics}")
     print(f"[DEBUG] Medium Topic List: {medium_topics}")
@@ -556,8 +570,9 @@ def generate_topic_list(structured_resume, job_title, job_description, split, bl
     }
 
 
-def generate_core_questions(structured_resume, job_title, job_description, topics_list, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
-    def generate_questions_by_level(level, count, weight, retries=2):
+def generate_core_questions(structured_resume, job_title, job_description, topics_list, technical, technical_pct = 40, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
+    print(f"[DEBUG] Technical Mode: {technical}")
+    def generate_questions_by_level(level, count, weight, q_type, retries=2):
         # Map the level to the correct database constraint values
         level_mapping = {
             'beginner': 'easy',
@@ -565,6 +580,10 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
             'hard': 'hard'
         }
         db_level = level_mapping.get(level, level)
+
+        level_topic_list = topics_list.get(level, 1)
+        print(f"[DEBUG] Topic List by Level {level_topic_list}")
+        print(" ")
         
         for attempt in range(retries):
             prompt = f"""
@@ -575,14 +594,18 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
 
         Candidate's Resume (structured JSON):
         {json.dumps(structured_resume, indent=2)}
+        
+        Question Type: {q_type.upper()}
 
         Your task:
-        Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
+        Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {level_topic_list}.
 
         Rules:
         - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
         - Each question must come from a topic with the same level of difficulty.
-        - Each topic in {topics_list.get(level, 1)} must only be used once.
+        - Each topic in {level_topic_list} must only be used once.
+        - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
+        - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
         - Only return a pure JSON array of {count} objects.
         - No explanations, no markdown, no text before/after the JSON.
 
@@ -591,7 +614,7 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
         {{
             "question": "...",
             "difficulty": "{level}",
-            "weight": {weight}
+            "weight": {weight},
         }},
         ...
         ]
@@ -609,10 +632,54 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
         print(f"[ERROR] Failed to get valid {level} questions after {retries} attempts.")
         return []
 
+    if technical:
+        total = beginner_count + medium_count + hard_count
+        if total == 0:
+            return {"beginner": [], "medium": [], "hard": []}
+
+        technical_total = round(total * technical_pct / 100)
+        non_technical_total = total - technical_total
+
+        print(f"\n{Fore.BLUE}=== TECHNICAL MODE DEBUG ==={Style.RESET_ALL}")
+        print(f"{Fore.CYAN}[REQUESTED]{Style.RESET_ALL} Technical={technical_pct}% ({technical_total}), Non-Technical={100 - technical_pct}% ({non_technical_total})")
+    else:
+        technical_total = 0
+        non_technical_total = beginner_count + medium_count + hard_count
+        total = non_technical_total
+
+    def distribute(bucket_total, total):
+        if bucket_total == 0:
+            return (0, 0, 0)
+        b = round(bucket_total * (beginner_count / total))
+        m = round(bucket_total * (medium_count / total))
+        h = round(bucket_total * (hard_count / total))
+        # Fix rounding drift
+        while b + m + h < bucket_total:
+            b += 1
+        while b + m + h > bucket_total:
+            if b > 0: b -= 1
+            elif m > 0: m -= 1
+            else: h -= 1
+        return (b, m, h)
+
+    technical_dist = list(distribute(technical_total, total))
+    non_technical_dist = list(distribute(non_technical_total, total))
+
+    print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
+    print(
+        f"  {Fore.YELLOW}Technical -> Beginner={technical_dist[0]}, Medium={technical_dist[1]}, Hard={technical_dist[2]}{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}Non-Technical     -> Beginner={non_technical_dist[0]}, Medium={non_technical_dist[1]}, Hard={non_technical_dist[2]}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}=========================={Style.RESET_ALL}\n")
+
+    beginner_qs, medium_qs, hard_qs = [], [], []
+
     print("[INFO] Generating core questions by difficulty...")
-    beginner_qs = generate_questions_by_level("beginner", beginner_count, 1)
-    medium_qs = generate_questions_by_level("medium", medium_count, 3)
-    hard_qs = generate_questions_by_level("hard", hard_count, 5)
+    beginner_qs.extend(generate_questions_by_level("beginner", technical_dist[0], 1, 'Technical'))
+    beginner_qs.extend(generate_questions_by_level("beginner", non_technical_dist[0], 1, 'Non-Technical'))
+    medium_qs.extend(generate_questions_by_level("medium", technical_dist[1], 3, 'Technical'))
+    medium_qs.extend(generate_questions_by_level("medium", non_technical_dist[1], 3, 'Non-Technical'))
+    hard_qs.extend(generate_questions_by_level("hard", technical_dist[2], 5, 'Technical'))
+    hard_qs.extend(generate_questions_by_level("hard", non_technical_dist[2], 5, 'Non-Technical'))
 
     print(f"[DEBUG] Beginner: {len(beginner_qs)} | Medium: {len(medium_qs)} | Hard: {len(hard_qs)}")
 
@@ -624,13 +691,16 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
 
 # === CORE QUESTION GENERATION WITH SPLIT INTEGRATED ===
 
-def generate_split_questions(structured_resume, job_title, job_description, topics_list,
+def generate_split_questions(structured_resume, job_title, job_description, topics_list, technical, technical_pct,
                              beginner_count=2, medium_count=2, hard_count=2,
                              resume_pct=50, jd_pct=50, model="llama3"):
-    def generate_questions_by_source(level, count, weight, source, retries=2):
+    def generate_questions_by_source(level, count, weight, source, q_type, retries=2):
         if count <= 0:
             return []
         """Helper: generate questions from either resume or JD context"""
+        level_topic_list = topics_list.get(level, 1)
+        print(f"[DEBUG] Topic List by Level {level_topic_list}")
+        print(" ")
         for attempt in range(retries):
             if source == "resume":
                 context = f"Candidate's Resume (structured JSON):\n{json.dumps(structured_resume, indent=2)}"
@@ -649,8 +719,11 @@ def generate_split_questions(structured_resume, job_title, job_description, topi
             Rules:
             - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
             - Each question must come from a topic with the same level of difficulty.
-            - Each topic in {topics_list.get(level, 1)} must only be used once.
+            - Each topic in {level_topic_list} must only be used once.
+            - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
+            - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
             - Only return a pure JSON array of {count} objects.
+            - No explanations, no markdown, no text before/after the JSON.
             """
             try:
                 response = try_ollama_chat(prompt.strip(), model=model)
@@ -694,22 +767,66 @@ def generate_split_questions(structured_resume, job_title, job_description, topi
     resume_dist = list(distribute(resume_total, total))
     jd_dist = list(distribute(jd_total, total))
 
+    def technical_distribute(technical_pct, dist):
+        technicalDist = []
+        non_technicalDist = []
+        if technical_pct == 0:
+            return (0, 0, 0)
+        for item in dist:
+            technicalDist.append(round(item * technical_pct / 100))
+            non_technicalDist.append(round(item * (100-technical_pct) / 100))
+        return technicalDist, non_technicalDist
+
+
+    resume_tech_dist, resume_non_tech_dist = technical_distribute(technical_pct, resume_dist)
+    jd_tech_dist, jd_non_tech_dist = technical_distribute(technical_pct, jd_dist)
+
     print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
     print(f"  {Fore.YELLOW}Resume -> Beginner={resume_dist[0]}, Medium={resume_dist[1]}, Hard={resume_dist[2]}{Style.RESET_ALL}")
     print(f"  {Fore.GREEN}JD     -> Beginner={jd_dist[0]}, Medium={jd_dist[1]}, Hard={jd_dist[2]}{Style.RESET_ALL}")
     print(f"{Fore.BLUE}=========================={Style.RESET_ALL}\n")
 
+    print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
+    print(
+        f"  {Fore.YELLOW}Technical -> Beginner={resume_tech_dist[0] + jd_tech_dist[0]}, Medium={resume_tech_dist[1] + jd_tech_dist[1]}, Hard={resume_tech_dist[2] + jd_tech_dist[2]}{Style.RESET_ALL}")
+    print(
+        f"  {Fore.GREEN}Non-Technical     -> Beginner={resume_non_tech_dist[0] + jd_non_tech_dist[0]}, Medium={resume_non_tech_dist[1] + jd_non_tech_dist[1]}, Hard={resume_non_tech_dist[2] + jd_non_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}=========================={Style.RESET_ALL}\n")
+
     # === Generate questions ===
     beginner_qs, medium_qs, hard_qs = [], [], []
 
-    beginner_qs.extend(generate_questions_by_source("beginner", resume_dist[0], 1, "resume"))
-    beginner_qs.extend(generate_questions_by_source("beginner", jd_dist[0], 1, "jd"))
+    beginner_qs.extend(generate_questions_by_source("beginner", resume_tech_dist[0], 1, "resume", 'Technical'))
+    beginner_qs.extend(generate_questions_by_source("beginner", resume_non_tech_dist[0], 1, "resume", 'Non-Technical'))
+    beginner_qs.extend(generate_questions_by_source("beginner", jd_tech_dist[0], 1, "jd", 'Technical'))
+    beginner_qs.extend(generate_questions_by_source("beginner", jd_non_tech_dist[0], 1, "jd", 'Non-Technical'))
 
-    medium_qs.extend(generate_questions_by_source("medium", resume_dist[1], 3, "resume"))
-    medium_qs.extend(generate_questions_by_source("medium", jd_dist[1], 3, "jd"))
 
-    hard_qs.extend(generate_questions_by_source("hard", resume_dist[2], 5, "resume"))
-    hard_qs.extend(generate_questions_by_source("hard", jd_dist[2], 5, "jd"))
+    medium_qs.extend(generate_questions_by_source("medium", resume_tech_dist[1], 3, "resume", 'Technical'))
+    medium_qs.extend(generate_questions_by_source("medium", resume_non_tech_dist[1], 3, "resume", 'Non-Technical'))
+    medium_qs.extend(generate_questions_by_source("medium", jd_tech_dist[1], 3, "jd", 'Technical'))
+    medium_qs.extend(generate_questions_by_source("medium", jd_non_tech_dist[1], 3, "jd", 'Non-Technical'))
+
+    hard_qs.extend(generate_questions_by_source("hard", resume_tech_dist[2], 5, "resume", 'Technical'))
+    hard_qs.extend(generate_questions_by_source("hard", resume_non_tech_dist[2], 5, "resume", 'Non-Technical'))
+    hard_qs.extend(generate_questions_by_source("hard", jd_tech_dist[2], 5, "jd", 'Technical'))
+    hard_qs.extend(generate_questions_by_source("hard", jd_non_tech_dist[2], 5, "jd", 'Non-Technical'))
+
+    def trim_or_pad(lst, target, level, weight):
+        if len(lst) > target:
+            return lst[:target]
+        while len(lst) < target:
+            new_qs = generate_questions_by_source(level, 1, weight, "jd", 'Technical')
+            if not new_qs:
+                new_qs = generate_questions_by_source(level, 1, weight, "resume", 'Technical')
+            if not new_qs:
+                new_qs = [{"question": f"Fallback {level} question", "difficulty": level, "weight": weight}]
+            lst.extend(new_qs)
+        return lst
+
+    beginner_qs = trim_or_pad(beginner_qs, beginner_count, "beginner", 1)
+    medium_qs   = trim_or_pad(medium_qs, medium_count, "medium", 3)
+    hard_qs     = trim_or_pad(hard_qs, hard_count, "hard", 5)
 
     print(f"[DONE] Final counts -> Beginner: {len(beginner_qs)}, Medium: {len(medium_qs)}, Hard: {len(hard_qs)}")
 
@@ -725,7 +842,7 @@ def generate_split_questions(structured_resume, job_title, job_description, topi
 
 # === CORE QUESTION GENERATION WITH BLEND INTEGRATED ===
 
-def generate_blend_questions(structured_resume, job_title, job_description, topics_list,
+def generate_blend_questions(structured_resume, job_title, job_description, topics_list, technical, technical_pct,
                              beginner_count=2, medium_count=2, hard_count=2,
                              blend_pct_resume=50, blend_pct_jd=50, model="llama3"):
     """
@@ -733,7 +850,7 @@ def generate_blend_questions(structured_resume, job_title, job_description, topi
     according to given percentages.
     """
 
-    def generate_questions_blend(level, count, weight, retries=2):
+    def generate_questions_blend(level, count, weight, q_type, retries=2):
         if count <= 0: 
             return []
         level_mapping = {
@@ -742,6 +859,10 @@ def generate_blend_questions(structured_resume, job_title, job_description, topi
             'hard': 'hard'
         }
         db_level = level_mapping.get(level, level)
+
+        level_topic_list = topics_list.get(level, 1)
+        print(f"[DEBUG] Topic List by Level {level_topic_list}")
+        print(" ")
 
         for attempt in range(retries):
             prompt = f"""
@@ -756,13 +877,15 @@ def generate_blend_questions(structured_resume, job_title, job_description, topi
             Job Description: {job_description}
 
             Task:
-            Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
+            Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {level_topic_list}.
 
             Rules:
             - Each question must naturally combine both resume and JD information.
             - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
             - Each question must come from a topic with the same level of difficulty.
-            - Each topic in {topics_list.get(level, 1)} must only be used once.
+            - Each topic in {level_topic_list} must only be used once.
+            - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
+            - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
             - Only return a pure JSON array of {count} objects.
             - No explanations, no markdown, no text before/after the JSON.
 
@@ -790,14 +913,76 @@ def generate_blend_questions(structured_resume, job_title, job_description, topi
 
     print(f"[INFO] Generating blended questions (Resume {blend_pct_resume}% | JD {blend_pct_jd}%)")
 
+    if technical:
+        total = beginner_count + medium_count + hard_count
+        if total == 0:
+            return {"beginner": [], "medium": [], "hard": []}
+
+        technical_total = round(total * technical_pct / 100)
+        non_technical_total = total - technical_total
+
+        print(f"\n{Fore.BLUE}=== TECHNICAL MODE DEBUG ==={Style.RESET_ALL}")
+        print(
+            f"{Fore.CYAN}[REQUESTED]{Style.RESET_ALL} Technical={technical_pct}% ({technical_total}), Non-Technical={100 - technical_pct}% ({non_technical_total})")
+    else:
+        technical_total = 0
+        non_technical_total = beginner_count + medium_count + hard_count
+        total = non_technical_total
+
+    def distribute(bucket_total, total):
+        if bucket_total == 0:
+            return (0, 0, 0)
+        b = round(bucket_total * (beginner_count / total))
+        m = round(bucket_total * (medium_count / total))
+        h = round(bucket_total * (hard_count / total))
+        # Fix rounding drift
+        while b + m + h < bucket_total:
+            b += 1
+        while b + m + h > bucket_total:
+            if b > 0:
+                b -= 1
+            elif m > 0:
+                m -= 1
+            else:
+                h -= 1
+        return (b, m, h)
+
+    technical_dist = list(distribute(technical_total, total))
+    non_technical_dist = list(distribute(non_technical_total, total))
+
+    print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
+    print(
+        f"  {Fore.YELLOW}Technical -> Beginner={technical_dist[0]}, Medium={technical_dist[1]}, Hard={technical_dist[2]}{Style.RESET_ALL}")
+    print(
+        f"  {Fore.GREEN}Non-Technical     -> Beginner={non_technical_dist[0]}, Medium={non_technical_dist[1]}, Hard={non_technical_dist[2]}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}=========================={Style.RESET_ALL}\n")
+
     beginner_qs, medium_qs, hard_qs = [], [], []
 
     if beginner_count > 0:
-        beginner_qs = generate_questions_blend("beginner", beginner_count, 1)
+        beginner_qs.extend(generate_questions_blend("beginner", technical_dist[0], 1, 'Technical'))
+        beginner_qs.extend(generate_questions_blend("beginner", non_technical_dist[0], 1, 'Non-Technical'))
     if medium_count > 0:
-        medium_qs = generate_questions_blend("medium", medium_count, 3)
+        medium_qs.extend(generate_questions_blend("medium", technical_dist[1], 3, 'Technical'))
+        medium_qs.extend(generate_questions_blend("medium", non_technical_dist[1], 3, 'Non-Technical'))
     if hard_count > 0:
-        hard_qs = generate_questions_blend("hard", hard_count, 5)
+        hard_qs.extend(generate_questions_blend("hard", technical_dist[2], 5, 'Technical'))
+        hard_qs.extend(generate_questions_blend("hard", non_technical_dist[2], 5, 'Non-Technical'))
+
+        def trim_or_pad(lst, target, level, weight):
+            if len(lst) > target:
+                return lst[:target]
+            while len(lst) < target:
+                new_qs = generate_questions_blend(level, 1, weight, "Technical")
+                if not new_qs:
+                    new_qs = [{"question": f"Fallback {level} question", "difficulty": level, "weight": weight}]
+                lst.extend(new_qs)
+            return lst
+
+        beginner_qs = trim_or_pad(beginner_qs, beginner_count, "beginner", 1)
+        medium_qs = trim_or_pad(medium_qs, medium_count, "medium", 3)
+        hard_qs = trim_or_pad(hard_qs, hard_count, "hard", 5)
+
 
     return {
         "beginner": beginner_qs,
@@ -810,7 +995,7 @@ def generate_blend_questions(structured_resume, job_title, job_description, topi
 
 # === CORE QUESTION GENERATION WITH HYBRID INTEGRATED ===
 
-def generate_hybrid_questions(structured_resume, job_title, job_description, topics_list,
+def generate_hybrid_questions(structured_resume, job_title, job_description, topics_list, technical, technical_pct,
                               beginner_count=2, medium_count=2, hard_count=2,
                               resume_pct=40, jd_pct=30,
                               blend_pct_resume=50, blend_pct_jd=50, model="llama3"):
@@ -916,10 +1101,48 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
 
     print(f"{Fore.BLUE}==========================\n{Style.RESET_ALL}")
 
+    def technical_distribute(technical_pct, dist):
+        technicalDist = []
+        if technical_pct == 0:
+            return (0, 0, 0)
+        for item in dist:
+            technicalDist.append(round(item * technical_pct / 100))
+        return technicalDist
+
+    def non_technical_distribute(technical_pct, dist):
+        nonTechnicalDist = []
+        if technical_pct == 0:
+            nonTechnicalDist = dist
+            return nonTechnicalDist
+        for item in dist:
+            nonTechnicalDist.append(round(item * (100 - technical_pct) / 100))
+        return nonTechnicalDist
+
+    resume_tech_dist = technical_distribute(technical_pct, resume_dist)
+    resume_non_tech_dist = non_technical_distribute(technical_pct, resume_dist)
+    jd_tech_dist = technical_distribute(technical_pct, jd_dist)
+    jd_non_tech_dist = non_technical_distribute(technical_pct, jd_dist)
+    blend_tech_dist = technical_distribute(technical_pct, blend_dist)
+    blend_non_tech_dist = non_technical_distribute(technical_pct, blend_dist)
+
+    print(f"[DEBUG] Resume Tech Distribution: {resume_tech_dist[0]} + {resume_tech_dist[1]} + {resume_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"[DEBUG] Resume Non Tech Distribution: {resume_non_tech_dist[0]} + {resume_non_tech_dist[1]} + {resume_non_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"[DEBUG] JD Tech Distribution: {jd_tech_dist[0]} + {jd_tech_dist[1]} + {jd_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"[DEBUG] JD Non Tech Distribution: {jd_non_tech_dist[0]} + {jd_non_tech_dist[1]} + {jd_non_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"[DEBUG] Blend Tech Distribution: {blend_tech_dist[0]} + {blend_tech_dist[1]} + {blend_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"[DEBUG] Blend Non Tech Distribution: {blend_non_tech_dist[0]} + {blend_non_tech_dist[1]} + {blend_non_tech_dist[2]}{Style.RESET_ALL}")
+
+    print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
+    print(
+        f"  {Fore.YELLOW}Technical -> Beginner={resume_tech_dist[0] + jd_tech_dist[0] + blend_tech_dist[0]}, Medium={resume_tech_dist[1] + jd_tech_dist[1] + blend_tech_dist[1]}, Hard={resume_tech_dist[2] + jd_tech_dist[2] + blend_tech_dist[2]}{Style.RESET_ALL}")
+    print(
+        f"  {Fore.GREEN}Non-Technical     -> Beginner={resume_non_tech_dist[0] + jd_non_tech_dist[0] + blend_non_tech_dist[0]}, Medium={resume_non_tech_dist[1] + jd_non_tech_dist[1] + blend_non_tech_dist[1]}, Hard={resume_non_tech_dist[2] + jd_non_tech_dist[2] + blend_non_tech_dist[2]}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}=========================={Style.RESET_ALL}\n")
+
     beginner_qs, medium_qs, hard_qs = [], [], []
 
     # --- Local helper: Resume-only or JD-only ---
-    def generate_from_source(level, count, weight, source):
+    def generate_from_source(level, count, weight, source, q_type):
         if count <= 0:
             return []
         context = (
@@ -927,6 +1150,11 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
             if source == "resume"
             else f"Job Title: {job_title}\nJob Description:\n{job_description}"
         )
+
+        level_topic_list = topics_list.get(level, 1)
+        print(f"[DEBUG] Topic List by Level {level_topic_list}")
+        print(" ")
+
         prompt = f"""
         You are an expert AI interviewer preparing questions for a candidate.
 
@@ -934,13 +1162,25 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
         {context}
 
         Task:
-        Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
+        Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {level_topic_list}.
 
         Rules:
         - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
         - Each question must come from a topic with the same level of difficulty.
-        - Each topic in {topics_list.get(level, 1)} must only be used once.
+        - Each topic in {level_topic_list} must only be used once.
+        - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
+        - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
         - Only return a pure JSON array of {count} objects.
+        - No explanations, no markdown, no text before/after the JSON.
+        Format:
+            [
+              {{
+                "question": "...",
+                "difficulty": "{level}",
+                "weight": {weight}
+              }},
+              ...
+            ]
         """
         try:
             response = try_ollama_chat(prompt.strip(), model=model)
@@ -950,9 +1190,14 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
             return []
 
     # --- Local helper: Blended ---
-    def generate_blended(level, count, weight):
+    def generate_blended(level, count, weight, q_type):
         if count <= 0:
             return []
+
+        level_topic_list = topics_list.get(level, 1)
+        print(f"[DEBUG] Topic List by Level {level_topic_list}")
+        print(" ")
+
         prompt = f"""
         You are an expert AI interviewer preparing questions.
 
@@ -965,14 +1210,26 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
         Job Description: {job_description}
 
         Task:
-        Generate {count} unique interview questions with difficulty "{level}" from the list of topics {topics_list.get(level, 1)}.
+        Generate {count} unique interview questions with difficulty "{level}" from the list of topics {level_topic_list}.
 
         Rules:
         - Each question must combine resume + JD naturally.
         - Each question must be labeled with "difficulty": "{level}", "weight": {weight}.
         - Each question should come from a topic with the same level of difficulty.
-        - Each topic in {topics_list.get(level, 1)} must only be used once.
+        - Each topic in {level_topic_list} must only be used once.
+        - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
+        - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
         - Only return a pure JSON array of {count} objects.
+        - No explanations, no markdown, no text before/after the JSON.
+        Format:
+            [
+              {{
+                "question": "...",
+                "difficulty": "{level}",
+                "weight": {weight}
+              }},
+              ...
+            ]
         """
         try:
             response = try_ollama_chat(prompt.strip(), model=model)
@@ -982,28 +1239,53 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
             return []
 
     # --- Step 4–6: Generate Questions ---
-    beginner_qs.extend(generate_from_source("beginner", resume_dist[0], 1, "resume"))
-    medium_qs.extend(generate_from_source("medium", resume_dist[1], 3, "resume"))
-    hard_qs.extend(generate_from_source("hard", resume_dist[2], 5, "resume"))
+    beginner_qs.extend(generate_from_source("beginner", resume_tech_dist[0], 1, "resume", 'Technical'))
+    beginner_qs.extend(generate_from_source("beginner", resume_non_tech_dist[0], 1, "resume", 'Non-Technical'))
+    medium_qs.extend(generate_from_source("medium", resume_tech_dist[1], 3, "resume", 'Technical'))
+    medium_qs.extend(generate_from_source("medium", resume_non_tech_dist[1], 3, "resume", 'Non-Technical'))
+    hard_qs.extend(generate_from_source("hard", resume_tech_dist[2], 5, "resume", 'Technical'))
+    hard_qs.extend(generate_from_source("hard", resume_non_tech_dist[2], 5, "resume", 'Non-Technical'))
 
-    beginner_qs.extend(generate_from_source("beginner", jd_dist[0], 1, "jd"))
-    medium_qs.extend(generate_from_source("medium", jd_dist[1], 3, "jd"))
-    hard_qs.extend(generate_from_source("hard", jd_dist[2], 5, "jd"))
+    beginner_qs.extend(generate_from_source("beginner", jd_tech_dist[0], 1, "jd", 'Technical'))
+    beginner_qs.extend(generate_from_source("beginner", jd_non_tech_dist[0], 1, "jd", 'Non-Technical'))
+    medium_qs.extend(generate_from_source("medium", jd_tech_dist[1], 3, "jd", 'Technical'))
+    medium_qs.extend(generate_from_source("medium", jd_non_tech_dist[1], 3, "jd", 'Non-Technical'))
+    hard_qs.extend(generate_from_source("hard", jd_tech_dist[2], 5, "jd", 'Technical'))
+    hard_qs.extend(generate_from_source("hard", jd_non_tech_dist[2], 5, "jd", 'Non-Technical'))
 
-    beginner_qs.extend(generate_blended("beginner", blend_dist[0], 1))
-    medium_qs.extend(generate_blended("medium", blend_dist[1], 3))
-    hard_qs.extend(generate_blended("hard", blend_dist[2], 5))
+    beginner_qs.extend(generate_blended("beginner", blend_tech_dist[0], 1, 'Technical'))
+    beginner_qs.extend(generate_blended("beginner", blend_non_tech_dist[0], 1, 'Non-Technical'))
+    medium_qs.extend(generate_blended("medium", blend_tech_dist[1], 3, 'Technical'))
+    medium_qs.extend(generate_blended("medium", blend_non_tech_dist[1], 3, 'Non-Technical'))
+    hard_qs.extend(generate_blended("hard", blend_tech_dist[2], 5, 'Technical'))
+    hard_qs.extend(generate_blended("hard", blend_non_tech_dist[2], 5, 'Non-Technical'))
 
     # --- Step 7: Guarantee final counts match user input ---
     def trim_or_pad(lst, target, level, weight):
+        level_mapping = {
+            "beginner": 0,
+            "medium": 1,
+            "hard": 2,
+        }
         if len(lst) > target:
             return lst[:target]
         while len(lst) < target:
-            new_qs = generate_from_source(level, 1, weight, "jd")
+            if (resume_tech_dist[level_mapping.get(level, 1)] + jd_tech_dist[level_mapping.get(level, 1)] + blend_tech_dist[level_mapping.get(level, 1)] < round((target * technical_pct) / 100)):
+                new_qs = generate_from_source(level, 1, weight, "jd", 'Technical')
+            else:
+                new_qs = generate_from_source(level, 1, weight, "jd", 'Non-Technical')
             if not new_qs:
-                new_qs = generate_from_source(level, 1, weight, "resume")
+                if (resume_tech_dist[level_mapping.get(level, 1)] + jd_tech_dist[level_mapping.get(level, 1)] +
+                        blend_tech_dist[level_mapping.get(level, 1)] < round((target * technical_pct) / 100)):
+                    new_qs = generate_from_source(level, 1, weight, "resume", 'Technical')
+                else:
+                    new_qs = generate_from_source(level, 1, weight, "resume", 'Non-Technical')
             if not new_qs:
-                new_qs = generate_blended(level, 1, weight)
+                if (resume_tech_dist[level_mapping.get(level, 1)] + jd_tech_dist[level_mapping.get(level, 1)] +
+                        blend_tech_dist[level_mapping.get(level, 1)] < round((target * technical_pct) / 100)):
+                    new_qs = generate_blended(level, 1, weight, 'Technical')
+                else:
+                    new_qs = generate_blended(level, 1, weight, 'Non-Technical')
             if not new_qs:
                 new_qs = [{"question": f"Fallback {level} question", "difficulty": level, "weight": weight}]
             lst.extend(new_qs)
@@ -1027,7 +1309,7 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
 
 # === CORE QUESTION GENERATION WITH ANSWERS INTEGRATED ===
 
-def generate_answers_for_existing_questions(structured_resume, job_title, job_description, questions_csv_path, output_path, model="llama3"):
+def generate_answers_for_existing_questions(structured_resume, job_title, job_description, questions_csv_path, output_path, technical, model="llama3"):
     if not os.path.exists(questions_csv_path):
         raise FileNotFoundError(f"[ERROR] CSV not found: {questions_csv_path}")
 
@@ -1057,7 +1339,15 @@ Resume:
 Job Description:
 {job_description}
 
-Only respond with the answer text, no formatting.
+Rules:
+- Only respond with the answer text, no formatting.
+- If {technical} is True, the answer should contain a technical example or snippet that contains more than speech when applicable.
+- If {technical} is False, the answer must not contain a technical example.
+- If the question asks the candidate to design something, the answer must include a technical example or snippet along with the general design.
+- If {technical} is True, and the question asks for an example, produce a concrete highly technical example or snippet that does not contain speech.
+- If {technical} is True, and the question asks to use a specific tool or technology, produce a concrete highly technical example or snippet that does not contain speech using that tool or technology instead of a simple explanation.
+- If {technical} is True, and the question asks to describe an approach, produce a concrete highly technical example or snippet that does not contain speech
+- If {technical} is True, and the question asks to imagine a scenario, produce a concrete highly technical example or snippet that does not contain speech.
 """
                 try:
                     response = try_ollama_chat(prompt.strip(), model=model)
@@ -1100,6 +1390,7 @@ def parse_job_description_file(file_path, model="llama3"):
         start += max_tokens - overlap
 
     print(f"[INFO] JD token count: {len(tokens)}; Total Chunks: {len(chunks)}")
+
 
     result = {
         "job_title": "",
@@ -1156,6 +1447,9 @@ def parse_job_description_file(file_path, model="llama3"):
         except Exception as e:
             print(f"[ERROR] Failed to process chunk {idx+1}: {e}")
             continue
+
+    technical_role = technical_role_detection(result["job_title"], result["job_description"])
+    result["technical_role"] = technical_role
 
     result["job_description"] = result["job_description"].strip()
     return result
@@ -1325,6 +1619,38 @@ def main():
 #                 }
 #             print("[INFO] Retrying...\n")
 
+def technical_role_detection(job_title, job_description, retries = 2, model="llama3"):
+    print(f"[DEBUG] Job Title: {job_title}")
+    print(f"[DEBUG] Job Description: {job_description}")
+    result = False
+    for attempt in range(retries):
+        prompt = f'''
+            You are a strict binary classifier to determine whether a position is a role that requires technical expertise or not.
+            
+            Job Title:
+            {job_title}
+            
+            Job Description:
+            {job_description}
+            
+            Rules:
+            - If the job title clearly defines a technical expertise requirement, return True
+            - If the job description clearly defines a technical expertise requirement, return True
+            - If neither the job title or job description clearly define a technical expertise requirement, return False
+            - Only return a Boolean value of True or False
+            - No explanations, no markdown, no text before/after the Boolean.
+        '''
+        try:
+            response = try_ollama_chat(prompt.strip(), model=model)
+            raw = response["message"]["content"]
+            print(f"[DEBUG] Parsing completed successfully")
+            print(f"[DEBUG] Technical Role: {raw}")
+            result = raw.strip().lower()
+        except Exception as e:
+            print(f"[DEBUG] Failed to classify technical role: {e}")
+            result = False
+    return result
+
 def run_pipeline_from_api(
     resume_path,
     job_title,
@@ -1336,7 +1662,9 @@ def run_pipeline_from_api(
     jd_pct=50,
     blend=False,
     blend_pct_resume=50,   # for blend mode: percentage weight of resume context
-    blend_pct_jd=50,       # for blend mode: percentage weight of JD context
+    blend_pct_jd=50, # for blend mode: percentage weight of JD context
+    technical = False,
+    technical_pct=50,
     max_retries=1000
 ):
 
@@ -1368,7 +1696,9 @@ def run_pipeline_from_api(
             print(f"[INFO] Question counts: {question_counts}")
             print(f"[INFO] Include answers: {include_answers}")
             print(f"[INFO] Split mode: {split} (Resume {resume_pct}% | JD {jd_pct}%)")
-            
+            print(f"[INFO] Blend mode: {blend} (Resume {blend_pct_resume}% | JD {blend_pct_jd}%)")
+            print(f"[INFO] Technical Mode: {technical} (Technical {technical_pct}%)")
+
             # Extract resume text and parse into structured data
             resume_text = extract_text_from_resume(resume_path)
             structured_data = ask_ollama_for_structured_data_chunked(resume_text)
@@ -1395,7 +1725,7 @@ def run_pipeline_from_api(
             questions_path = os.path.join(temp_dir, "questions.csv")
             qa_path = os.path.join(temp_dir, "interview_output.csv")
 
-            topics = generate_topic_list(structured_data, job_title, job_description, split, blend,
+            topics = generate_topic_list(structured_data, job_title, job_description, split, blend, technical, technical_pct,
                                          question_counts.get('beginner', 1), question_counts.get('medium', 1), question_counts.get('hard', 1),
                                          jd_pct, resume_pct, blend_pct_jd, blend_pct_resume)
             # Save parsed resume
@@ -1408,13 +1738,15 @@ def run_pipeline_from_api(
                     job_title,
                     job_description,
                     topics,
+                    technical,
+                    technical_pct,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1),
                     resume_pct,
                     jd_pct,
                     blend_pct_resume=blend_pct_resume,
-                    blend_pct_jd=blend_pct_jd
+                    blend_pct_jd=blend_pct_jd,
                 )
             elif split:
                 core_questions = generate_split_questions(
@@ -1422,11 +1754,13 @@ def run_pipeline_from_api(
                     job_title,
                     job_description,
                     topics,
+                    technical,
+                    technical_pct,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1),
                     resume_pct,
-                    jd_pct
+                    jd_pct,
                 )
             elif blend:
                 core_questions = generate_blend_questions(
@@ -1434,11 +1768,13 @@ def run_pipeline_from_api(
                     job_title,
                     job_description,
                     topics,
+                    technical,
+                    technical_pct,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
                     question_counts.get('hard', 1),
                     blend_pct_resume,
-                    blend_pct_jd
+                    blend_pct_jd,
                 )
             else:
                 core_questions = generate_core_questions(
@@ -1446,9 +1782,11 @@ def run_pipeline_from_api(
                     job_title,
                     job_description,
                     topics,
+                    technical,
+                    technical_pct,
                     question_counts.get('beginner', 1),
                     question_counts.get('medium', 1),
-                    question_counts.get('hard', 1)
+                    question_counts.get('hard', 1),
                 )
 
 
@@ -1462,7 +1800,8 @@ def run_pipeline_from_api(
                     job_title,
                     job_description,
                     questions_path,
-                    qa_path
+                    qa_path,
+                    technical
                 )
                 final_csv_path = qa_path
             else:

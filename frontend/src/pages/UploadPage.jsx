@@ -34,9 +34,12 @@ function UploadPage() {
   const [hardQuestions, setHardQuestions] = useState(1); // ✅ Changed from 2 to 1
   const [splitMode, setSplitMode] = useState(false);
   const [blendMode, setBlendMode] = useState(false);
+  const [technicalMode, setTechnicalMode] = useState(false);
+  const [technicalRole, setTechnicalRole] = useState(false);
   const [splitResumePercentage, setSplitResumePercentage] = useState(50);
   const [blendResumePercentage, setBlendResumePercentage] = useState(50);
   const [questionValidationError, setQuestionValidationError] = useState('');
+  const [technicalPercentage, setTechnicalPercentage] = useState(40);
 
   useEffect(() => {
     console.log('Question counts:', { easyQuestions, mediumQuestions, hardQuestions });
@@ -85,6 +88,13 @@ function UploadPage() {
         throw new Error(result.message || 'Failed to parse job description');
       }
 
+      console.log('[DEBUG] Technical Role: ', result.data.technical_role)
+
+      if (result.data.technical_role == "true") {
+        setTechnicalRole(true);
+      } else {
+        setTechnicalRole(false);
+      }
       // Populate the fields with parsed data
       setJobTitle(result.data.job_title || '');
       setJobDescription(result.data.job_description || '');
@@ -228,6 +238,7 @@ function UploadPage() {
     console.log('hardQuestions:', hardQuestions);
     console.log('splitMode:', splitMode);
     console.log('blendMode:', blendMode);
+    console.log('technicalMode:', technicalMode);
     console.log('totalQuestions:', easyQuestions + mediumQuestions + hardQuestions);
     console.log('=====================================');
     
@@ -240,10 +251,10 @@ function UploadPage() {
     const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
 
     // Only validate when both split AND blend modes are enabled
-    if (splitMode && blendMode) {
+    if (splitMode && blendMode || technicalMode) {
       // Both modes on - need at least 6 total questions
       if (totalQuestions < 6) {
-        setQuestionValidationError('When both Split and Blend modes are enabled, you need at least 6 total questions.');
+        setQuestionValidationError('When both Split and Blend modes are both enabled or Technical Mode is enabled, you need at least 6 total questions.');
         return;
       }
     }
@@ -387,7 +398,9 @@ function UploadPage() {
           jd_pct: 100 - splitResumePercentage,
           blend: blendMode,
           blend_pct_resume: blendResumePercentage,
-          blend_pct_jd: 100 - blendResumePercentage
+          blend_pct_jd: 100 - blendResumePercentage,
+          technical: technicalMode,
+          technical_pct: technicalPercentage
         })
       });
 
@@ -540,6 +553,8 @@ function UploadPage() {
       return "Split Mode: Separate questions from resume vs job description";
     } else if (blendMode) {
       return "Blend Mode: Questions that blend resume and job description content";
+    } else if (technicalMode) {
+      return "Technical Mode: Questions that explore the technical requirements of the position"
     } else {
       return "Standard Mode: Balanced questions from both sources";
     }
@@ -672,6 +687,7 @@ function UploadPage() {
                         </p>
                       </div>
 
+
                       {/* Question Counts */}
                       <div className="space-y-4 mb-6">
                         <div className="flex items-center justify-between">
@@ -756,6 +772,62 @@ function UploadPage() {
                             </div>
                           </div>
                         </div>
+
+                        {/* Technical Mode Settings */}
+                        <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                              Technical Mode
+                            </label>
+                            <p className="text-xs text-[var(--color-text-secondary)]">
+                              Generate questions that require a technical component to answer
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTechnicalMode(!technicalMode)}
+                            disabled={loading || !technicalRole}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              technicalMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                            } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                technicalMode ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                        {technicalMode && (
+                            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                  <label className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-3">
+                                    Technical Questions
+                                  </label>
+                                  <span className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-100/70 dark:bg-yellow-800/30 px-2 py-1 rounded-full">
+                                    {technicalPercentage}
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="100"
+                                  value={technicalPercentage}
+                                  onChange={(e) => setTechnicalPercentage(parseInt(e.target.value))}
+                                  disabled={loading}
+                                  className="w-full h-2 bg-yellow-200/50 dark:bg-yellow-700/30 rounded-lg appearance-none cursor-pointer slider-yellow"
+                                />
+                                <div className="flex justify-between text-xs text-yellow-600/70 dark:text-yellow-400/70 mt-1">
+                                  <span>0</span>
+                                  <span>100</span>
+                                </div>
+                            </div>
+                        )}
+
+                     </div>
+
+
 
                         {/* Validation Error Message */}
                         {!canGenerateQuestions() && splitMode && blendMode && (

@@ -575,13 +575,15 @@ def parse_job_description():
             
             print(f"[DEBUG] Parsing completed successfully")
             print(f"[DEBUG] Result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            print(f"[DEBUG] Title and Technical Role: {result.get('job_title', '')} {result.get('technical_role', '')}")
             
             return jsonify({
                 "success": True,
                 "message": "Job description parsed successfully",
                 "data": {
                     "job_title": result.get('job_title', ''),
-                    "job_description": result.get('job_description', '')
+                    "job_description": result.get('job_description', ''),
+                    "technical_role": result.get('technical_role', '')
                 }
             })
             
@@ -641,6 +643,8 @@ def generate_questions():
         blend_mode = data.get('blend', False)
         blend_pct_resume = data.get('blend_pct_resume', 50)
         blend_pct_jd = data.get('blend_pct_jd', 50)
+        technical = data.get('technical', False)
+        technical_pct = data.get('technical_pct', 50)
         
         if not all([resume_url, job_description, job_title]):
             return jsonify({
@@ -652,6 +656,7 @@ def generate_questions():
         print(f"[DEBUG] Question counts: {question_counts}")
         print(f"[DEBUG] Split mode: {split_mode} (Resume {resume_pct}% | JD {jd_pct}%)")
         print(f"[DEBUG] Blend mode: {blend_mode} (Resume {blend_pct_resume}% | JD {blend_pct_jd}%)")
+        print(f"[DEBUG] Technical mode: {technical} (Technical {technical_pct}%")
         
         # Download resume file from Supabase Storage
         import requests
@@ -694,7 +699,9 @@ def generate_questions():
                 jd_pct=jd_pct,
                 blend=blend_mode,
                 blend_pct_resume=blend_pct_resume,
-                blend_pct_jd=blend_pct_jd
+                blend_pct_jd=blend_pct_jd,
+                technical=technical,
+                technical_pct=technical_pct,
             )
             
             if not result.get('success'):
