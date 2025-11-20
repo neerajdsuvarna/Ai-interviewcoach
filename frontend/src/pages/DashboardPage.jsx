@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FiFileText, FiBriefcase, FiPlay, FiEye, FiRefreshCw, FiCalendar } from 'react-icons/fi';
+import { FiFileText, FiBriefcase, FiPlay, FiEye, FiRefreshCw, FiCalendar, FiBarChart2 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 import Navbar from '../components/Navbar';
@@ -9,6 +9,7 @@ import SuccessModal from '../components/SuccessModal';
 import { supabase } from '../supabaseClient';
 import { apiPost } from '../api';
 import { trackEvents } from '../services/mixpanel';
+import PerformanceGraph from '../components/PerformanceGraph';
 
 function DashboardPage() {
   const { theme } = useTheme();
@@ -25,6 +26,8 @@ function DashboardPage() {
   const [successModal, setSuccessModal] = useState({ isOpen: false, title: '', message: '', details: null });
   const [downloadingResume, setDownloadingResume] = useState(new Set());
   const [downloadSuccess, setDownloadSuccess] = useState(null);
+  // Add state for loading overall performance
+
 
   useEffect(() => {
     fetchDashboardData();
@@ -427,7 +430,12 @@ function DashboardPage() {
             </p>
           </div>
 
-
+          {/* Performance Graph - Only shows when user has 2+ completed interviews */}
+          {resumeJobPairings.length > 0 && (
+            <div className="mb-6 sm:mb-8">
+              <PerformanceGraph resumeJobPairings={resumeJobPairings} />
+            </div>
+          )}
 
           {/* Upload Button Section - Only show for users with existing data */}
           {resumeJobPairings.length > 0 && (

@@ -558,6 +558,62 @@ async function handleUpdateInterview(supabaseClient: any, req: Request, user: an
       )
     }
 
+    // ✅ NEW: Auto-trigger overall performance analysis when interview is marked as ENDED
+    if (status === 'ENDED') {
+      console.log(`[INFO] Interview ${interviewId} marked as ENDED, checking if auto-analysis should run...`)
+      
+      try {
+        // Count all interviews with feedback that have metrics (including the one we just updated)
+        // This query will include the interview we just marked as ENDED
+        const { data: feedbacksWithMetrics, error: feedbackError } = await supabaseClient
+          .from('interview_feedback')
+          .select(`
+            id,
+            interviews!inner(
+              id,
+              user_id,
+              status
+            )
+          `)
+          .eq('interviews.user_id', user.id)
+          .eq('interviews.status', 'ENDED')
+          .not('metrics', 'is', null)
+
+        const interviewCount = feedbacksWithMetrics?.length || 0
+
+        // Trigger analysis when user has 2 or more completed interviews (>= 2 includes exactly 2)
+        if (interviewCount >= 2) {
+          console.log(`[INFO] User has ${interviewCount} completed interviews (need 2+), triggering auto-analysis...`)
+          
+          // Call overall-performance edge function asynchronously (don't wait for response)
+          const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+          const overallPerformanceUrl = `${supabaseUrl}/functions/v1/overall-performance`
+          
+          // Get auth token from request
+          const authHeader = req.headers.get('Authorization')
+          
+          // Fire and forget - don't block the interview update
+          fetch(overallPerformanceUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': authHeader || '',
+              'Content-Type': 'application/json',
+            },
+          }).catch(err => {
+            console.error(`[ERROR] Failed to trigger auto-analysis: ${err.message}`)
+            // Don't fail the interview update if analysis fails
+          })
+          
+          console.log(`[INFO] Auto-analysis triggered for user ${user.id}`)
+        } else {
+          console.log(`[INFO] User has ${interviewCount} completed interviews, skipping auto-analysis (need 2+)`)
+        }
+      } catch (analysisError) {
+        console.error(`[ERROR] Error checking interview count for auto-analysis: ${analysisError.message}`)
+        // Don't fail the interview update if this check fails
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,

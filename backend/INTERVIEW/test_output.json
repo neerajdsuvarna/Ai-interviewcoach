@@ -1,0 +1,332 @@
+{
+  "success": true,
+  "total_interviews": 50,
+  "numeric_results": {
+    "regression_trend": "declining",
+    "percent_change": -93.58,
+    "trend_shape": "steady-down",
+    "consistency": "low",
+    "volatility": "high",
+    "mean_score": 2.75,
+    "best_metric": "confidence_tone",
+    "weakest_metric": "motivation_indicator",
+    "recommended_focus": "motivation_indicator",
+    "latest_emotion": "frustrated"
+  },
+  "metric_progress": {
+    "knowledge_depth": {
+      "average_first_half": 5.28,
+      "average_second_half": 0.37,
+      "regression_trend": "declining",
+      "volatility": "high",
+      "mean_score": 2.82,
+      "slope": -0.1873
+    },
+    "communication_clarity": {
+      "average_first_half": 5.01,
+      "average_second_half": 0.29,
+      "regression_trend": "declining",
+      "volatility": "high",
+      "mean_score": 2.65,
+      "slope": -0.1794
+    },
+    "confidence_tone": {
+      "average_first_half": 4.83,
+      "average_second_half": 0.22,
+      "regression_trend": "declining",
+      "volatility": "high",
+      "mean_score": 2.52,
+      "slope": -0.1766
+    },
+    "reasoning_ability": {
+      "average_first_half": 5.02,
+      "average_second_half": 0.29,
+      "regression_trend": "declining",
+      "volatility": "high",
+      "mean_score": 2.66,
+      "slope": -0.1802
+    },
+    "relevance_to_question": {
+      "average_first_half": 5.28,
+      "average_second_half": 0.37,
+      "regression_trend": "declining",
+      "volatility": "high",
+      "mean_score": 2.82,
+      "slope": -0.1873
+    },
+    "motivation_indicator": {
+      "average_first_half": 5.55,
+      "average_second_half": 0.46,
+      "regression_trend": "declining",
+      "volatility": "high",
+      "mean_score": 3.0,
+      "slope": -0.1949
+    }
+  },
+  "timeline_scores": [
+    {
+      "interview_number": 1,
+      "score": 8.42,
+      "emotion": "confident"
+    },
+    {
+      "interview_number": 2,
+      "score": 7.97,
+      "emotion": "confident"
+    },
+    {
+      "interview_number": 3,
+      "score": 7.68,
+      "emotion": "confident"
+    },
+    {
+      "interview_number": 4,
+      "score": 7.38,
+      "emotion": "confident"
+    },
+    {
+      "interview_number": 5,
+      "score": 7.12,
+      "emotion": "neutral"
+    },
+    {
+      "interview_number": 6,
+      "score": 6.88,
+      "emotion": "neutral"
+    },
+    {
+      "interview_number": 7,
+      "score": 6.65,
+      "emotion": "neutral"
+    },
+    {
+      "interview_number": 8,
+      "score": 6.4,
+      "emotion": "neutral"
+    },
+    {
+      "interview_number": 9,
+      "score": 6.15,
+      "emotion": "neutral"
+    },
+    {
+      "interview_number": 10,
+      "score": 5.9,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 11,
+      "score": 5.65,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 12,
+      "score": 5.4,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 13,
+      "score": 5.15,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 14,
+      "score": 4.9,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 15,
+      "score": 4.65,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 16,
+      "score": 4.4,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 17,
+      "score": 4.15,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 18,
+      "score": 3.9,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 19,
+      "score": 3.65,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 20,
+      "score": 3.4,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 21,
+      "score": 3.15,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 22,
+      "score": 2.9,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 23,
+      "score": 2.65,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 24,
+      "score": 2.4,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 25,
+      "score": 2.15,
+      "emotion": "nervous"
+    },
+    {
+      "interview_number": 26,
+      "score": 1.9,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 27,
+      "score": 1.65,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 28,
+      "score": 1.4,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 29,
+      "score": 1.15,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 30,
+      "score": 0.9,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 31,
+      "score": 0.65,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 32,
+      "score": 0.4,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 33,
+      "score": 0.18,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 34,
+      "score": 0.05,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 35,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 36,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 37,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 38,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 39,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 40,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 41,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 42,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 43,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 44,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 45,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 46,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 47,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 48,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 49,
+      "score": 0.0,
+      "emotion": "frustrated"
+    },
+    {
+      "interview_number": 50,
+      "score": 0.0,
+      "emotion": "frustrated"
+    }
+  ],
+  "llm_explanations": {
+    "summary": "The overall performance trend has been declining with a regression trend of 'declining'. The percent change in performance is -93.58%, and the mean score is 2.75. The performance has been steadily decreasing over time, indicating a need for improvement.",
+    "strengths": [],
+    "improvement_areas": [
+      "Work on improving motivation indicator.",
+      "Work on improving relevance to question."
+    ],
+    "recommendations": [
+      "{'step': 'Review and update your goals and objectives to ensure they align with your current priorities.'}",
+      "{'step': 'Practice explaining complex concepts in simple terms.'}",
+      "{'step': 'Identify and eliminate any distractions or obstacles that may be affecting your motivation.'}"
+    ],
+    "confidence_level": "low"
+  }
+}

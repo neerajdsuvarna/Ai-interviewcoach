@@ -55,6 +55,7 @@ from common.auth import verify_supabase_token  # Import the decorator
 device = get_device()
 interview_instances = {}
 from INTERVIEW.Interview_manager import InterviewManager
+from INTERVIEW.analyze_performance_trends import analyze_user_performance, analyze_performance_from_feedbacks
 
 # ─────────────────────────────────────────────────────
 # Head Tracking Implementation
@@ -1070,6 +1071,7 @@ def generate_response():
                     summary = manager.final_summary
                     key_strengths = manager.key_strengths
                     improvement_areas = manager.improvement_areas
+                    metrics = manager.metrics  # ✅ ADD THIS - Get metrics from manager
                     
                     # ✅ UPDATED: Save feedback to interview_feedback table with audio transcript URL
                     feedback_data = {
@@ -1077,7 +1079,8 @@ def generate_response():
                         "summary": summary,
                         "key_strengths": key_strengths,
                         "improvement_areas": improvement_areas,
-                        "audio_url": audio_transcript_url  # ✅ NEW: Include audio transcript URL
+                        "audio_url": audio_transcript_url,
+                        "metrics": metrics  # ✅ ADD THIS - Include metrics in feedback data
                     }
                     
                     print(f"[DEBUG] Saving feedback data: {feedback_data}")
@@ -1814,6 +1817,75 @@ if preload_success:
     print("[SUCCESS] All models preloaded successfully")
 else:
     print("[WARNING] Some models failed to preload, will initialize on first request")
+
+@app.route('/api/analyze-performance-trends', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def analyze_performance_trends():
+    """
+    Analyze user's interview performance trends and generate overall evaluation.
+    Accepts either:
+    1. auth_token in header + optional model/limit in body (fetches data internally)
+    2. feedbacks array in body (processes provided data directly)
+    """
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+    
+    try:
+        data = request.get_json() or {}
+        
+        # Check if feedbacks are provided directly
+        if 'feedbacks' in data and isinstance(data['feedbacks'], list):
+            # Process provided feedbacks directly
+            model = data.get('model', 'llama3')
+            feedbacks = data['feedbacks']
+            
+            print(f"[INFO] Processing {len(feedbacks)} feedbacks provided in request")
+            print(f"[INFO] Model: {model}")
+            
+            # Call the analysis function with feedbacks
+            analysis_result = analyze_performance_from_feedbacks(feedbacks, model)
+            
+        else:
+            # Original flow: fetch data using auth token
+            auth_header = request.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
+                return jsonify({
+                    "success": False,
+                    "message": "Authorization token required when feedbacks not provided"
+                }), 401
+            
+            auth_token = auth_header.split(' ')[1]
+            model = data.get('model', 'llama3')
+            limit = data.get('limit', 100)
+            
+            print(f"[INFO] Fetching and analyzing performance for user")
+            print(f"[INFO] Model: {model}, Limit: {limit}")
+            
+            # Call the original analysis function
+            analysis_result = analyze_user_performance(auth_token, model, limit)
+        
+        if not analysis_result.get('success'):
+            return jsonify({
+                "success": False,
+                "message": analysis_result.get('error', 'Analysis failed'),
+                "data": analysis_result
+            }), 400
+        
+        return jsonify({
+            "success": True,
+            "message": "Performance analysis completed successfully",
+            "data": analysis_result
+        }), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Error in analyze_performance_trends endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "message": f"Failed to analyze performance: {str(e)}"
+        }), 500
 
 if __name__ == '__main__': 
     socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)
