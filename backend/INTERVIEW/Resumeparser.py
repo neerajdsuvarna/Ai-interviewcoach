@@ -601,11 +601,12 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
         Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {level_topic_list}.
 
         Rules:
-        - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+        - Each question must be labeled with "difficulty": "{level}", "weight": {weight}, and "q_type": "{q_type.upper()}".
         - Each question must come from a topic with the same level of difficulty.
         - Each topic in {level_topic_list} must only be used once.
         - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
         - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
+        - If {technical} is True and {q_type.upper()} is NON-TECHNICAL, generate questions that DO NOT require a technical example or a snippet in their answer.
         - Only return a pure JSON array of {count} objects.
         - No explanations, no markdown, no text before/after the JSON.
 
@@ -615,6 +616,7 @@ def generate_core_questions(structured_resume, job_title, job_description, topic
             "question": "...",
             "difficulty": "{level}",
             "weight": {weight},
+            "q_type": {q_type.upper()}
         }},
         ...
         ]
@@ -717,13 +719,25 @@ def generate_split_questions(structured_resume, job_title, job_description, topi
             Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {topics_list.get(level, 1)}.
 
             Rules:
-            - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+            - Each question must be labeled with "difficulty": "{level}", "weight": {weight}, and "q_type": "{q_type.upper()}".
             - Each question must come from a topic with the same level of difficulty.
             - Each topic in {level_topic_list} must only be used once.
             - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
             - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
+            - If {technical} is True and {q_type.upper()} is NON-TECHNICAL, generate questions that DO NOT require a technical example or a snippet in their answer.
             - Only return a pure JSON array of {count} objects.
             - No explanations, no markdown, no text before/after the JSON.
+            
+            Format:
+            [
+            {{
+                "question": "...",
+                "difficulty": "{level}",
+                "weight": {weight},
+                "q_type": {q_type.upper()}
+            }},
+            ...
+            ]
             """
             try:
                 response = try_ollama_chat(prompt.strip(), model=model)
@@ -881,22 +895,24 @@ def generate_blend_questions(structured_resume, job_title, job_description, topi
 
             Rules:
             - Each question must naturally combine both resume and JD information.
-            - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+            - Each question must be labeled with "difficulty": "{level}", "weight": {weight}, and "q_type": "{q_type.upper()}".
             - Each question must come from a topic with the same level of difficulty.
             - Each topic in {level_topic_list} must only be used once.
             - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
             - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
+            - If {technical} is True and {q_type.upper()} is NON-TECHNICAL, generate questions that DO NOT require a technical example or a snippet in their answer.
             - Only return a pure JSON array of {count} objects.
             - No explanations, no markdown, no text before/after the JSON.
 
             Format:
             [
-              {{
+            {{
                 "question": "...",
                 "difficulty": "{level}",
-                "weight": {weight}
-              }},
-              ...
+                "weight": {weight},
+                "q_type": {q_type.upper()}
+            }},
+            ...
             ]
             """
             try:
@@ -1125,12 +1141,12 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
     blend_tech_dist = technical_distribute(technical_pct, blend_dist)
     blend_non_tech_dist = non_technical_distribute(technical_pct, blend_dist)
 
-    print(f"[DEBUG] Resume Tech Distribution: {resume_tech_dist[0]} + {resume_tech_dist[1]} + {resume_tech_dist[2]}{Style.RESET_ALL}")
-    print(f"[DEBUG] Resume Non Tech Distribution: {resume_non_tech_dist[0]} + {resume_non_tech_dist[1]} + {resume_non_tech_dist[2]}{Style.RESET_ALL}")
-    print(f"[DEBUG] JD Tech Distribution: {jd_tech_dist[0]} + {jd_tech_dist[1]} + {jd_tech_dist[2]}{Style.RESET_ALL}")
-    print(f"[DEBUG] JD Non Tech Distribution: {jd_non_tech_dist[0]} + {jd_non_tech_dist[1]} + {jd_non_tech_dist[2]}{Style.RESET_ALL}")
-    print(f"[DEBUG] Blend Tech Distribution: {blend_tech_dist[0]} + {blend_tech_dist[1]} + {blend_tech_dist[2]}{Style.RESET_ALL}")
-    print(f"[DEBUG] Blend Non Tech Distribution: {blend_non_tech_dist[0]} + {blend_non_tech_dist[1]} + {blend_non_tech_dist[2]}{Style.RESET_ALL}")
+    # print(f"[DEBUG] Resume Tech Distribution: {resume_tech_dist[0]} + {resume_tech_dist[1]} + {resume_tech_dist[2]}{Style.RESET_ALL}")
+    # print(f"[DEBUG] Resume Non Tech Distribution: {resume_non_tech_dist[0]} + {resume_non_tech_dist[1]} + {resume_non_tech_dist[2]}{Style.RESET_ALL}")
+    # print(f"[DEBUG] JD Tech Distribution: {jd_tech_dist[0]} + {jd_tech_dist[1]} + {jd_tech_dist[2]}{Style.RESET_ALL}")
+    # print(f"[DEBUG] JD Non Tech Distribution: {jd_non_tech_dist[0]} + {jd_non_tech_dist[1]} + {jd_non_tech_dist[2]}{Style.RESET_ALL}")
+    # print(f"[DEBUG] Blend Tech Distribution: {blend_tech_dist[0]} + {blend_tech_dist[1]} + {blend_tech_dist[2]}{Style.RESET_ALL}")
+    # print(f"[DEBUG] Blend Non Tech Distribution: {blend_non_tech_dist[0]} + {blend_non_tech_dist[1]} + {blend_non_tech_dist[2]}{Style.RESET_ALL}")
 
     print(f"{Fore.CYAN}[BALANCED]{Style.RESET_ALL}")
     print(
@@ -1165,22 +1181,24 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
         Generate {count} unique interview questions with difficulty: "{level}" from the list of topics {level_topic_list}.
 
         Rules:
-        - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
+        - Each question must be labeled with "difficulty": "{level}", "weight": {weight}, and "q_type": "{q_type.upper()}".
         - Each question must come from a topic with the same level of difficulty.
         - Each topic in {level_topic_list} must only be used once.
         - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
         - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
+        - If {technical} is True and {q_type.upper()} is NON-TECHNICAL, generate questions that DO NOT require a technical example or a snippet in their answer.
         - Only return a pure JSON array of {count} objects.
         - No explanations, no markdown, no text before/after the JSON.
         Format:
-            [
-              {{
-                "question": "...",
-                "difficulty": "{level}",
-                "weight": {weight}
-              }},
-              ...
-            ]
+        [
+        {{
+            "question": "...",
+            "difficulty": "{level}",
+            "weight": {weight},
+            "q_type": {q_type.upper()}
+        }},
+        ...
+        ]
         """
         try:
             response = try_ollama_chat(prompt.strip(), model=model)
@@ -1214,22 +1232,24 @@ def generate_hybrid_questions(structured_resume, job_title, job_description, top
 
         Rules:
         - Each question must combine resume + JD naturally.
-        - Each question must be labeled with "difficulty": "{level}", "weight": {weight}.
+        - Each question must be labeled with "difficulty": "{level}", "weight": {weight}, and "q_type": "{q_type.upper()}".
         - Each question should come from a topic with the same level of difficulty.
         - Each topic in {level_topic_list} must only be used once.
         - If {q_type.upper()} is TECHNICAL, questions generated must come from a topic with q_type = "Technical".
         - If {q_type.upper()} is TECHNICAL, generate questions that require the candidate to produce a technical example or a snippet and not a technical explanation. The question must require an answer that contains far more than an explanation.
+        - If {technical} is True and {q_type.upper()} is NON-TECHNICAL, generate questions that DO NOT require a technical example or a snippet in their answer.
         - Only return a pure JSON array of {count} objects.
         - No explanations, no markdown, no text before/after the JSON.
         Format:
-            [
-              {{
-                "question": "...",
-                "difficulty": "{level}",
-                "weight": {weight}
-              }},
-              ...
-            ]
+        [
+        {{
+            "question": "...",
+            "difficulty": "{level}",
+            "weight": {weight},
+            "q_type": {q_type.upper()}
+        }},
+        ...
+        ]
         """
         try:
             response = try_ollama_chat(prompt.strip(), model=model)
@@ -1317,7 +1337,7 @@ def generate_answers_for_existing_questions(structured_resume, job_title, job_de
     with open(questions_csv_path, "r", encoding="utf-8") as infile, open(output_path, "w", newline='', encoding="utf-8") as outfile:
         reader = csv.DictReader(infile)
         writer = csv.writer(outfile)
-        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language", "q_type"])
 
         for row in reader:
             if row["strength"]:  # Skip rows that already have answers
@@ -1341,18 +1361,18 @@ Job Description:
 
 Rules:
 - Only respond with the answer text, no formatting.
-- If {technical} is True, the answer should contain a technical example or snippet that contains more than speech when applicable.
-- If {technical} is False, the answer must not contain a technical example.
+- If {technical} is True AND {row['q_type']} is TECHNICAL, the answer must contain a technical example or snippet that contains more than speech when applicable.
+- If {technical} is True AND {row['q_type']} is NON-TECHNICAL, the answer must not contain a technical example or snippet.
 - If the question asks the candidate to design something, the answer must include a technical example or snippet along with the general design.
-- If {technical} is True, and the question asks for an example, produce a concrete highly technical example or snippet that does not contain speech.
-- If {technical} is True, and the question asks to use a specific tool or technology, produce a concrete highly technical example or snippet that does not contain speech using that tool or technology instead of a simple explanation.
-- If {technical} is True, and the question asks to describe an approach, produce a concrete highly technical example or snippet that does not contain speech
-- If {technical} is True, and the question asks to imagine a scenario, produce a concrete highly technical example or snippet that does not contain speech.
+- If {technical} is True AND {row['q_type']} is TECHNICAL, and the question asks for an example, produce a concrete highly technical example or snippet that does not contain speech.
+- If {technical} is True AND {row['q_type']} is TECHNICAL, and the question asks to use a specific tool or technology, produce a concrete highly technical example or snippet that does not contain speech using that tool or technology instead of a simple explanation.
+- If {technical} is True AND {row['q_type']} is TECHNICAL, and the question asks to describe an approach, produce a concrete highly technical example or snippet that does not contain speech
+- If {technical} is True AND {row['q_type']} is TECHNICAL, and the question asks to imagine a scenario, produce a concrete highly technical example or snippet that does not contain speech.
 """
                 try:
                     response = try_ollama_chat(prompt.strip(), model=model)
                     answer = response["message"]["content"].strip().replace('"', "'")
-                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer, False, ""])
+                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer, False, "", ""])
                     print(f"[DEBUG] ↳ {strength.capitalize()} answer generated.")
                 except Exception as e:
                     print(f"[ERROR] Failed generating answer for {row['question_id']} [{strength}]: {e}")
@@ -1474,7 +1494,7 @@ def deduplicate_string_list(lst):
 def save_questions_to_csv(questions_by_level, output_path):
     with open(output_path, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language", "q_type"])
         qid_counter = 1
         for level in ["beginner", "medium", "hard"]:
             for q in questions_by_level.get(level, []):
@@ -1874,7 +1894,7 @@ def handle_classification(csv_path, final_path):
             question_code_language.append(question_lang)
         with open(csv_path + ".tmp", "w", newline='', encoding="utf-8") as outfile:
             csv_writer = csv.writer(outfile)
-            csv_writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language"])
+            csv_writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code", "code_language", "q_type"])
             # print(f"[DEBUG] Question Code Required: {question_requires_code}")
             # print(f"[DEBUG] Question Code Language: {question_code_language}")
             for question_text, rows in question_groups.items():
@@ -1882,7 +1902,7 @@ def handle_classification(csv_path, final_path):
                 question_code_lang = question_code_language.pop(0)
                 for row in rows:
                     # print(f"[DEBUG] Reading Question from CSV: {row['question_id']}, Level: {row['level']}, Strength: {row['strength']}, Code Required: {question_code_req}")
-                    csv_writer.writerow([row["question_id"], row['question'], row['level'], row['strength'], row['answer'], question_code_req, question_code_lang])
+                    csv_writer.writerow([row["question_id"], row['question'], row['level'], row['strength'], row['answer'], question_code_req, question_code_lang, row['q_type']])
         print("[INFO] Successfully updated CSV file.")
         shutil.move(csv_path + ".tmp", csv_path)
         shutil.copyfile(csv_path, final_path)

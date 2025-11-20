@@ -44,6 +44,7 @@ interface Database {
           difficulty_experience: string
           requires_code?: boolean
           code_language?: string
+          q_type?: string
           question_set: number
           created_at: string
         }

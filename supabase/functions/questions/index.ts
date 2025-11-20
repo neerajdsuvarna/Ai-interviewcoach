@@ -25,6 +25,7 @@ interface Database {
           difficulty_experience: string
           requires_code?: boolean
           code_language?: string
+          q_type?: string
           question_set: number
           created_at: string
         }
@@ -39,6 +40,7 @@ interface Database {
           difficulty_experience?: string
           requires_code?: boolean
           code_language?: string
+          q_type?: string
           question_set: number
           created_at?: string
         }
@@ -53,6 +55,7 @@ interface Database {
           difficulty_experience?: string
           requires_code?: boolean
           code_language?: string
+          q_type?: string
           question_set?: number
           created_at?: string
         }
@@ -72,6 +75,7 @@ interface CreateQuestionRequest {
     difficulty_experience?: string
     requires_code?: boolean
     code_language?: string
+    q_type?: string
   }>
   question_set: number
 }
@@ -83,6 +87,7 @@ interface UpdateQuestionRequest {
   difficulty_experience?: string
   requires_code?: boolean
   code_language?: string
+  q_type?: string
   question_set?: number
   interview_id?: string
 }
@@ -237,6 +242,7 @@ async function handleCreateQuestions(supabaseClient: any, req: Request, authUser
       difficulty_experience: q.difficulty_experience || 'beginner',
       requires_code: q.requires_code || false,
       code_language: q.code_language || "",
+      q_type: q.q_type || "NON-TECHNICAL",
       question_set: question_set
     }))
 
@@ -437,6 +443,7 @@ async function handleUpdateQuestion(supabaseClient: any, req: Request, questionI
       difficulty_experience,
       requires_code,
       code_language,
+      q_type,
       question_set,
       interview_id 
     }: UpdateQuestionRequest = body
@@ -449,6 +456,7 @@ async function handleUpdateQuestion(supabaseClient: any, req: Request, questionI
     if (difficulty_experience !== undefined) updateData.difficulty_experience = difficulty_experience
     if (requires_code !== undefined) updateData.requires_code = requires_code
     if (code_language !== undefined) updateData.code_language = code_language
+    if (q_type !== undefined) updateData.q_type = q_type
     if (question_set !== undefined) updateData.question_set = question_set
     if (interview_id !== undefined) updateData.interview_id = interview_id
 

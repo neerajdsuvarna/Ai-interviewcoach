@@ -39,7 +39,7 @@ function UploadPage() {
   const [splitResumePercentage, setSplitResumePercentage] = useState(50);
   const [blendResumePercentage, setBlendResumePercentage] = useState(50);
   const [questionValidationError, setQuestionValidationError] = useState('');
-  const [technicalPercentage, setTechnicalPercentage] = useState(40);
+  const [technicalPercentage, setTechnicalPercentage] = useState(50);
 
   useEffect(() => {
     console.log('Question counts:', { easyQuestions, mediumQuestions, hardQuestions });
