@@ -493,20 +493,34 @@ def analyze_individual_responses(evaluation_log, model="llama3"):
         a = item["response"]
 
         prompt = f"""
-        Evaluate the following interview response:
+            Evaluate the following interview response:
 
-        Question: "{q}"
-        Candidate's Answer: "{a}"
+            Question: "{q}"
+            Candidate's Answer: "{a}"
 
-        1. Rate the candidate's depth of knowledge on a scale of 1 to 10.
-        2. Detect the emotion/tone conveyed: choose from [confident, nervous, neutral, enthusiastic, unsure, disinterested, evasive].
+            Provide detailed evaluation metrics in JSON format.
+            For each metric, give a numeric score from 0 to 10, plus an emotion label.
 
-        Respond in JSON format:
-        {{
-            "knowledge_rating": x,
+            Metrics to include:
+            1. knowledge_depth – understanding of the question
+            2. communication_clarity – organization and flow of ideas
+            3. confidence_tone – tone of communication (e.g., confident, nervous, neutral)
+            4. reasoning_ability – logical reasoning or problem-solving shown
+            5. relevance_to_question – how well it stays on-topic
+            6. motivation_indicator – enthusiasm, passion, or drive reflected in response
+
+            Respond ONLY in valid JSON:
+            {{
+            "knowledge_depth": 0–10,
+            "communication_clarity": 0–10,
+            "confidence_tone": 0–10,
+            "reasoning_ability": 0–10,
+            "relevance_to_question": 0–10,
+            "motivation_indicator": 0–10,
             "emotion": "label"
-        }}
-        """
+            }}
+            """
+
         try:
             result = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
             response_text = result["message"]["content"].strip()
@@ -527,14 +541,29 @@ def analyze_individual_responses(evaluation_log, model="llama3"):
                     # If no JSON found, use default values
                     raise Exception("No JSON found in response")
             
-            item["knowledge_rating"] = parsed.get("knowledge_rating", 5)
+            item["knowledge_depth"] = parsed.get("knowledge_depth", 5)
+            item["communication_clarity"] = parsed.get("communication_clarity", 5)
+            item["confidence_tone"] = parsed.get("confidence_tone", 5)
+            item["reasoning_ability"] = parsed.get("reasoning_ability", 5)
+            item["relevance_to_question"] = parsed.get("relevance_to_question", 5)
+            item["motivation_indicator"] = parsed.get("motivation_indicator", 5)
             item["emotion"] = parsed.get("emotion", "neutral")
+
             
         except Exception as e:
             print(f"[ERROR] analyze_individual_responses failed for question '{q[:50]}...': {e}")
             print(f"[DEBUG] Response text: {response_text if 'response_text' in locals() else 'No response'}")
-            item["knowledge_rating"] = 5
+
+            # Assign safe default values so JSON parsing errors don't break the flow
+            item["knowledge_depth"] = 5
+            item["communication_clarity"] = 5
+            item["confidence_tone"] = 5
+            item["reasoning_ability"] = 5
+            item["relevance_to_question"] = 5
+            item["motivation_indicator"] = 5
             item["emotion"] = "unknown"
+            item["overall_score"] = 5.0  # Optional overall average placeholder
+
 
         analyzed.append(item)
 
@@ -544,17 +573,36 @@ def analyze_individual_responses(evaluation_log, model="llama3"):
 def generate_final_summary_review(job_title, conversation_history, analyzed_log, model="llama3"):
     log("generate_final_summary_review")
 
-    # Calculate overall statistics for context
+
+    # Calculate overall statistics for context using new detailed metrics
     total_responses = len(analyzed_log)
     if total_responses > 0:
-        avg_knowledge_rating = sum(item.get('knowledge_rating', 5) for item in analyzed_log) / total_responses
+        avg_knowledge_depth = sum(item.get('knowledge_depth', 5) for item in analyzed_log) / total_responses
+        avg_communication_clarity = sum(item.get('communication_clarity', 5) for item in analyzed_log) / total_responses
+        avg_confidence_tone = sum(item.get('confidence_tone', 5) for item in analyzed_log) / total_responses
+        avg_reasoning_ability = sum(item.get('reasoning_ability', 5) for item in analyzed_log) / total_responses
+        avg_relevance_to_question = sum(item.get('relevance_to_question', 5) for item in analyzed_log) / total_responses
+        avg_motivation_indicator = sum(item.get('motivation_indicator', 5) for item in analyzed_log) / total_responses
+
         weak_responses = sum(1 for item in analyzed_log if item.get('evaluation') in ['weak', 'confused'])
         strong_responses = sum(1 for item in analyzed_log if item.get('evaluation') in ['strong', 'good'])
         nervous_responses = sum(1 for item in analyzed_log if item.get('emotion') == 'nervous')
         unsure_responses = sum(1 for item in analyzed_log if item.get('emotion') == 'unsure')
+        # === Derive overall emotion across all responses ===
+        emotion_counts = {}
+        for item in analyzed_log:
+            emotion = item.get("emotion", "neutral").lower()
+            emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+
+        # Pick the most frequent emotion
+        overall_emotion = max(emotion_counts, key=emotion_counts.get) if emotion_counts else "neutral"
+
     else:
-        avg_knowledge_rating = 5
+        avg_knowledge_depth = avg_communication_clarity = avg_confidence_tone = 5
+        avg_reasoning_ability = avg_relevance_to_question = avg_motivation_indicator = 5
         weak_responses = strong_responses = nervous_responses = unsure_responses = 0
+        overall_emotion = "neutral"  # ✅ ADD THIS LINE - Initialize overall_emotion for empty log case
+
 
     prompt = f"""
     You are an expert interview evaluator. Based on the following interaction, provide a comprehensive evaluation:
@@ -569,13 +617,20 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
 
     EVALUATION STATISTICS:
     - Total Responses: {total_responses}
-    - Average Knowledge Rating: {avg_knowledge_rating:.1f}/10
+    - Overall Dominant Emotion: {overall_emotion.capitalize()}
+    - Avg Knowledge Depth: {avg_knowledge_depth:.1f}/10
+    - Avg Communication Clarity: {avg_communication_clarity:.1f}/10
+    - Avg Confidence & Tone: {avg_confidence_tone:.1f}/10
+    - Avg Reasoning Ability: {avg_reasoning_ability:.1f}/10
+    - Avg Relevance to Question: {avg_relevance_to_question:.1f}/10
+    - Avg Motivation Indicator: {avg_motivation_indicator:.1f}/10
     - Weak Responses: {weak_responses}
     - Strong Responses: {strong_responses}
     - Nervous Responses: {nervous_responses}
     - Unsure Responses: {unsure_responses}
 
-    Please provide a comprehensive evaluation in JSON format with three sections:
+    
+    Please provide a comprehensive evaluation in JSON format with four sections:
 
     1. SUMMARY: Write a short 4–5 sentence summary evaluating the candidate's overall fit for this job. 
     - Consider knowledge and clarity across questions
@@ -601,6 +656,9 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
         - If performance was consistently weak, you may state: 
             "The candidate should significantly improve technical depth, communication clarity, and confidence before reapplying."
 
+    4. OVERALL EMOTION SUMMARY – a **one-sentence description** of the candidate’s overall emotional tone throughout the interview.  
+        Example: "Started nervous but became confident by the end" or "Consistently calm and professional."  
+        Return this line in the JSON as **"overall_emotion_summary"**.
 
     Return your response strictly as a single valid JSON object, with no text, comments, or explanations before or after it. 
 
@@ -609,7 +667,8 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
         "summary": "2–3 sentence summary here",
         "key_strengths": "1. [Specific strength 1]\\n2. [Specific strength 2]\\n3. [Specific strength 3]",
         "improvement_areas": "1. [Specific area 1]\\n2. [Specific area 2]\\n3. [Specific area 3]",
-        "overall_rating": {avg_knowledge_rating:.1f}
+        "overall_rating": {avg_knowledge_depth:.1f},
+        "overall_emotion_summary": "Short sentence describing emotional tone, e.g., 'Started nervous but became confident by the end.'"
     }}
 
     Be specific, constructive, and relevant to the {job_title} position. Base your analysis on the actual conversation and evaluation data provided.
@@ -633,10 +692,20 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
 
             # ✅ Success → return with rating in summary
             return {
-                'summary': parsed_response.get('summary', '') + f" (Overall Rating: {avg_knowledge_rating:.1f}/10)",
+                'summary': parsed_response.get('summary', '') + f" (Overall Rating: {avg_knowledge_depth:.1f}/10)",
                 'key_strengths': parsed_response.get('key_strengths', ''),
                 'improvement_areas': parsed_response.get('improvement_areas', ''),
-                'overall_rating': parsed_response.get('overall_rating', avg_knowledge_rating)
+                'overall_rating': parsed_response.get('overall_rating', avg_knowledge_depth),
+                'metrics': {
+                    "knowledge_depth": round(avg_knowledge_depth, 1),
+                    "communication_clarity": round(avg_communication_clarity, 1),
+                    "confidence_tone": round(avg_confidence_tone, 1),
+                    "reasoning_ability": round(avg_reasoning_ability, 1),
+                    "relevance_to_question": round(avg_relevance_to_question, 1),
+                    "motivation_indicator": round(avg_motivation_indicator, 1),
+                    "overall_emotion": overall_emotion,
+                    "overall_emotion_summary": parsed_response.get("overall_emotion_summary", "Emotion summary not generated")
+                }
             }
 
         except Exception as e:
@@ -648,11 +717,23 @@ def generate_final_summary_review(job_title, conversation_history, analyzed_log,
 
     # === Fallback if all retries fail ===
     return {
-        'summary': f"Interview evaluation completed for {job_title} position. Detailed analysis available in transcript and evaluation data. (Overall Rating: {avg_knowledge_rating:.1f}/10)",
-        'key_strengths': 'Strengths analysis failed due to repeated errors.',
-        'improvement_areas': 'Improvement areas analysis failed due to repeated errors.',
-        'overall_rating': avg_knowledge_rating
+    'summary': parsed_response.get('summary', '') + f" (Overall Rating: {avg_knowledge_depth:.1f}/10)",
+    'key_strengths': parsed_response.get('key_strengths', ''),
+    'improvement_areas': parsed_response.get('improvement_areas', ''),
+    'overall_rating': parsed_response.get('overall_rating', avg_knowledge_depth),
+    'metrics': {
+        "knowledge_depth": round(avg_knowledge_depth, 1),
+        "communication_clarity": round(avg_communication_clarity, 1),
+        "confidence_tone": round(avg_confidence_tone, 1),
+        "reasoning_ability": round(avg_reasoning_ability, 1),
+        "relevance_to_question": round(avg_relevance_to_question, 1),
+        "motivation_indicator": round(avg_motivation_indicator, 1),
+        "overall_emotion": overall_emotion,  # ✅ dominant quantitative emotion
+        "overall_emotion_summary": parsed_response.get("overall_emotion_summary", "Emotion summary not generated")  # ✅ qualitative LLM summary
     }
+}
+
+
 
 
 

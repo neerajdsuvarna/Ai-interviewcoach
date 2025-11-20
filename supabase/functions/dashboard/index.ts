@@ -275,25 +275,40 @@ async function handleGetDashboardData(supabaseClient: any, user: any) {
           }
 
           const totalAttempts = interviews?.length || 0
-          const canRetake = true // No limit on retakes
+          const canRetake = true
 
+          // Fetch metrics for each completed interview
+          const interviewHistory = await Promise.all((interviews || []).map(async (interview) => {
+            // Fetch feedback with metrics for completed interviews
+            let metrics = null
+            if (interview.status === 'completed' || interview.status === 'ENDED') {
+              const { data: feedback } = await supabaseClient
+                .from('interview_feedback')
+                .select('metrics, created_at')
+                .eq('interview_id', interview.id)
+                .single()
+              
+              if (feedback) {
+                metrics = feedback.metrics
+              }
+            }
 
-
-          // Map interviews with retake information
-          const interviewHistory = (interviews || []).map(interview => ({
-            id: interview.id,
-            attempt_number: interview.attempt_number,
-            status: interview.status,
-            scheduled_at: interview.scheduled_at,
-            can_retake: canRetake,
-            retake_from: interview.retake_from
+            return {
+              id: interview.id,
+              attempt_number: interview.attempt_number,
+              status: interview.status,
+              scheduled_at: interview.scheduled_at,
+              can_retake: canRetake,
+              retake_from: interview.retake_from,
+              metrics: metrics
+            }
           }))
 
           return {
             id: `${pairingId}-set-${setNumber}`,
             questionSetNumber: setNumber,
             hasQuestions: questionsInSet.length > 0,
-            hasSummary: false, // TODO: Check if summary exists in interview_feedback table
+            hasSummary: false,
             interviews: interviewHistory,
             total_attempts: totalAttempts
           }

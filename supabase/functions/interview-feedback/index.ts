@@ -21,6 +21,7 @@ interface Database {
           improvement_areas: string | null
           summary: string | null
           audio_url: string | null
+          metrics: any | null  // ✅ ADD THIS
           created_at: string
         }
         Insert: {
@@ -30,6 +31,7 @@ interface Database {
           improvement_areas?: string | null
           summary?: string | null
           audio_url?: string | null
+          metrics?: any | null  // ✅ ADD THIS
           created_at?: string
         }
         Update: {
@@ -39,6 +41,7 @@ interface Database {
           improvement_areas?: string | null
           summary?: string | null
           audio_url?: string | null
+          metrics?: any | null  // ✅ ADD THIS
           created_at?: string
         }
       }
@@ -63,6 +66,7 @@ interface FeedbackRequest {
   improvement_areas?: string | null
   summary?: string | null
   audio_url?: string | null
+  metrics?: any | null  // ✅ ADD THIS
 }
 
 interface UpdateFeedbackRequest {
@@ -70,6 +74,7 @@ interface UpdateFeedbackRequest {
   improvement_areas?: string | null
   summary?: string | null
   audio_url?: string | null
+  metrics?: any | null  // ✅ ADD THIS
 }
 
 serve(async (req) => {
@@ -258,6 +263,7 @@ async function handleGetFeedbacks(supabaseClient: any, user: any, url: URL) {
         improvement_areas,
         summary,
         audio_url,
+        metrics,
         created_at,
         interviews!inner(
           user_id,
@@ -379,6 +385,7 @@ async function handleGetFeedback(supabaseClient: any, user: any, feedbackId: str
         improvement_areas,
         summary,
         audio_url,
+        metrics,
         created_at,
         interviews!inner(user_id)
       `)
@@ -444,7 +451,7 @@ async function handleGetFeedback(supabaseClient: any, user: any, feedbackId: str
 async function handleCreateFeedback(supabaseClient: any, req: Request, user: any) {
   try {
     const body = await req.json()
-    const { interview_id, key_strengths, improvement_areas, summary, audio_url }: FeedbackRequest = body
+    const { interview_id, key_strengths, improvement_areas, summary, audio_url, metrics }: FeedbackRequest = body  // ✅ ADD metrics
 
     // Validate required fields
     if (!interview_id) {
@@ -506,7 +513,8 @@ async function handleCreateFeedback(supabaseClient: any, req: Request, user: any
       key_strengths: key_strengths?.trim() || null,
       improvement_areas: improvement_areas?.trim() || null,
       summary: summary?.trim() || null,
-      audio_url: audio_url?.trim() || null
+      audio_url: audio_url?.trim() || null,
+      metrics: metrics || null  // ✅ ADD THIS
     }
 
     // Create new feedback
@@ -559,7 +567,7 @@ async function handleCreateFeedback(supabaseClient: any, req: Request, user: any
 async function handleUpdateFeedback(supabaseClient: any, req: Request, user: any, feedbackId: string) {
   try {
     const body = await req.json()
-    const { key_strengths, improvement_areas, summary, audio_url }: UpdateFeedbackRequest = body
+    const { key_strengths, improvement_areas, summary, audio_url, metrics }: UpdateFeedbackRequest = body  // ✅ ADD metrics
 
     // Build update object with only provided fields
     const updateData: any = {}
@@ -567,6 +575,7 @@ async function handleUpdateFeedback(supabaseClient: any, req: Request, user: any
     if (improvement_areas !== undefined) updateData.improvement_areas = improvement_areas?.trim() || null
     if (summary !== undefined) updateData.summary = summary?.trim() || null
     if (audio_url !== undefined) updateData.audio_url = audio_url?.trim() || null
+    if (metrics !== undefined) updateData.metrics = metrics || null  // ✅ ADD THIS
 
     if (Object.keys(updateData).length === 0) {
       return new Response(

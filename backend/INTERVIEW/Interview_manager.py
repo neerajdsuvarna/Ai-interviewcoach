@@ -686,7 +686,8 @@ class InterviewManager:
         self.final_evaluation_log = detailed_log
         self.key_strengths = evaluation_result['key_strengths']
         self.improvement_areas = evaluation_result['improvement_areas']
-        self.overall_rating = evaluation_result['overall_rating']  # ✅ Add overall rating
+        self.overall_rating = evaluation_result['overall_rating']
+        self.metrics = evaluation_result.get('metrics', {})  # ✅ Add metrics storage
         
         print(f"\nFinal Evaluation:\n{evaluation_result['summary']}")
         print(f"\nKey Strengths:\n{evaluation_result['key_strengths']}")
