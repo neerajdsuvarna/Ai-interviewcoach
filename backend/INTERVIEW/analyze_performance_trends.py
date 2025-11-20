@@ -558,206 +558,226 @@ IMPORTANT
 - DO NOT say "based on the data above".
 - DO NOT justify your reasoning.
 - ONLY output the JSON object.
+- DO NOT use "..." or ellipsis in the JSON - include all fields completely.
 """
     
-    try:
-        print(f"[INFO] Using {model} to convert numeric results into readable text...")
-        response = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
-        response_text = response["message"]["content"].strip()
-        
-        # Extract JSON from response
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}') + 1
-        
-        if json_start != -1 and json_end != 0:
-            json_text = response_text[json_start:json_end]
+    # ✅ RETRY LOOP: Keep trying until we get valid JSON
+    max_attempts = 1000  # Set a reasonable upper limit to prevent infinite loops
+    attempt = 0
+    
+    while attempt < max_attempts:
+        attempt += 1
+        try:
+            print(f"[INFO] Using {model} to convert numeric results into readable text... (Attempt {attempt})")
+            response = ollama.chat(model=model, messages=[{"role": "system", "content": prompt}])
+            response_text = response["message"]["content"].strip()
             
-            # ✅ IMPROVED: Clean up JSON more aggressively
-            # 1. Remove comments (both # comments and inline comments)
-            json_text = re.sub(r'#.*?(?=\n|$)', '', json_text, flags=re.MULTILINE)  # Remove # comments
-            json_text = re.sub(r'//.*?(?=\n|$)', '', json_text, flags=re.MULTILINE)  # Remove // comments
+            # Extract JSON from response
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
             
-            # 2. Remove common LLM artifacts
-            json_text = re.sub(r'"([^"]+)"\s*\([^)]*\)', r'"\1"', json_text)  # Remove (annotations)
-            json_text = re.sub(r'\([^)]*\)', '', json_text)  # Remove any remaining parentheses
-            
-            # 3. Fix spacing issues
-            json_text = re.sub(r'\s+', ' ', json_text)  # Normalize whitespace
-            json_text = re.sub(r'"\s+"', '", "', json_text)  # Fix array spacing
-            json_text = re.sub(r'"\s+\]', '"]', json_text)  # Fix array end
-            json_text = re.sub(r'"\s+\}', '"}', json_text)  # Fix object end
-            json_text = re.sub(r'(")\s+(")', r'\1, \2', json_text)  # Fix missing commas
-            json_text = re.sub(r',\s*,', ',', json_text)  # Remove double commas
-            json_text = re.sub(r'"\s{2,}\]', '"]', json_text)  # Fix array spacing
-            
-            # 4. Remove trailing commas before } or ]
-            json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
-            
-            # 5. Try to parse, if it fails, try to fix common issues
-            try:
-                llm_output = json.loads(json_text)
-            except json.JSONDecodeError as json_error:
-                print(f"[WARNING] JSON parse error, attempting to fix: {json_error}")
-                print(f"[DEBUG] Problematic JSON section: {json_text[max(0, json_error.pos-50):json_error.pos+50]}")
+            if json_start != -1 and json_end != 0:
+                json_text = response_text[json_start:json_end]
                 
-                # Additional fixes for common issues
-                # Fix unclosed strings or objects
-                json_text = re.sub(r',\s*}', '}', json_text)  # Remove trailing comma before }
-                json_text = re.sub(r',\s*]', ']', json_text)  # Remove trailing comma before ]
+                # ✅ IMPROVED: Clean up JSON more aggressively
+                # 1. Remove comments (both # comments and inline comments)
+                json_text = re.sub(r'#.*?(?=\n|$)', '', json_text, flags=re.MULTILINE)  # Remove # comments
+                json_text = re.sub(r'//.*?(?=\n|$)', '', json_text, flags=re.MULTILINE)  # Remove // comments
                 
-                # Try parsing again
+                # 2. Remove common LLM artifacts
+                json_text = re.sub(r'"([^"]+)"\s*\([^)]*\)', r'"\1"', json_text)  # Remove (annotations)
+                json_text = re.sub(r'\([^)]*\)', '', json_text)  # Remove any remaining parentheses
+                
+                # 3. Remove "..." or ellipsis patterns (invalid JSON)
+                json_text = re.sub(r'\.\.\.', '', json_text)  # Remove ellipsis
+                json_text = re.sub(r',\s*\.\.\.\s*,', ',', json_text)  # Remove ellipsis with commas
+                json_text = re.sub(r',\s*\.\.\.\s*\]', ']', json_text)  # Remove ellipsis before array end
+                json_text = re.sub(r',\s*\.\.\.\s*\}', '}', json_text)  # Remove ellipsis before object end
+                
+                # 4. Fix spacing issues
+                json_text = re.sub(r'\s+', ' ', json_text)  # Normalize whitespace
+                json_text = re.sub(r'"\s+"', '", "', json_text)  # Fix array spacing
+                json_text = re.sub(r'"\s+\]', '"]', json_text)  # Fix array end
+                json_text = re.sub(r'"\s+\}', '"}', json_text)  # Fix object end
+                json_text = re.sub(r'(")\s+(")', r'\1, \2', json_text)  # Fix missing commas
+                json_text = re.sub(r',\s*,', ',', json_text)  # Remove double commas
+                json_text = re.sub(r'"\s{2,}\]', '"]', json_text)  # Fix array spacing
+                
+                # 5. Remove trailing commas before } or ]
+                json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+                
+                # 6. Try to parse, if it fails, try to fix common issues
                 try:
                     llm_output = json.loads(json_text)
-                except json.JSONDecodeError as json_error2:
-                    print(f"[ERROR] Failed to parse JSON after fixes: {json_error2}")
-                    print(f"[DEBUG] Full JSON text: {json_text}")
-                    raise json_error2
-        else:
-            # No JSON found, try parsing the whole response
-            print(f"[WARNING] No JSON boundaries found, attempting to parse full response")
-            try:
-                llm_output = json.loads(response_text)
-            except json.JSONDecodeError:
-                raise ValueError("No valid JSON found in LLM response")
-        
-        # Post-process to enforce strict rules and prevent hallucinations
-        # 0. Convert any dict-formatted items to plain strings
-        def convert_to_plain_strings(items, field_name):
-            """Convert list items to plain strings, handling dict format from LLM"""
-            if not items:
-                return []
-            clean_items = []
-            for item in items:
-                if isinstance(item, dict):
-                    # Extract text from dictionary format
-                    metric = item.get("metric", "")
-                    desc = item.get("description", item.get("text", ""))
-                    # Combine metric and description if both exist
-                    if metric and desc:
-                        clean_items.append(f"{desc}")
-                    elif desc:
-                        clean_items.append(desc)
-                    elif metric:
-                        clean_items.append(f"Work on improving {metric.replace('_', ' ')}.")
-                    else:
-                        # Fallback: convert dict to string
-                        clean_items.append(str(item))
-                else:
-                    clean_items.append(str(item))
-            return clean_items
-        
-        # ✅ Map new format to old format for backward compatibility
-        # New format: key_strengths, key_weaknesses, action_plan, detailed_metric_feedback
-        # Old format: strengths, improvement_areas, recommendations
-        
-        # Handle key_strengths → strengths
-        if 'key_strengths' in llm_output:
-            llm_output['strengths'] = convert_to_plain_strings(
-                llm_output.get('key_strengths', []), 
-                'key_strengths'
-            )
-        elif 'strengths' in llm_output:
-            llm_output['strengths'] = convert_to_plain_strings(
-                llm_output.get('strengths', []), 
-                'strengths'
-            )
-        else:
-            llm_output['strengths'] = []
-        
-        # Handle key_weaknesses → improvement_areas
-        if 'key_weaknesses' in llm_output:
-            llm_output['improvement_areas'] = convert_to_plain_strings(
-                llm_output.get('key_weaknesses', []), 
-                'key_weaknesses'
-            )
-        elif 'improvement_areas' in llm_output:
-            llm_output['improvement_areas'] = convert_to_plain_strings(
-                llm_output.get('improvement_areas', []), 
-                'improvement_areas'
-            )
-        else:
-            llm_output['improvement_areas'] = []
-        
-        # Handle action_plan → recommendations
-        if 'action_plan' in llm_output:
-            llm_output['recommendations'] = convert_to_plain_strings(
-                llm_output.get('action_plan', []), 
-                'action_plan'
-            )
-        elif 'recommendations' in llm_output:
-            llm_output['recommendations'] = convert_to_plain_strings(
-                llm_output.get('recommendations', []), 
-                'recommendations'
-            )
-        else:
-            llm_output['recommendations'] = []
-        
-        # ✅ Keep new detailed_metric_feedback for future use (if present)
-        # This will be available in the output but frontend can use it later
-        
-        # 1. Map confidence_level deterministically from volatility
-        volatility = numeric_summary.get('volatility', 'medium')
-        if volatility == 'low':
-            llm_output['confidence_level'] = 'high'
-        elif volatility == 'medium':
-            llm_output['confidence_level'] = 'medium'
-        else:  # high volatility
-            llm_output['confidence_level'] = 'low'
-        
-        # 2. Filter strengths to only include improving metrics
-        metric_progress = numeric_summary.get('metric_progress', {})
-        valid_strengths = []
-        if llm_output.get('strengths'):
-            # Only keep strengths that reference improving metrics
-            improving_metrics = [
-                metric for metric, data in metric_progress.items()
-                if data.get('regression_trend') == 'improving'
-            ]
-            best_metric = numeric_summary.get('best_metric')
-            if best_metric:
-                improving_metrics.append(best_metric)
-            
-            for strength in llm_output['strengths']:
-                # Check if strength references an improving metric
-                strength_lower = strength.lower()
-                for metric in improving_metrics:
-                    metric_name = metric.replace('_', ' ').lower()
-                    if metric_name in strength_lower or metric in strength_lower:
-                        valid_strengths.append(strength)
+                    # ✅ SUCCESS! Break out of retry loop
+                    print(f"[INFO] Successfully parsed JSON on attempt {attempt}")
+                    break
+                except json.JSONDecodeError as json_error:
+                    print(f"[WARNING] JSON parse error on attempt {attempt}, attempting to fix: {json_error}")
+                    print(f"[DEBUG] Problematic JSON section: {json_text[max(0, json_error.pos-50):json_error.pos+50]}")
+                    
+                    # Additional fixes for common issues
+                    # Fix unclosed strings or objects
+                    json_text = re.sub(r',\s*}', '}', json_text)  # Remove trailing comma before }
+                    json_text = re.sub(r',\s*]', ']', json_text)  # Remove trailing comma before ]
+                    
+                    # Try parsing again
+                    try:
+                        llm_output = json.loads(json_text)
+                        # ✅ SUCCESS! Break out of retry loop
+                        print(f"[INFO] Successfully parsed JSON on attempt {attempt} after fixes")
                         break
-        
-        llm_output['strengths'] = valid_strengths
-        
-        return {
-            'success': True,
-            'llm_output': llm_output
-        }
+                    except json.JSONDecodeError as json_error2:
+                        print(f"[ERROR] Failed to parse JSON after fixes on attempt {attempt}: {json_error2}")
+                        print(f"[DEBUG] Full JSON text: {json_text}")
+                        # Continue to next attempt (retry)
+                        continue
+            else:
+                # No JSON found, try parsing the whole response
+                print(f"[WARNING] No JSON boundaries found on attempt {attempt}, attempting to parse full response")
+                try:
+                    llm_output = json.loads(response_text)
+                    # ✅ SUCCESS! Break out of retry loop
+                    print(f"[INFO] Successfully parsed JSON on attempt {attempt} from full response")
+                    break
+                except json.JSONDecodeError:
+                    print(f"[WARNING] Failed to parse full response on attempt {attempt}, retrying...")
+                    # Continue to next attempt (retry)
+                    continue
+                    
+        except Exception as e:
+            print(f"[ERROR] Exception on attempt {attempt}: {e}")
+            # Continue to next attempt (retry)
+            continue
     
-    except Exception as e:
-        print(f"[ERROR] LLM analysis failed: {e}")
-        print(f"[DEBUG] Response text: {response_text if 'response_text' in locals() else 'No response'}")
-        
-        # Map volatility to confidence_level deterministically
-        volatility = numeric_summary.get('volatility', 'medium')
-        if volatility == 'low':
-            confidence_level = 'high'
-        elif volatility == 'medium':
-            confidence_level = 'medium'
-        else:  # high volatility
-            confidence_level = 'low'
-        
-        # Return fallback with minimal LLM output
+    # Check if we successfully parsed JSON
+    if attempt >= max_attempts:
+        print(f"[ERROR] Failed to parse JSON after {max_attempts} attempts")
         return {
             'success': False,
-            'error': str(e),
-            'llm_output': {
-                'summary': f"Performance analysis completed. Regression trend: {numeric_summary['regression_trend']}, Mean score: {numeric_summary['mean_score']}/10.",
-                'strengths': [],
-                'improvement_areas': [],
-                'recommendations': [],
-                'confidence_level': confidence_level
-            }
+            'error': f'Failed to get valid JSON from LLM after {max_attempts} attempts'
         }
+    
+    # Post-process to enforce strict rules and prevent hallucinations
+    # 0. Convert any dict-formatted items to plain strings
+    def convert_to_plain_strings(items, field_name):
+        """Convert list items to plain strings, handling dict format from LLM"""
+        if not items:
+            return []
+        clean_items = []
+        for item in items:
+            if isinstance(item, dict):
+                # Extract text from dictionary format
+                # Check for common keys: step, metric, description, text
+                step = item.get("step", "")
+                metric = item.get("metric", "")
+                desc = item.get("description", item.get("text", ""))
+                
+                # Priority: step > description/text > metric
+                if step:
+                    clean_items.append(step)
+                elif desc:
+                    clean_items.append(desc)
+                elif metric:
+                    clean_items.append(f"Work on improving {metric.replace('_', ' ')}.")
+                else:
+                    # Fallback: convert dict to string (but try to extract any string value)
+                    # Try to find any string value in the dict
+                    string_values = [v for v in item.values() if isinstance(v, str) and v.strip()]
+                    if string_values:
+                        clean_items.append(string_values[0])
+                    else:
+                        clean_items.append(str(item))
+            else:
+                clean_items.append(str(item))
+        return clean_items
+    
+    # ✅ Map new format to old format for backward compatibility
+    # New format: key_strengths, key_weaknesses, action_plan, detailed_metric_feedback
+    # Old format: strengths, improvement_areas, recommendations
+    
+    # Handle key_strengths → strengths
+    if 'key_strengths' in llm_output:
+        llm_output['strengths'] = convert_to_plain_strings(
+            llm_output.get('key_strengths', []), 
+            'key_strengths'
+        )
+    elif 'strengths' in llm_output:
+        llm_output['strengths'] = convert_to_plain_strings(
+            llm_output.get('strengths', []), 
+            'strengths'
+        )
+    else:
+        llm_output['strengths'] = []
+    
+    # Handle key_weaknesses → improvement_areas
+    if 'key_weaknesses' in llm_output:
+        llm_output['improvement_areas'] = convert_to_plain_strings(
+            llm_output.get('key_weaknesses', []), 
+            'key_weaknesses'
+        )
+    elif 'improvement_areas' in llm_output:
+        llm_output['improvement_areas'] = convert_to_plain_strings(
+            llm_output.get('improvement_areas', []), 
+            'improvement_areas'
+        )
+    else:
+        llm_output['improvement_areas'] = []
+    
+    # Handle action_plan → recommendations
+    if 'action_plan' in llm_output:
+        llm_output['recommendations'] = convert_to_plain_strings(
+            llm_output.get('action_plan', []), 
+            'action_plan'
+        )
+    elif 'recommendations' in llm_output:
+        llm_output['recommendations'] = convert_to_plain_strings(
+            llm_output.get('recommendations', []), 
+            'recommendations'
+        )
+    else:
+        llm_output['recommendations'] = []
+    
+    # ✅ Keep new detailed_metric_feedback for future use (if present)
+    # This will be available in the output but frontend can use it later
+    
+    # 1. Map confidence_level deterministically from volatility
+    volatility = numeric_summary.get('volatility', 'medium')
+    if volatility == 'low':
+        llm_output['confidence_level'] = 'high'
+    elif volatility == 'medium':
+        llm_output['confidence_level'] = 'medium'
+    else:  # high volatility
+        llm_output['confidence_level'] = 'low'
+    
+    # 2. Filter strengths to only include improving metrics
+    metric_progress = numeric_summary.get('metric_progress', {})
+    valid_strengths = []
+    if llm_output.get('strengths'):
+        # Only keep strengths that reference improving metrics
+        improving_metrics = [
+            metric for metric, data in metric_progress.items()
+            if data.get('regression_trend') == 'improving'
+        ]
+        best_metric = numeric_summary.get('best_metric')
+        if best_metric:
+            improving_metrics.append(best_metric)
+        
+        for strength in llm_output['strengths']:
+            # Check if strength references an improving metric
+            strength_lower = strength.lower()
+            for metric in improving_metrics:
+                metric_name = metric.replace('_', ' ').lower()
+                if metric_name in strength_lower or metric in strength_lower:
+                    valid_strengths.append(strength)
+                    break
+    
+    llm_output['strengths'] = valid_strengths
+    
+    return {
+        'success': True,
+        'llm_output': llm_output
+    }
 
 
 def generate_improved_metrics_summary(feedbacks, numeric_summary, llm_output):
