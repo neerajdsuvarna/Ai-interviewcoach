@@ -577,12 +577,29 @@ def parse_job_description():
             print(f"[DEBUG] Parsing completed successfully")
             print(f"[DEBUG] Result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
             
+            # Classify if this is a technical role
+            from INTERVIEW.Resumeparser import classify_if_technical_role
+            job_title = result.get('job_title', '')
+            job_description = result.get('job_description', '')
+            
+            is_technical = False
+            if job_title and job_description:
+                try:
+                    print(f"[DEBUG] Classifying technical role for: {job_title}")
+                    is_technical = classify_if_technical_role(job_title, job_description, model="llama3")
+                    print(f"[DEBUG] Technical role classification result: {is_technical}")
+                except Exception as classify_error:
+                    print(f"[WARNING] Failed to classify technical role: {classify_error}")
+                    # Default to False if classification fails
+                    is_technical = False
+            
             return jsonify({
                 "success": True,
                 "message": "Job description parsed successfully",
                 "data": {
-                    "job_title": result.get('job_title', ''),
-                    "job_description": result.get('job_description', '')
+                    "job_title": job_title,
+                    "job_description": job_description,
+                    "is_technical": is_technical  # Add this
                 }
             })
             
@@ -609,6 +626,71 @@ def parse_job_description():
             "success": False,
             "message": f"Failed to process job description: {str(e)}"
         }), 500
+
+# ─────────────────────────────────────────────────────
+# Technical Role Classification API
+# ─────────────────────────────────────────────────────
+
+@app.route('/api/classify-technical-role', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def classify_technical_role():
+    """Classify if a job role is technical based on job title and description"""
+    # Handle CORS preflight request
+    if request.method == 'OPTIONS':
+        response = jsonify({"message": "OK"})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response, 200
+    
+    try:
+        data = request.get_json()
+        job_title = data.get('job_title', '').strip()
+        job_description = data.get('job_description', '').strip()
+        
+        if not job_title or not job_description:
+            return jsonify({
+                "success": False,
+                "message": "Both job_title and job_description are required"
+            }), 400
+        
+        print(f"[DEBUG] Classifying technical role for: {job_title}")
+        
+        from INTERVIEW.Resumeparser import classify_if_technical_role
+        
+        try:
+            is_technical = classify_if_technical_role(job_title, job_description, model="llama3")
+            print(f"[DEBUG] Technical role classification result: {is_technical}")
+            
+            response = jsonify({
+                "success": True,
+                "is_technical": is_technical
+            })
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+        except Exception as classify_error:
+            print(f"[WARNING] Failed to classify technical role: {classify_error}")
+            import traceback
+            traceback.print_exc()
+            response = jsonify({
+                "success": False,
+                "message": f"Classification failed: {str(classify_error)}",
+                "is_technical": False
+            })
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response, 500
+            
+    except Exception as e:
+        print(f"[ERROR] General error in classify_technical_role: {e}")
+        import traceback
+        traceback.print_exc()
+        response = jsonify({
+            "success": False,
+            "message": f"Failed to classify technical role: {str(e)}",
+            "is_technical": False
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response, 500
 
 # ─────────────────────────────────────────────────────
 # Resume Processing and Question Generation API
