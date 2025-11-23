@@ -155,35 +155,22 @@ serve(async (req) => {
       allQuestions = questionsByInterview || []
     }
 
-    // ✅ Process questions to get one from each difficulty level
-    const processedQuestions: any[] = [];
-
-    // Group questions by difficulty category
-    const questionsByDifficulty = {
-      easy: allQuestions.filter(q => q.difficulty_category === 'easy'),
-      medium: allQuestions.filter(q => q.difficulty_category === 'medium'),
-      hard: allQuestions.filter(q => q.difficulty_category === 'hard')
-    };
-
-    // Take one question from each difficulty level
-    if (questionsByDifficulty.easy.length > 0) {
-      processedQuestions.push(questionsByDifficulty.easy[0]);
-    }
-    if (questionsByDifficulty.medium.length > 0) {
-      processedQuestions.push(questionsByDifficulty.medium[0]);
-    }
-    if (questionsByDifficulty.hard.length > 0) {
-      processedQuestions.push(questionsByDifficulty.hard[0]);
-    }
+    // ✅ Return ALL questions from the database (not just one per difficulty)
+    // Optionally, you can sort them by difficulty if desired
+    const processedQuestions = allQuestions.sort((a, b) => {
+      // Sort by difficulty: easy first, then medium, then hard
+      const difficultyOrder = { 'easy': 1, 'medium': 2, 'hard': 3 };
+      return (difficultyOrder[a.difficulty_category] || 99) - (difficultyOrder[b.difficulty_category] || 99);
+    });
 
     console.log('✅ Interview data fetched successfully:', {
       interview_id: interview.id,
       job_title: interview.job_descriptions.title,
       questions_count: processedQuestions.length,
       difficulty_breakdown: {
-        easy: questionsByDifficulty.easy.length,
-        medium: questionsByDifficulty.medium.length,
-        hard: questionsByDifficulty.hard.length
+        easy: allQuestions.filter(q => q.difficulty_category === 'easy').length,
+        medium: allQuestions.filter(q => q.difficulty_category === 'medium').length,
+        hard: allQuestions.filter(q => q.difficulty_category === 'hard').length
       }
     });
 

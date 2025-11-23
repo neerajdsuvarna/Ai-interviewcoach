@@ -985,10 +985,16 @@ def generate_response():
             job_description = interview_data['job_description']['description']
             questions = interview_data['questions']
             
-            # Extract core questions
-            core_questions = [q['question_text'] for q in questions]
+            # Extract core questions - deduplicate by question_text
+            seen_questions = set()
+            core_questions = []
+            for q in questions:
+                question_text = q['question_text']
+                if question_text not in seen_questions:
+                    seen_questions.add(question_text)
+                    core_questions.append(question_text)
             
-            print(f"[DEBUG] Fetched interview config: job_title='{job_title}', questions_count={len(core_questions)}")
+            print(f"[DEBUG] Fetched interview config: job_title='{job_title}', questions_count={len(questions)}, unique_questions={len(core_questions)}")
             
         except requests.exceptions.RequestException as req_error:
             print(f"[ERROR] Request exception: {req_error}")
