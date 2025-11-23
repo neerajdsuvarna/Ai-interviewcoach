@@ -383,7 +383,7 @@ def extract_json_array(text):
 
 
 def generate_core_questions(structured_resume, job_title, job_description, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
-    def generate_questions_by_level(level, count, weight, max_retries=1000):
+    def generate_questions_by_level(level, count, weight, max_retries=100000):
         # Map the level to the correct database constraint values
         level_mapping = {
             'beginner': 'easy',
@@ -509,7 +509,7 @@ def generate_coding_questions(structured_resume, job_title, job_description, cod
     if coding_count <= 0:
         return []
     
-    def generate_coding_questions_internal(count, max_retries=1000):
+    def generate_coding_questions_internal(count, max_retries=100000):
         for attempt in range(max_retries):
             prompt = f"""
 You are an expert technical interviewer.
@@ -627,7 +627,7 @@ NO extras. NO markdown. JSON ONLY.
 def generate_split_questions(structured_resume, job_title, job_description,
                              beginner_count=2, medium_count=2, hard_count=2,
                              resume_pct=50, jd_pct=50, model="llama3"):
-    def generate_questions_by_source(level, count, weight, source, max_retries=1000):
+    def generate_questions_by_source(level, count, weight, source, max_retries=100000):
         if count <= 0:
             return []
         """Helper: generate questions from either resume or JD context"""
@@ -808,7 +808,7 @@ def generate_blend_questions(structured_resume, job_title, job_description,
     according to given percentages.
     """
 
-    def generate_questions_blend(level, count, weight, max_retries=1000):
+    def generate_questions_blend(level, count, weight, max_retries=100000):
         if count <= 0: 
             return []
         level_mapping = {
@@ -1236,12 +1236,16 @@ def generate_answers_for_existing_questions(structured_resume, job_title, job_de
     with open(questions_csv_path, "r", encoding="utf-8") as infile, open(output_path, "w", newline='', encoding="utf-8") as outfile:
         reader = csv.DictReader(infile)
         writer = csv.writer(outfile)
-        writer.writerow(["question_id", "question", "level", "strength", "answer"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code"])
 
         for row in reader:
-            if row["strength"]:  # Skip rows that already have answers
+            if row.get("strength"):  # Skip rows that already have answers
                 continue
             print(f"[DEBUG] Generating answers for {row['question_id']} [{row['level']}]: {row['question'][:80]}...")        
+            
+            # Get requires_code from input row (default to False if not present)
+            requires_code = row.get('requires_code', 'false').lower() == 'true'
+            
             for strength in ["weak", "medium", "strong"]:  # These map to beginner, intermediate, expert in read_questions_from_csv
                 prompt = f"""
 You are an expert interviewer.
@@ -1263,7 +1267,8 @@ Only respond with the answer text, no formatting.
                 try:
                     response = try_ollama_chat(prompt.strip(), model=model)
                     answer = response["message"]["content"].strip().replace('"', "'")
-                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer])
+                    # Include requires_code when writing the row
+                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer, "true" if requires_code else "false"])
                     print(f"[DEBUG] ↳ {strength.capitalize()} answer generated.")
                 except Exception as e:
                     print(f"[ERROR] Failed generating answer for {row['question_id']} [{strength}]: {e}")
@@ -1419,7 +1424,7 @@ Classification rules:
             return match.group(0).lower() == "true"
         return False
 
-def try_ollama_chat(prompt, model="llama3", max_retries=1000):
+def try_ollama_chat(prompt, model="llama3", max_retries=100000):
     for attempt in range(max_retries):
         try:
             return ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
@@ -1435,13 +1440,14 @@ def deduplicate_string_list(lst):
 def save_questions_to_csv(questions_by_level, output_path):
     with open(output_path, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["question_id", "question", "level", "strength", "answer"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code"])
         qid_counter = 1
         
         # Save questions by level (coding questions are already merged into beginner/medium/hard)
         for level in ["beginner", "medium", "hard"]:
             for q in questions_by_level.get(level, []):
-                writer.writerow([f"q{qid_counter}", q["question"], level, "", ""])
+                requires_code = q.get('requires_code', False)
+                writer.writerow([f"q{qid_counter}", q["question"], level, "", "", "true" if requires_code else "false"])
                 qid_counter += 1
             
     print(f"[DEBUG] Saving questions. "
@@ -1478,7 +1484,7 @@ def main():
 # def run_pipeline_from_api(resume_path, job_title, job_description,
 #                           question_counts=None, include_answers=True,
 #                           split=False, resume_pct=50, jd_pct=50,
-#                           max_retries=1000):
+#                           max_retries=100000):
 #     if question_counts is None:
 #         question_counts = {
 #             'beginner': 1,
@@ -1595,7 +1601,7 @@ def run_pipeline_from_api(
     blend=False,
     blend_pct_resume=50,   # for blend mode: percentage weight of resume context
     blend_pct_jd=50,       # for blend mode: percentage weight of JD context
-    max_retries=1000
+    max_retries=100000
 ):
 
     """
@@ -1717,6 +1723,8 @@ def run_pipeline_from_api(
                 # weight 1 → beginner, weight 3 → medium, weight 5 → hard
                 for q in coding_questions:
                     weight = q.get('weight', 5)  # Default to 5 if weight missing
+                    # Mark as coding question
+                    q['requires_code'] = True
                     # Update difficulty to match category
                     if weight == 1:
                         q['difficulty'] = 'beginner'
@@ -1813,13 +1821,17 @@ def read_questions_from_csv(csv_file_path):
                 difficulty_category = level_mapping.get(row['level'], 'medium')
                 difficulty_experience = strength_mapping.get(row['strength'], 'beginner')
                 
+                # Get requires_code from CSV (default to False if not present)
+                requires_code = row.get('requires_code', 'false').lower() == 'true'
+                
                 # Debug logging
-                print(f"[DEBUG] Mapping CSV values: level='{row['level']}' -> difficulty_category='{difficulty_category}', strength='{row['strength']}' -> difficulty_experience='{difficulty_experience}'")
+                print(f"[DEBUG] Mapping CSV values: level='{row['level']}' -> difficulty_category='{difficulty_category}', strength='{row['strength']}' -> difficulty_experience='{difficulty_experience}', requires_code={requires_code}")
                 
                 question_data = {
                     "question_text": row['question'],
-                    "difficulty_category": difficulty_category,  # easy, medium, hard, coding
-                    "difficulty_experience": difficulty_experience  # beginner, intermediate, expert
+                    "difficulty_category": difficulty_category,  # easy, medium, hard
+                    "difficulty_experience": difficulty_experience,  # beginner, intermediate, expert
+                    "requires_code": requires_code  # Add requires_code field
                 }
                 
                 # Include answer if available
