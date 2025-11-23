@@ -32,16 +32,97 @@ function UploadPage() {
   const [easyQuestions, setEasyQuestions] = useState(1); // ✅ Changed from 2 to 1
   const [mediumQuestions, setMediumQuestions] = useState(1); // ✅ Changed from 2 to 1
   const [hardQuestions, setHardQuestions] = useState(1); // ✅ Changed from 2 to 1
+  const [codingQuestions, setCodingQuestions] = useState(0); // New coding questions slider
+  const [isTechnical, setIsTechnical] = useState(false); // Add this line
+  const [classifyingTechnical, setClassifyingTechnical] = useState(false); // Add loading state
   const [splitMode, setSplitMode] = useState(false);
   const [blendMode, setBlendMode] = useState(false);
   const [splitResumePercentage, setSplitResumePercentage] = useState(50);
   const [blendResumePercentage, setBlendResumePercentage] = useState(50);
   const [questionValidationError, setQuestionValidationError] = useState('');
 
+  // Removed debug useEffect for question counts and canGenerateQuestions
+
+  // Debounced function to classify technical role when fields change
   useEffect(() => {
-    console.log('Question counts:', { easyQuestions, mediumQuestions, hardQuestions });
-    console.log('Can generate questions:', canGenerateQuestions());
-  }, [easyQuestions, mediumQuestions, hardQuestions, resume, jobTitle, jobDescription, jobDescParsed, loading, parsingJobDesc, splitMode, blendMode]);
+    const trimmedTitle = jobTitle.trim();
+    const trimmedDescription = jobDescription.trim();
+    
+    // Only classify if title has content and JD was parsed
+    // If description is empty, we'll use title as description for classification
+    if (!jobDescParsed || !trimmedTitle) {
+      // Reset if title is empty OR if both fields are empty
+      if (!trimmedTitle || (!trimmedTitle && !trimmedDescription)) {
+        setIsTechnical(false);
+        setCodingQuestions(0);
+      }
+      return;
+    }
+
+    // Prepare description - use title if description is empty
+    const descriptionToUse = trimmedDescription || trimmedTitle;
+
+    // Set a timer to debounce the API call
+    const timer = setTimeout(async () => {
+      setClassifyingTechnical(true);
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.warn('[WARNING] No session for technical role classification');
+          return;
+        }
+
+        const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+        
+        const requestPayload = {
+          job_title: trimmedTitle,
+          job_description: descriptionToUse  // Use title as description if description is empty
+        };
+        
+        const response = await fetch(`${backendUrl}/api/classify-technical-role`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestPayload)
+        });
+
+        if (!response.ok) {
+          throw new Error(`Classification failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.success) {
+          const newIsTechnical = result.is_technical || false;
+          setIsTechnical(newIsTechnical);
+          
+          // Reset coding questions to 0 if role is not technical
+          if (!newIsTechnical) {
+            setCodingQuestions(0);
+          }
+        } else {
+          console.warn('[WARNING] Classification returned unsuccessful:', result.message);
+          setIsTechnical(false);
+          setCodingQuestions(0); // Reset on error
+        }
+      } catch (error) {
+        console.error('[ERROR] Failed to classify technical role:', error);
+        // On error, set to false and reset coding questions
+        setIsTechnical(false);
+        setCodingQuestions(0);
+      } finally {
+        setClassifyingTechnical(false);
+      }
+    }, 1000); // Wait 1 second after user stops typing
+
+    // Cleanup timer on next change
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [jobTitle, jobDescription, jobDescParsed]); // Re-run when these change
 
   const handleClearAll = () => {
     setResume(null);
@@ -51,7 +132,9 @@ function UploadPage() {
     setJobTitle('');
     setJobDescription('');
     setJobDescParsed(false);
-    setClearCounter(prev => prev + 1); // Increment counter to force re-render
+    setIsTechnical(false);
+    setCodingQuestions(0); // Add this line to reset coding questions
+    setClearCounter(prev => prev + 1);
   };
 
   const handleJobDescUpload = async (file) => {
@@ -67,19 +150,12 @@ function UploadPage() {
     setParsingJobDesc(true);
     
     try {
-      console.log('[DEBUG] Starting job description parsing...');
-      console.log('[DEBUG] File:', file.name, file.size, file.type);
-      
       // Create FormData for file upload
       const formData = new FormData();
       formData.append('file', file);
 
-      console.log('[DEBUG] Making API call to parse job description...');
-
       // Use the uploadFile helper function with correct endpoint
       const result = await uploadFile('/api/parse-job-description', formData);
-
-      console.log('[DEBUG] Response result:', result);
 
       if (!result.success) {
         throw new Error(result.message || 'Failed to parse job description');
@@ -88,14 +164,14 @@ function UploadPage() {
       // Populate the fields with parsed data
       setJobTitle(result.data.job_title || '');
       setJobDescription(result.data.job_description || '');
+      setIsTechnical(result.data.is_technical || false); // Add this line
       setJobDescParsed(true);
       
-      console.log('[DEBUG] Fields populated successfully');
-
     } catch (error) {
       console.error('Error parsing job description:', error);
       setJobDescError(`Failed to parse job description: ${error.message}`);
       setJobDescParsed(false);
+      setIsTechnical(false); // Reset on error
     } finally {
       setParsingJobDesc(false);
     }
@@ -119,9 +195,6 @@ function UploadPage() {
       formData.append('bucket', bucket);
       formData.append('folder', folder);
       
-      console.log('[DEBUG] Uploading to edge function:', edgeFunctionUrl);
-      console.log('[DEBUG] Bucket:', bucket, 'Folder:', folder);
-      
       const response = await fetch(edgeFunctionUrl, {
         method: 'POST',
         headers: {
@@ -137,7 +210,6 @@ function UploadPage() {
       }
       
       const result = await response.json();
-      console.log('[DEBUG] Upload result:', result);
       
       if (!result.success) {
         throw new Error(result.error || 'Upload failed');
@@ -152,8 +224,6 @@ function UploadPage() {
 
   const saveToDatabase = async (resumeUrl, jobDescUrl) => {
     try {
-      console.log('[DEBUG] Saving to database...');
-      
       // Get current user session
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -163,7 +233,6 @@ function UploadPage() {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       
       // 1. Save resume to database
-      console.log('[DEBUG] Saving resume...');
       const resumeResponse = await fetch(`${supabaseUrl}/functions/v1/resumes`, {
         method: 'POST',
         headers: {
@@ -182,10 +251,8 @@ function UploadPage() {
       }
 
       const resumeData = await resumeResponse.json();
-      console.log('[DEBUG] Resume saved:', resumeData.data.id);
 
       // 2. Save job description to database
-      console.log('[DEBUG] Saving job description...');
       const jdResponse = await fetch(`${supabaseUrl}/functions/v1/job-descriptions`, {
         method: 'POST',
         headers: {
@@ -205,7 +272,6 @@ function UploadPage() {
       }
 
       const jdData = await jdResponse.json();
-      console.log('[DEBUG] Job description saved:', jdData.data.id);
 
       return {
         resumeId: resumeData.data.id,
@@ -226,9 +292,10 @@ function UploadPage() {
     console.log('easyQuestions:', easyQuestions);
     console.log('mediumQuestions:', mediumQuestions);
     console.log('hardQuestions:', hardQuestions);
+    console.log('codingQuestions:', codingQuestions);
     console.log('splitMode:', splitMode);
     console.log('blendMode:', blendMode);
-    console.log('totalQuestions:', easyQuestions + mediumQuestions + hardQuestions);
+    console.log('totalQuestions:', easyQuestions + mediumQuestions + hardQuestions + codingQuestions);
     console.log('=====================================');
     
     if (!resume || !jobTitle.trim() || !jobDescription.trim()) {
@@ -237,7 +304,7 @@ function UploadPage() {
     }
 
     // Validate question counts based on mode
-    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions + codingQuestions;
 
     // Only validate when both split AND blend modes are enabled
     if (splitMode && blendMode) {
@@ -380,7 +447,8 @@ function UploadPage() {
           question_counts: {
             beginner: easyQuestions,
             medium: mediumQuestions,
-            hard: hardQuestions
+            hard: hardQuestions,
+            coding: codingQuestions
           },
           split: splitMode,
           resume_pct: splitResumePercentage,
@@ -434,21 +502,11 @@ function UploadPage() {
       const existingQuestionSets = questionsForThisCombination.map(q => q.question_set).filter(set => set !== null && set !== undefined);
       
       if (existingQuestionSets.length === 0) {
-        console.log('[DEBUG] No existing question sets found for this resume_id + jd_id combination, starting with set 1');
         var nextQuestionSet = 1;
       } else {
         const maxSet = Math.max(...existingQuestionSets);
         nextQuestionSet = maxSet + 1;
-        console.log('[DEBUG] Found existing sets for this combination, max is', maxSet, 'next will be', nextQuestionSet);
       }
-      
-      console.log('[DEBUG] Current question sets for resume_id', resumeId, 'and jd_id', jdId, ':', existingQuestionSets);
-      console.log('[DEBUG] Next question set will be:', nextQuestionSet);
-      console.log('[DEBUG] Total questions found for this combination:', questionsForThisCombination.length);
-      console.log('[DEBUG] Questions by set for this combination:', existingQuestionSets.reduce((acc, set) => {
-        acc[set] = (acc[set] || 0) + 1;
-        return acc;
-      }, {}));
       
       // Now save the new questions with the incremented question set number
       const response = await fetch(`${supabaseUrl}/functions/v1/questions`, {
@@ -479,7 +537,7 @@ function UploadPage() {
 
   // Check if generate questions button should be enabled
   const canGenerateQuestions = () => {
-    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions + codingQuestions;
     
     // Basic requirements
     if (!resume || !jobTitle.trim() || !jobDescription.trim() || !jobDescParsed || loading || parsingJobDesc) {
@@ -494,6 +552,38 @@ function UploadPage() {
     
     // In all other cases, button is enabled (no additional validation)
     return true;
+  };
+
+  // Helper function to get the reason why button is disabled
+  const getDisabledReason = () => {
+    if (loading || parsingJobDesc) {
+      return null; // Don't show message during loading/parsing
+    }
+    
+    if (!resume) {
+      return 'Please upload a resume to generate questions.';
+    }
+    
+    if (!jobDescParsed) {
+      return 'Please upload and parse a job description file.';
+    }
+    
+    if (!jobTitle.trim()) {
+      return 'Job title is required. Please enter a job title.';
+    }
+    
+    if (!jobDescription.trim()) {
+      return 'Job description is required. Please enter a job description.';
+    }
+    
+    if (splitMode && blendMode) {
+      const totalQuestions = easyQuestions + mediumQuestions + hardQuestions + codingQuestions;
+      if (totalQuestions < 6) {
+        return 'When both Split and Blend modes are enabled, you need at least 6 total questions.';
+      }
+    }
+    
+    return null; // Button should be enabled
   };
 
   // Handle navigation to questions page (used by both buttons)
@@ -618,7 +708,9 @@ function UploadPage() {
 
                     {/* Job Title Input */}
                     <div>
-                      <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                      <label className={`block text-sm font-medium mb-2 ${
+                        !jobTitle.trim() && jobDescParsed ? 'text-red-600 dark:text-red-400' : 'text-[var(--color-text-primary)]'
+                      }`}>
                         Job Title
                       </label>
                       <input
@@ -627,10 +719,12 @@ function UploadPage() {
                         onChange={(e) => setJobTitle(e.target.value)}
                         placeholder="e.g., Senior Software Engineer"
                         disabled={loading}
-                        className={`w-full px-4 py-3 border border-[var(--color-border)] rounded-xl transition resize-none ${
+                        className={`w-full px-4 py-3 border rounded-xl transition resize-none ${
                           loading
-                            ? 'bg-[var(--color-text-secondary)]/20 text-[var(--color-text-secondary)] cursor-not-allowed opacity-60'
-                            : 'bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'
+                            ? 'bg-[var(--color-text-secondary)]/20 text-[var(--color-text-secondary)] cursor-not-allowed opacity-60 border-[var(--color-border)]'
+                            : !jobTitle.trim() && jobDescParsed
+                            ? 'bg-[var(--color-input-bg)] text-red-600 dark:text-red-400 border-red-500 dark:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500'
+                            : 'bg-[var(--color-input-bg)] text-[var(--color-text-primary)] border-[var(--color-border)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'
                         }`}
                         required
                       />
@@ -638,8 +732,15 @@ function UploadPage() {
 
                     {/* Job Description Input */}
                     <div>
-                      <label className="block text-sm font-medium text-[var(--color-text-primary)] mb-2">
+                      <label className={`block text-sm font-medium mb-2 ${
+                        !jobDescription.trim() && jobDescParsed ? 'text-red-600 dark:text-red-400' : 'text-[var(--color-text-primary)]'
+                      }`}>
                         Job Description
+                        {classifyingTechnical && (
+                          <span className="ml-2 text-xs text-blue-500">
+                            <FiLoader className="inline w-3 h-3 animate-spin" /> Classifying...
+                          </span>
+                        )}
                       </label>
                       <textarea
                         value={jobDescription}
@@ -647,10 +748,12 @@ function UploadPage() {
                         placeholder="Paste the job description here or upload a file to parse the job description..."
                         rows={6}
                         disabled={loading}
-                        className={`w-full px-4 py-3 border border-[var(--color-border)] rounded-xl transition resize-none ${
+                        className={`w-full px-4 py-3 border rounded-xl transition resize-none ${
                           loading
-                            ? 'bg-[var(--color-text-secondary)]/20 text-[var(--color-text-secondary)] cursor-not-allowed opacity-60'
-                            : 'bg-[var(--color-input-bg)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'
+                            ? 'bg-[var(--color-text-secondary)]/20 text-[var(--color-text-secondary)] cursor-not-allowed opacity-60 border-[var(--color-border)]'
+                            : !jobDescription.trim() && jobDescParsed
+                            ? 'bg-[var(--color-input-bg)] text-red-600 dark:text-red-400 border-red-500 dark:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500'
+                            : 'bg-[var(--color-input-bg)] text-[var(--color-text-primary)] border-[var(--color-border)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]'
                         }`}
                         required
                       />
@@ -679,11 +782,11 @@ function UploadPage() {
                             Question Difficulty Distribution
                           </h4>
                           <div className="text-xs text-[var(--color-text-secondary)]">
-                            Total: {easyQuestions + mediumQuestions + hardQuestions} questions
+                            Total: {easyQuestions + mediumQuestions + hardQuestions + (isTechnical ? codingQuestions : 0)} questions
                           </div>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className={`grid ${isTechnical ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'} gap-4`}>
                           <div className="bg-green-50/50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30 rounded-lg p-4">
                             <div className="flex items-center justify-between mb-2">
                               <label className="text-sm font-medium text-green-700 dark:text-green-300">
@@ -755,6 +858,33 @@ function UploadPage() {
                               <span>5</span>
                             </div>
                           </div>
+
+                          {/* Coding Questions Slider - Only show if technical role AND fields have content */}
+                          {isTechnical === true && jobTitle.trim() && jobDescription.trim() && (
+                            <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                                  Coding Questions
+                                </label>
+                                <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100/70 dark:bg-blue-800/30 px-2 py-1 rounded-full">
+                                  {codingQuestions}
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="5"
+                                value={codingQuestions}
+                                onChange={(e) => setCodingQuestions(parseInt(e.target.value))}
+                                disabled={loading}
+                                className="w-full h-2 bg-blue-200/50 dark:bg-blue-700/30 rounded-lg appearance-none cursor-pointer slider-blue"
+                              />
+                              <div className="flex justify-between text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
+                                <span>0</span>
+                                <span>5</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {/* Validation Error Message */}
@@ -927,6 +1057,8 @@ function UploadPage() {
                 </button>
               </div>
             )}
+              
+              {/* Remove the disabled reason message box - using red field borders instead */}
               
                 <button
                 type="submit"

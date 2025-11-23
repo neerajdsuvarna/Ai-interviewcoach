@@ -383,7 +383,7 @@ def extract_json_array(text):
 
 
 def generate_core_questions(structured_resume, job_title, job_description, beginner_count=2, medium_count=2, hard_count=2, model="llama3"):
-    def generate_questions_by_level(level, count, weight, retries=2):
+    def generate_questions_by_level(level, count, weight, max_retries=100000):
         # Map the level to the correct database constraint values
         level_mapping = {
             'beginner': 'easy',
@@ -392,34 +392,77 @@ def generate_core_questions(structured_resume, job_title, job_description, begin
         }
         db_level = level_mapping.get(level, level)
         
-        for attempt in range(retries):
+        for attempt in range(max_retries):
             prompt = f"""
-        You are an expert AI interviewer preparing questions for a candidate applying for the role of **{job_title}**.
+You are an expert interview question generator.
 
-        Job Description:
-        {job_description}
+Your task is to create THEORY-BASED interview questions for a candidate applying to the role of **{job_title}**.
 
-        Candidate's Resume (structured JSON):
-        {json.dumps(structured_resume, indent=2)}
+IMPORTANT:
+These questions must be based PRIMARILY on the candidate's resume, NOT the job description.
 
-        Your task:
-        Generate {count} unique interview questions with difficulty: "{level}".
+-------------------------
+RESUME (Structured JSON)
+-------------------------
+{json.dumps(structured_resume, indent=2)}
 
-        Rules:
-        - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
-        - Only return a pure JSON array of {count} objects.
-        - No explanations, no markdown, no text before/after the JSON.
+-------------------------
+JOB DESCRIPTION (Use for context only)
+-------------------------
+{job_description}
 
-        Format:
-        [
-        {{
-            "question": "...",
-            "difficulty": "{level}",
-            "weight": {weight}
-        }},
-        ...
-        ]
-        """
+GUIDELINES FOR QUESTION GENERATION:
+
+1. Focus 70% on the RESUME:
+   - Projects
+   - Work experience
+   - Tools & technologies used
+   - Responsibilities
+   - Methodologies (Agile, SDLC, Automation frameworks)
+   - Domain exposure (finance, e-commerce, data analytics, cloud, etc.)
+   - Achievements & results
+
+2. Focus ONLY 30% on JD:
+   - Align resume skills to JD expectations
+   - DO NOT ask JD-generic questions that ignore the resume
+
+3. THEORY-BASED ONLY:
+   - No coding questions
+   - No puzzles
+   - No algorithm questions
+   - No debugging code
+   - No math-based questions
+   - No logic questions
+
+4. Depth of questions:
+   BEGINNER:
+      - Concepts the candidate should know based on their resume
+      - Tools or technologies they have used
+      - Basic theory behind their work
+
+   MEDIUM:
+      - How they implemented something in their projects
+      - Their understanding of methodologies (Agile, testing lifecycle, automation concepts, SDLC)
+      - Tools: why they used them, how they compared them
+
+   HARD:
+      - Decision making, architecture, and deep reasoning behind resume content
+      - Tradeoffs, design principles, scaling, debugging approaches
+      - Why they chose certain workflows/tools
+      - Challenges they faced & how they solved them
+
+5. Output Format:
+Provide ONLY a pure JSON array with EXACTLY {count} items:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+
+No markdown, no extra text, no explanation.
+"""
             try:
                 response = try_ollama_chat(prompt.strip(), model=model)
                 raw = response["message"]["content"]
@@ -430,7 +473,7 @@ def generate_core_questions(structured_resume, job_title, job_description, begin
                     print(f"[WARNING] Got {len(questions)} {level} questions instead of {count}. Retrying...")
             except Exception as e:
                 print(f"[ERROR] Failed to generate {level} questions: {e}")
-        print(f"[ERROR] Failed to get valid {level} questions after {retries} attempts.")
+        print(f"[ERROR] Failed to get valid {level} questions after {max_retries} attempts.")
         return []
 
     print("[INFO] Generating core questions by difficulty...")
@@ -446,34 +489,244 @@ def generate_core_questions(structured_resume, job_title, job_description, begin
         "hard": hard_qs
     }
 
+# === CODING QUESTIONS GENERATION ===
+
+def generate_coding_questions(structured_resume, job_title, job_description, coding_count=0, model="llama3"):
+    """
+    Generate coding/programming interview questions based on resume and job description.
+    Questions will be categorized by weight (1=beginner, 3=medium, 5=hard).
+    
+    Args:
+        structured_resume: Parsed resume data (dict)
+        job_title: Job title string
+        job_description: Job description string
+        coding_count: Number of coding questions to generate (0-5)
+        model: LLM model to use
+    
+    Returns:
+        List of coding questions with varying weights
+    """
+    if coding_count <= 0:
+        return []
+    
+    def generate_coding_questions_internal(count, max_retries=100000):
+        for attempt in range(max_retries):
+            prompt = f"""
+You are an expert technical interviewer.
+
+Your job is to generate CLEAR, PRECISE, IMPLEMENTABLE coding tasks for the candidate.
+
+THESE ARE NOT THEORY QUESTIONS.
+THESE ARE REAL CODING PROBLEMS THAT REQUIRE WRITING ACTUAL CODE.
+
+=====================================================================
+RESUME — extract ONLY relevant coding signals from this:
+- Programming languages the candidate claims (Python, Java, SQL, JS, etc.)
+- Technical skills (APIs, data structures, parsing, automation scripting)
+- Tools/libraries that involve coding (requests, pandas, SQL, regex, etc.)
+
+RESUME (Structured JSON):
+{json.dumps(structured_resume, indent=2)}
+
+=====================================================================
+JOB DESCRIPTION — use ONLY skill expectations, NOT responsibilities:
+- Required languages
+- Required data handling
+- Required API or automation logic
+- Required algorithms or processing steps
+
+JOB DESCRIPTION:
+{job_description}
+
+=====================================================================
+MANDATORY RULES FOR CODING QUESTIONS
+=====================================================================
+
+1. Every question MUST be a direct coding task:
+   - "Write a function that…"
+   - "Given X, return Y…"
+   - "Write SQL query to…"
+   - "Parse this…"
+   - "Transform this data…"
+
+2. Questions MUST match BOTH resume & JD skill intersection:
+   - If resume = Python + SQL and JD = Python + APIs → ask Python/API/SQL tasks.
+   - If resume = JavaScript and JD = React → ask JS/array/object tasks.
+   - If resume = Python only and JD = cloud engineer → ask Python logic tasks.
+
+3. Tasks MUST be unambiguous:
+   - One correct output expectation
+   - Provide example input/output when helpful
+
+4. Difficulty:
+   - EASY (weight 1):
+       * Reverse a string
+       * Remove duplicates
+       * Parse a simple JSON
+       * Basic SQL SELECT + WHERE
+   - MEDIUM (weight 3):
+       * Parse CSV/JSON and transform it
+       * API GET + filter response
+       * SQL JOIN with grouped aggregation
+       * Regex extraction tasks
+   - HARD (weight 5):
+       * Build mini utility (retry API call, pagination, file processor)
+       * Complex SQL query (window functions, multi-table)
+       * Multi-step data transformation
+       * Error handling + logic branching
+
+5. DO NOT create:
+   - Vague theoretical discussion questions
+   - System design questions
+   - LeetCode-style puzzles unrelated to resume/JD
+   - Overly long projects
+
+6. If resume language and JD language mismatch:
+   - PRIORITIZE resume language.
+   - Include JD-style logic in the task.
+
+=====================================================================
+OUTPUT FORMAT
+=====================================================================
+
+Return ONLY a pure JSON array with EXACTLY {count} items:
+
+[
+  {{
+    "question": "Write a Python function that takes a list of user dicts and returns only those whose 'active' field is true.",
+    "difficulty": "coding",
+    "weight": 1
+  }}
+]
+
+NO extras. NO markdown. JSON ONLY.
+"""
+            try:
+                response = try_ollama_chat(prompt.strip(), model=model)
+                raw = response["message"]["content"]
+                questions = extract_json_array(raw)
+                if len(questions) == count:
+                    return questions
+                else:
+                    print(f"[WARNING] Got {len(questions)} coding questions instead of {count}. Retrying...")
+            except Exception as e:
+                print(f"[ERROR] Failed to generate coding questions: {e}")
+        print(f"[ERROR] Failed to get valid coding questions after {max_retries} attempts.")
+        return []
+    
+    print(f"[INFO] Generating {coding_count} coding questions...")
+    coding_qs = generate_coding_questions_internal(coding_count)
+    print(f"[DEBUG] Coding questions generated: {len(coding_qs)}")
+    
+    return coding_qs
+
+# === END OF CODING QUESTIONS GENERATION ===
+
 # === CORE QUESTION GENERATION WITH SPLIT INTEGRATED ===
 
 def generate_split_questions(structured_resume, job_title, job_description,
                              beginner_count=2, medium_count=2, hard_count=2,
                              resume_pct=50, jd_pct=50, model="llama3"):
-    def generate_questions_by_source(level, count, weight, source, retries=2):
+    def generate_questions_by_source(level, count, weight, source, max_retries=100000):
         if count <= 0:
             return []
         """Helper: generate questions from either resume or JD context"""
-        for attempt in range(retries):
+        for attempt in range(max_retries):
             if source == "resume":
-                context = f"Candidate's Resume (structured JSON):\n{json.dumps(structured_resume, indent=2)}"
-            else:  # JD
-                context = f"Job Title: {job_title}\nJob Description:\n{job_description}"
+                # Resume-source prompt - MUST force resume-based theory questions
+                prompt = f"""
+You are an expert interview question generator for the role of **{job_title}**.
 
-            prompt = f"""
-            You are an expert AI interviewer preparing questions for a candidate.
+Generate theory-based interview questions that come ONLY from the candidate's RESUME.
 
-            Context Source: {source.upper()}
-            {context}
+==============================
+RESUME (Structured JSON)
+==============================
+{json.dumps(structured_resume, indent=2)}
 
-            Task:
-            Generate {count} unique interview questions with difficulty: "{level}".
+==============================
+JOB DESCRIPTION (Context Only)
+==============================
+{job_description}
 
-            Rules:
-            - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
-            - Only return a pure JSON array of {count} objects.
-            """
+SPLIT MODE RULES:
+- This question belongs to the **RESUME bucket**, which represents {resume_pct}% weight.
+- Therefore, your questions must be **deeply grounded in the resume**.
+- You MUST use the candidate's:
+  - projects
+  - work experience
+  - tools & technologies
+  - responsibilities
+  - achievements
+  - domain exposure
+- DO NOT generate generic JD-based questions.
+- DO NOT generate coding questions, algorithms, puzzles, debugging or math.
+- Only theory-based questions related to the resume.
+
+DIFFICULTY RULES:
+- BEGINNER: basic concepts/tools from resume
+- MEDIUM: how they implemented tasks in their resume
+- HARD: deep reasoning, tradeoffs, decisions, challenges from resume
+
+OUTPUT:
+Return ONLY a pure JSON array with EXACTLY {count} items:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+
+No explanations or text outside JSON.
+"""
+            else:  # JD source
+                # JD-source prompt - MUST force JD-based theory questions but aligned with resume
+                prompt = f"""
+You are an expert interview question generator for the role of **{job_title}**.
+
+Generate theory-based interview questions that come ONLY from the JOB DESCRIPTION.
+
+==============================
+JOB DESCRIPTION
+==============================
+{job_description}
+
+==============================
+RESUME (Used only for alignment)
+==============================
+{json.dumps(structured_resume, indent=2)}
+
+SPLIT MODE RULES:
+- This question belongs to the **JD bucket**, which represents {jd_pct}% weight.
+- Focus mainly on:
+  - responsibilities in the JD
+  - required tools/skills
+  - required domain knowledge
+  - required methodologies
+  - expectations for this job role
+- ALIGN your questions with the resume where possible.
+  (Example: If JD mentions API testing and resume shows Postman, ask theory about API testing using Postman.)
+- DO NOT generate coding questions or puzzles.
+- DO NOT ask resume-centric questions.
+
+DIFFICULTY RULES:
+- BEGINNER: basic theory concepts related to JD skills
+- MEDIUM: process/methodology questions relevant to the JD
+- HARD: deeper conceptual, architectural, or reasoning questions tied to JD expectations
+
+OUTPUT:
+Return ONLY a JSON array with EXACTLY {count} items:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+
+No explanations or extra text.
+"""
             try:
                 response = try_ollama_chat(prompt.strip(), model=model)
                 raw = response["message"]["content"]
@@ -555,7 +808,7 @@ def generate_blend_questions(structured_resume, job_title, job_description,
     according to given percentages.
     """
 
-    def generate_questions_blend(level, count, weight, retries=2):
+    def generate_questions_blend(level, count, weight, max_retries=100000):
         if count <= 0: 
             return []
         level_mapping = {
@@ -565,37 +818,81 @@ def generate_blend_questions(structured_resume, job_title, job_description,
         }
         db_level = level_mapping.get(level, level)
 
-        for attempt in range(retries):
+        for attempt in range(max_retries):
             prompt = f"""
-            You are an expert AI interviewer preparing questions for a candidate.
+You are an expert interview question generator.
 
-            Blend Context:
-            - Use {blend_pct_resume}% of the candidate's resume:
-            {json.dumps(structured_resume, indent=2)}
+Your task is to generate THEORY-BASED interview questions for the role of **{job_title}** that blend BOTH:
+- the candidate's resume (weight: {blend_pct_resume}%)
+- the job description (weight: {blend_pct_jd}%)
 
-            - Use {blend_pct_jd}% of the job description:
-            Job Title: {job_title}
-            Job Description: {job_description}
+Each question must integrate information from BOTH sources.
 
-            Task:
-            Generate {count} unique interview questions with difficulty: "{level}".
+===================================
+RESUME (Structured JSON)
+===================================
+{json.dumps(structured_resume, indent=2)}
 
-            Rules:
-            - Each question must naturally combine both resume and JD information.
-            - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
-            - Only return a pure JSON array of {count} objects.
-            - No explanations, no markdown, no text before/after the JSON.
+===================================
+JOB DESCRIPTION
+===================================
+{job_description}
 
-            Format:
-            [
-              {{
-                "question": "...",
-                "difficulty": "{level}",
-                "weight": {weight}
-              }},
-              ...
-            ]
-            """
+===================================
+BLEND MODE LOGIC
+===================================
+You MUST combine both sources naturally in EACH question.
+
+- If the candidate used a tool required by the JD → ask about how they would apply it.
+- If the JD requires something the resume shows → ask deeper theory or reasoning.
+- If JD requires something the resume lacks → ask conceptual theory tying to their closest skill.
+- If the resume includes domain experience → tie it to JD expectations.
+- If resume shows past responsibilities → relate them to JD responsibilities.
+
+Follow the blend weights:
+- {blend_pct_resume}% of the question content MUST be grounded in resume specifics.
+- {blend_pct_jd}% MUST reflect the JD expectations.
+
+===================================
+STRICT RULES
+===================================
+❌ No coding questions
+❌ No algorithms or puzzles
+❌ No debugging questions
+❌ No generic textbook questions
+❌ No questions that ignore resume or ignore JD
+
+✔ Only theory-based functional/technical questions  
+✔ MUST reference resume elements (projects, tools, workflows, achievements)  
+✔ MUST reference JD requirements (skills, expectations, responsibilities)
+
+===================================
+DIFFICULTY RULES
+===================================
+BEGINNER:
+- Simple conceptual questions combining resume tools + JD requirements
+
+MEDIUM:
+- Implementation/process questions linking candidate's past work to role expectations
+
+HARD:
+- Deep reasoning, design, decision-making, tradeoffs, challenges  
+- Always tied to BOTH resume experience and JD needs
+
+===================================
+OUTPUT FORMAT
+===================================
+Return ONLY a JSON array with EXACTLY {count} questions:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+
+No markdown, no explanation, no extra text.
+"""
             try:
                 response = try_ollama_chat(prompt.strip(), model=model)
                 raw = response["message"]["content"]
@@ -742,24 +1039,88 @@ def generate_hybrid_questions(structured_resume, job_title, job_description,
     def generate_from_source(level, count, weight, source):
         if count <= 0:
             return []
-        context = (
-            f"Candidate's Resume (structured JSON):\n{json.dumps(structured_resume, indent=2)}"
-            if source == "resume"
-            else f"Job Title: {job_title}\nJob Description:\n{job_description}"
-        )
-        prompt = f"""
-        You are an expert AI interviewer preparing questions for a candidate.
+        
+        if source == "resume":
+            # Resume Bucket Prompt for Hybrid Mode
+            prompt = f"""
+You are an expert interview question generator.
 
-        Context Source: {source.upper()}
-        {context}
+This question belongs to the **RESUME-ONLY bucket** of Hybrid Mode.
 
-        Task:
-        Generate {count} unique interview questions with difficulty: "{level}".
+==============================
+RESUME (Structured JSON)
+==============================
+{json.dumps(structured_resume, indent=2)}
 
-        Rules:
-        - Each question must be labeled with "difficulty": "{level}" and "weight": {weight}.
-        - Only return a pure JSON array of {count} objects.
-        """
+==============================
+JOB DESCRIPTION (Context Only)
+==============================
+{job_description}
+
+HYBRID MODE RULES:
+- Resume-only bucket weight: {resume_pct}% of total hybrid questions.
+- Every question MUST be deeply grounded in resume specifics.
+- Use candidate's:
+  - projects
+  - tools / technologies
+  - responsibilities
+  - domain exposure
+  - achievements
+- DO NOT generate JD-generic or textbook questions.
+- DO NOT generate coding questions.
+
+DIFFICULTY:
+- BEGINNER: simple concepts from resume
+- MEDIUM: implementation details from resume
+- HARD: reasoning, tradeoffs, challenges from resume
+
+OUTPUT: Pure JSON array of {count} items:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+"""
+        else:  # JD source
+            # JD Bucket Prompt for Hybrid Mode
+            prompt = f"""
+You are an expert interview question generator.
+
+This question belongs to the **JD-ONLY bucket** of Hybrid Mode.
+
+==============================
+JOB DESCRIPTION
+==============================
+{job_description}
+
+==============================
+RESUME (Used ONLY for alignment)
+==============================
+{json.dumps(structured_resume, indent=2)}
+
+HYBRID MODE RULES:
+- JD-only bucket weight: {jd_pct}% of hybrid questions.
+- Focus on required tools, responsibilities, domain skills from the JD.
+- ALIGN questions with resume when possible.
+- DO NOT generate resume-centric questions.
+- DO NOT generate coding questions.
+
+DIFFICULTY:
+- BEGINNER: basic JD-aligned concepts
+- MEDIUM: process/methodology questions tied to JD
+- HARD: deeper conceptual or architectural reasoning tied to JD
+
+OUTPUT: Pure JSON array of {count} items:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+"""
         try:
             response = try_ollama_chat(prompt.strip(), model=model)
             return extract_json_array(response["message"]["content"])
@@ -771,25 +1132,49 @@ def generate_hybrid_questions(structured_resume, job_title, job_description,
     def generate_blended(level, count, weight):
         if count <= 0:
             return []
+        # Blend Bucket Prompt for Hybrid Mode
         prompt = f"""
-        You are an expert AI interviewer preparing questions.
+You are an expert interview question generator.
 
-        Blend Context:
-        - Use {blend_pct_resume}% of the candidate's resume:
-        {json.dumps(structured_resume, indent=2)}
+This question belongs to the **BLENDED bucket** of Hybrid Mode.
 
-        - Use {blend_pct_jd}% of the job description:
-        Job Title: {job_title}
-        Job Description: {job_description}
+Blend Ratio:
+- {blend_pct_resume}% Resume grounding
+- {blend_pct_jd}% JD grounding
 
-        Task:
-        Generate {count} unique interview questions with difficulty "{level}".
+==============================
+RESUME (Structured JSON)
+==============================
+{json.dumps(structured_resume, indent=2)}
 
-        Rules:
-        - Each question must combine resume + JD naturally.
-        - Each question must be labeled with "difficulty": "{level}", "weight": {weight}.
-        - Only return a pure JSON array of {count} objects.
-        """
+==============================
+JOB DESCRIPTION
+==============================
+{job_description}
+
+HYBRID MODE BLEND RULES:
+- EACH question must integrate BOTH resume + JD meaningfully.
+- Follow blend weighting:
+  - {blend_pct_resume}% → resume projects, tools, workflows, responsibilities
+  - {blend_pct_jd}% → JD role expectations, skills, methodologies
+- NO coding questions.
+- NO generic questions.
+- Each question must reference BOTH resume content and JD expectations.
+
+DIFFICULTY:
+- BEGINNER: simple blended conceptual questions
+- MEDIUM: resume implementation + JD responsibilities
+- HARD: deep reasoning using resume experience to meet JD needs
+
+OUTPUT: Pure JSON array of {count} items:
+[
+  {{
+    "question": "...",
+    "difficulty": "{level}",
+    "weight": {weight}
+  }}
+]
+"""
         try:
             response = try_ollama_chat(prompt.strip(), model=model)
             return extract_json_array(response["message"]["content"])
@@ -851,12 +1236,16 @@ def generate_answers_for_existing_questions(structured_resume, job_title, job_de
     with open(questions_csv_path, "r", encoding="utf-8") as infile, open(output_path, "w", newline='', encoding="utf-8") as outfile:
         reader = csv.DictReader(infile)
         writer = csv.writer(outfile)
-        writer.writerow(["question_id", "question", "level", "strength", "answer"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code"])
 
         for row in reader:
-            if row["strength"]:  # Skip rows that already have answers
+            if row.get("strength"):  # Skip rows that already have answers
                 continue
             print(f"[DEBUG] Generating answers for {row['question_id']} [{row['level']}]: {row['question'][:80]}...")        
+            
+            # Get requires_code from input row (default to False if not present)
+            requires_code = row.get('requires_code', 'false').lower() == 'true'
+            
             for strength in ["weak", "medium", "strong"]:  # These map to beginner, intermediate, expert in read_questions_from_csv
                 prompt = f"""
 You are an expert interviewer.
@@ -878,7 +1267,8 @@ Only respond with the answer text, no formatting.
                 try:
                     response = try_ollama_chat(prompt.strip(), model=model)
                     answer = response["message"]["content"].strip().replace('"', "'")
-                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer])
+                    # Include requires_code when writing the row
+                    writer.writerow([row["question_id"], row["question"], row["level"], strength, answer, "true" if requires_code else "false"])
                     print(f"[DEBUG] ↳ {strength.capitalize()} answer generated.")
                 except Exception as e:
                     print(f"[ERROR] Failed generating answer for {row['question_id']} [{strength}]: {e}")
@@ -980,7 +1370,61 @@ def parse_job_description_file(file_path, model="llama3"):
 # JD PARSING END
 #---------------------------------------------------------------------------------------------------------------------------------------------
 
-def try_ollama_chat(prompt, model="llama3", max_retries=2):
+def classify_if_technical_role(job_title, job_description, model="llama3"):
+    """
+    Returns True if the job description implies that
+    technical/coding questions can be asked.
+    Returns False otherwise.
+    """
+    prompt = f"""
+You are an expert job role classifier.
+
+Determine whether this job is TECHNICAL enough that a candidate
+should reasonably expect CODING or PROGRAMMING related questions.
+
+Return ONLY a JSON object with:
+{{
+  "is_technical": true/false
+}}
+
+Do NOT add extra text.
+
+Job Title: {job_title}
+
+Job Description:
+\"\"\"{job_description}\"\"\"
+
+Classification rules:
+- TRUE if job involves:
+  software development, backend, frontend, devops, SRE, QA automation,
+  test automation, scripting, ETL development, ML engineering, data engineering,
+  system programming, cloud engineering.
+
+- TRUE if role requires knowledge of:
+  Python, Java, C#, C++, JavaScript, SQL, APIs, automation tools.
+
+- FALSE if role is:
+  non-technical, managerial, HR, sales, marketing, customer support,
+  business operations, product owner without coding, project manager.
+
+- If ambiguous, choose TRUE only if coding responsibilities appear.
+"""
+
+    response = try_ollama_chat(prompt, model=model)
+    raw = response["message"]["content"]
+
+    # Parse JSON from the model safely
+    try:
+        result = json.loads(raw)
+        return bool(result.get("is_technical", False))
+    except:
+        # fallback: regex extraction
+        match = re.search(r'true|false', raw, re.IGNORECASE)
+        if match:
+            return match.group(0).lower() == "true"
+        return False
+
+def try_ollama_chat(prompt, model="llama3", max_retries=100000):
     for attempt in range(max_retries):
         try:
             return ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
@@ -996,12 +1440,16 @@ def deduplicate_string_list(lst):
 def save_questions_to_csv(questions_by_level, output_path):
     with open(output_path, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["question_id", "question", "level", "strength", "answer"])
+        writer.writerow(["question_id", "question", "level", "strength", "answer", "requires_code"])
         qid_counter = 1
+        
+        # Save questions by level (coding questions are already merged into beginner/medium/hard)
         for level in ["beginner", "medium", "hard"]:
             for q in questions_by_level.get(level, []):
-                writer.writerow([f"q{qid_counter}", q["question"], level, "", ""])
+                requires_code = q.get('requires_code', False)
+                writer.writerow([f"q{qid_counter}", q["question"], level, "", "", "true" if requires_code else "false"])
                 qid_counter += 1
+            
     print(f"[DEBUG] Saving questions. "
           f"Beginner: {len(questions_by_level.get('beginner', []))}, "
           f"Medium: {len(questions_by_level.get('medium', []))}, "
@@ -1036,7 +1484,7 @@ def main():
 # def run_pipeline_from_api(resume_path, job_title, job_description,
 #                           question_counts=None, include_answers=True,
 #                           split=False, resume_pct=50, jd_pct=50,
-#                           max_retries=1000):
+#                           max_retries=100000):
 #     if question_counts is None:
 #         question_counts = {
 #             'beginner': 1,
@@ -1153,7 +1601,7 @@ def run_pipeline_from_api(
     blend=False,
     blend_pct_resume=50,   # for blend mode: percentage weight of resume context
     blend_pct_jd=50,       # for blend mode: percentage weight of JD context
-    max_retries=1000
+    max_retries=100000
 ):
 
     """
@@ -1260,6 +1708,42 @@ def run_pipeline_from_api(
                     question_counts.get('hard', 1)
                 )
 
+            # Generate coding questions if requested
+            coding_count = question_counts.get('coding', 0)
+            if coding_count > 0:
+                print(f"[INFO] Generating {coding_count} coding questions...")
+                coding_questions = generate_coding_questions(
+                    structured_data,
+                    job_title,
+                    job_description,
+                    coding_count
+                )
+                
+                # Categorize coding questions by weight and merge into existing categories
+                # weight 1 → beginner, weight 3 → medium, weight 5 → hard
+                for q in coding_questions:
+                    weight = q.get('weight', 5)  # Default to 5 if weight missing
+                    # Mark as coding question
+                    q['requires_code'] = True
+                    # Update difficulty to match category
+                    if weight == 1:
+                        q['difficulty'] = 'beginner'
+                        core_questions['beginner'].append(q)
+                    elif weight == 3:
+                        q['difficulty'] = 'medium'
+                        core_questions['medium'].append(q)
+                    else:  # weight == 5 or any other value
+                        q['difficulty'] = 'hard'
+                        core_questions['hard'].append(q)
+                
+                print(f"[DEBUG] Coding questions categorized: "
+                      f"Beginner={sum(1 for q in coding_questions if q.get('weight') == 1)}, "
+                      f"Medium={sum(1 for q in coding_questions if q.get('weight') == 3)}, "
+                      f"Hard={sum(1 for q in coding_questions if q.get('weight') == 5)}")
+            else:
+                # Ensure coding key doesn't exist if not generating
+                if 'coding' in core_questions:
+                    del core_questions['coding']
 
             
             # Save questions to CSV
@@ -1324,6 +1808,7 @@ def read_questions_from_csv(csv_file_path):
                     'beginner': 'easy',
                     'medium': 'medium', 
                     'hard': 'hard'
+                    # Removed 'coding' mapping - coding questions are now categorized by weight
                 }
                 
                 strength_mapping = {
@@ -1336,13 +1821,17 @@ def read_questions_from_csv(csv_file_path):
                 difficulty_category = level_mapping.get(row['level'], 'medium')
                 difficulty_experience = strength_mapping.get(row['strength'], 'beginner')
                 
+                # Get requires_code from CSV (default to False if not present)
+                requires_code = row.get('requires_code', 'false').lower() == 'true'
+                
                 # Debug logging
-                print(f"[DEBUG] Mapping CSV values: level='{row['level']}' -> difficulty_category='{difficulty_category}', strength='{row['strength']}' -> difficulty_experience='{difficulty_experience}'")
+                print(f"[DEBUG] Mapping CSV values: level='{row['level']}' -> difficulty_category='{difficulty_category}', strength='{row['strength']}' -> difficulty_experience='{difficulty_experience}', requires_code={requires_code}")
                 
                 question_data = {
                     "question_text": row['question'],
                     "difficulty_category": difficulty_category,  # easy, medium, hard
-                    "difficulty_experience": difficulty_experience  # beginner, intermediate, expert
+                    "difficulty_experience": difficulty_experience,  # beginner, intermediate, expert
+                    "requires_code": requires_code  # Add requires_code field
                 }
                 
                 # Include answer if available

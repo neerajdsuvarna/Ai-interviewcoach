@@ -24,6 +24,7 @@ interface Database {
           difficulty_category: string
           difficulty_experience: string
           question_set: number
+          requires_code: boolean  // Add this
           created_at: string
         }
         Insert: {
@@ -36,6 +37,7 @@ interface Database {
           difficulty_category?: string
           difficulty_experience?: string
           question_set: number
+          requires_code?: boolean  // Add this
           created_at?: string
         }
         Update: {
@@ -48,6 +50,7 @@ interface Database {
           difficulty_category?: string
           difficulty_experience?: string
           question_set?: number
+          requires_code?: boolean  // Add this
           created_at?: string
         }
       }
@@ -64,6 +67,7 @@ interface CreateQuestionRequest {
     expected_answer?: string
     difficulty_category?: string
     difficulty_experience?: string
+    requires_code?: boolean  // Add this
   }>
   question_set: number
 }
@@ -225,6 +229,7 @@ async function handleCreateQuestions(supabaseClient: any, req: Request, authUser
       expected_answer: q.expected_answer || null,
       difficulty_category: q.difficulty_category || 'medium',
       difficulty_experience: q.difficulty_experience || 'beginner',
+      requires_code: q.requires_code || false,  // Add this line - defaults to false
       question_set: question_set
     }))
 
