@@ -16,6 +16,31 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    // ⚡ PERFORMANCE OPTIMIZATIONS
+    build: {
+      // Use esbuild for faster minification (already included with Vite)
+      minify: 'esbuild',
+      // Remove console.logs in production
+      esbuild: {
+        drop: ['console', 'debugger'],
+      },
+      // Code splitting - split vendor chunks
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Separate large libraries into their own chunks
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+            'supabase-vendor': ['@supabase/supabase-js'],
+            'ui-vendor': ['framer-motion', 'recharts', 'lucide-react'],
+            'utils-vendor': ['jspdf', 'jspdf-autotable', 'prismjs'],
+          },
+        },
+      },
+      // Chunk size warnings
+      chunkSizeWarningLimit: 1000,
+      // Source maps for production (optional, remove for smaller builds)
+      sourcemap: false,
+    },
     server: {
       host: '0.0.0.0',
       port: 5173,
