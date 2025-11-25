@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for end button
+import { Mic, MicOff, Square, Code } from 'lucide-react'; // ✅ Add Square icon for end button
 import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
@@ -8,6 +8,7 @@ import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
 import { useChatHistory } from '../../hooks/useChatHistory';
 
 import { trackEvents } from '../../services/mixpanel';
+import CodeEditorPopup from './CodeEditorPopup';
 
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, isAudioPlaying, setIsAudioPlaying, onStateChange }) {
@@ -31,6 +32,12 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // ✅ NEW: Add state to track interview stage and resume question answers
   const [interviewStage, setInterviewStage] = useState('introduction');
   const [hasAnsweredResumeQuestion, setHasAnsweredResumeQuestion] = useState(false);
+
+  // ✅ NEW: Add state for code editor popup
+  const [showCodeEditor, setShowCodeEditor] = useState(false);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [isCodingQuestion, setIsCodingQuestion] = useState(false);
+  const [codeToAppend, setCodeToAppend] = useState('');
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
@@ -107,26 +114,43 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       console.log('📥 Interview Manager response:', response);
       
       if (response.success) {
-        const { response: textResponse, audio_url, should_delete_audio, stage, interview_done } = response.data;
-        
-        console.log('🔍 Response data:', {
-          stage,
-          interview_done,
-          userInput: userInput.trim(),
-          currentInterviewStage: interviewStage
-        });
-        
-        // ✅ NEW: Track when user answers resume questions (check current stage before updating)
-        if (interviewStage === 'resume_discussion' && userInput.trim().length > 0) {
+          const { response: textResponse, audio_url, should_delete_audio, stage, interview_done, requires_code, code_language } = response.data;
+
+          console.log('🔍 Response data:', {
+              stage,
+              interview_done,
+              userInput: userInput.trim(),
+              currentInterviewStage: interviewStage
+          });
+
+          console.log('Question Requires Code: ', requires_code);
+
+      // ✅ NEW: Track when user answers resume questions (check current stage before updating)
+      if (interviewStage === 'resume_discussion' && userInput.trim().length > 0) {
           console.log('✅ User answered resume question - marking as answered');
           setHasAnsweredResumeQuestion(true);
-        }
-        
+      }
+
+      if (requires_code) {
+          console.log('🔧 Coding question detected, auto-opening code editor');
+          setCurrentQuestion({
+            question_text: textResponse,
+            requires_code: true,
+            code_language: code_language
+          });
+          setIsCodingQuestion(true);
+          setShowCodeEditor(true);
+      } else {
+          setCurrentQuestion(null);
+          setIsCodingQuestion(false);
+          setCodeToAppend('');
+      }
+
         // ✅ NEW: Update interview stage and control End Interview button
         if (stage) {
           console.log('📊 Interview stage updated from', interviewStage, 'to:', stage);
           setInterviewStage(stage);
-          
+
           // Enable End Interview button only when user has answered at least one resume question
           if (stage === 'resume_discussion' && hasAnsweredResumeQuestion) {
             console.log('✅ Resume question answered - enabling End Interview button');
@@ -144,15 +168,15 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             setCanEndInterview(false);
           }
         }
-        
+
         // ✅ FIXED: Preload audio first, then show text and play simultaneously
         if (audio_url) {
           console.log('🔊 Preloading audio response:', audio_url);
           const audio = new Audio(audio_url);
-          
+
           // Preload the audio
           audio.preload = 'auto';
-          
+
           // Wait for audio to be ready, then show text and play simultaneously
           const playAudioWhenReady = () => {
             // ✅ Remove thinking message right before showing the response
@@ -160,15 +184,15 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               const filtered = prev.filter(msg => !msg.isThinking);
               return filtered;
             });
-            
+
             // Add message and start playing at the same time
             addMessageToConversation('interviewer', textResponse).then(() => {
               console.log('✅ Interviewer response added, starting audio playback');
-              
+
               // Track audio playback state
               setIsAudioPlaying(true);
               setCurrentAudioElement(audio);
-              
+
               // Start playing immediately
               audio.play().catch(error => {
                 console.error('❌ Failed to play audio:', error);
@@ -178,34 +202,34 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               });
             });
           };
-          
+
           // If audio is already loaded, play immediately
           if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or higher
             playAudioWhenReady();
           } else {
             // Wait for audio to be ready
             audio.addEventListener('canplaythrough', playAudioWhenReady, { once: true });
-            
+
             // Fallback: if canplaythrough doesn't fire, wait a bit then play
-            setTimeout(() => {
-              if (audio.readyState >= 2) {
-                playAudioWhenReady();
-              }
-            }, 100);
+//             setTimeout(() => {
+//               if (audio.readyState >= 2) {
+//                 playAudioWhenReady();
+//               }
+//             }, 100);
           }
-          
+
           // ✅ NEW: Delete audio file after playback
           audio.onended = async () => {
             console.log('✅ Audio playback completed');
             setIsAudioPlaying(false);
             setCurrentAudioElement(null);
             setIsResponseInProgress(false);
-            
+
             if (should_delete_audio) {
               try {
                 console.log('🗑️ Deleting audio file after playback...');
                 console.log('🗑️ Audio URL to delete:', audio_url);
-                
+
                 await apiDelete('/api/delete-audio', {
                   body: { audio_url }
                 });
@@ -218,32 +242,32 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
               console.log('ℹ️ Audio deletion skipped (should_delete_audio is false)');
             }
           };
-          
+
           // ✅ NEW: Handle audio play errors
           audio.onerror = (error) => {
             console.error('❌ Audio playback failed:', error);
             setIsAudioPlaying(false);
             setCurrentAudioElement(null);
             setIsResponseInProgress(false);
-            
+
             // ✅ Remove thinking message before showing text
             setConversation(prev => {
               const filtered = prev.filter(msg => !msg.isThinking);
               return filtered;
             });
-            
+
             // Still show the text even if audio fails
             addMessageToConversation('interviewer', textResponse);
           };
         } else {
           console.log('ℹ️ No audio URL provided in response');
-          
+
           // ✅ Remove thinking message before showing text
           setConversation(prev => {
             const filtered = prev.filter(msg => !msg.isThinking);
             return filtered;
           });
-          
+
           // No audio, just show text
           await addMessageToConversation('interviewer', textResponse);
           setIsResponseInProgress(false);
@@ -255,6 +279,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       console.error('❌ Error calling Interview Manager:', error);
     }
   };
+
 
   // Update the handleEndInterview function
   const handleEndInterview = async () => {
@@ -542,11 +567,15 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             const transcription = result.data.transcription;
             
             if (transcription && transcription.trim()) {
-              // Add candidate's response to conversation
-              await addMessageToConversation('candidate', transcription);
+            // Add candidate's response to conversation
+              if (isCodingQuestion) {
+                await addMessageToConversation('candidate', (transcription + '\n\nCode: ' + codeToAppend));
+              } else {
+                  await addMessageToConversation('candidate', transcription);
+              }
               console.log('✅ Candidate message added');
               setIsLoading(false); // Stop loading immediately after user message appears
-              
+
               // Add thinking indicator before backend call
               const thinkingMessage = {
                 id: `thinking-${Date.now()}`,
@@ -556,11 +585,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
                 isThinking: true
               };
               setConversation(prev => [...prev, thinkingMessage]);
-              
+
               // Call Interview Manager API to get the next question/response
               setIsResponseInProgress(true); // ✅ NEW: Start response process
               await callInterviewManager(transcription);
-              
+
             } else {
               // No speech detected
               console.log('⚠️ No speech detected');
@@ -844,6 +873,12 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // The callInterviewManager function already uses addMessageToConversation internally
   // The handleEndInterview function already uses addMessageToConversation internally
 
+const handleSave = async (code) => {
+      console.log(code);
+      setCodeToAppend(code);
+    };
+
+
   return (
     <div 
       className="h-full flex flex-col p-3 sm:p-4 lg:p-6 min-h-0"
@@ -1085,8 +1120,46 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       >
       </div>
 
+      {/* Code Editor Button - Only show when current question requires code */}
+      {isCodingQuestion && (
+        <div className="pt-3 sm:pt-4">
+          <button
+            onClick={() => setShowCodeEditor(true)}
+            disabled={isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress}
+            className={`w-full px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 text-white font-semibold transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 ${
+              isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? 'bg-gray-400 cursor-not-allowed opacity-60'
+                : 'bg-purple-500 hover:bg-purple-600'
+            }`}
+            title={
+              isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? 'Please wait...'
+                : `Open Code Editor`
+            }
+          >
+            <Code size={18} className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              Open Code Editor {currentQuestion.code_language && `(${currentQuestion.code_language.toUpperCase()})`}
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* ✅ NEW: Loading popup */}
       <LoadingPopup />
+
+      {/* ✅ NEW: Code Editor Popup */}
+      <AnimatePresence>
+        {showCodeEditor && (
+          <CodeEditorPopup
+            isOpen={showCodeEditor}
+            onClose={() => setShowCodeEditor(false)}
+            initialLanguage={currentQuestion?.code_language || 'javascript'}
+            questionText={currentQuestion?.question_text}
+            handleEditorSave = {handleSave}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

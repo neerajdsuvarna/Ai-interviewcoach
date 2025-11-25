@@ -39,6 +39,8 @@ class InterviewManager:
         self.interview_style = config.get("interview_style", "conversational")
         self.required_questions = config.get("custom_questions", [])
         self.core_questions = config.get("core_questions", [])
+        self.coding_requirement = config.get("coding_requirement", [])
+        # print(f"[DEBUG] IM Coding Requirement: {self.coding_requirement}")
         self.icebreakers = config.get("icebreakers", [])
 
 # ========= Interview Time Limit ==================
@@ -72,6 +74,7 @@ class InterviewManager:
         self.resume_stage_done = False
         self.core_questions = config.get("core_questions", [])  # already exists
         self.current_resume_question = ""
+        self.current_coding_requirement = config.get("coding_requirement", [])
         self.last_resume_response = ""
         self.resume_followup_retry_count = 0
         self.max_resume_followup_retries = 3
@@ -295,12 +298,23 @@ class InterviewManager:
 
                 # Immediately ask first resume question if available
                 if not self.current_resume_question and self.core_questions:
-                    self.current_resume_question = self.core_questions.pop(0)
+                    self.current_resume_question_obj = self.core_questions.pop(0)
+                    # Handle both string and object formats
+                    if isinstance(self.current_resume_question_obj, dict):
+                        self.current_resume_question = self.current_resume_question_obj.get('question_text', '')
+                    else:
+                        self.current_resume_question = self.current_resume_question_obj
+                    self.current_coding_requirement = self.coding_requirement.pop(0)
+                    # Skip all other answers to current question
+                    self.coding_requirement = self.coding_requirement[2:]
+                    # print(f"[DEBUG] Coding Requirement: {self.coding_requirement}")
                     self.resume_followup_retry_count = 0
                     self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
+
                     return {
                         "stage": "resume_discussion",
-                        "message": f"Thanks for sharing that! Let’s continue with your resume.\n\n{self.current_resume_question}"
+                        "message": f"Thanks for sharing that! Let's continue with your resume.\n\n{self.current_resume_question}",
+                        "requires_code": self.current_coding_requirement
                     }
 
                 return {
@@ -318,12 +332,23 @@ class InterviewManager:
 
                 # Immediately trigger resume question
                 if not self.current_resume_question and self.core_questions:
-                    self.current_resume_question = self.core_questions.pop(0)
+                    self.current_resume_question_obj = self.core_questions.pop(0)
+                    # Handle both string and object formats
+                    if isinstance(self.current_resume_question_obj, dict):
+                        self.current_resume_question = self.current_resume_question_obj.get('question_text', '')
+                    else:
+                        self.current_resume_question = self.current_resume_question_obj
+                    self.current_coding_requirement = self.coding_requirement.pop(0)
+                    # Skip all other answers to current question
+                    self.coding_requirement = self.coding_requirement[2:]
+                    # print(f"[DEBUG] Coding Requirement: {self.coding_requirement}")
                     self.resume_followup_retry_count = 0
                     self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
+
                     return {
                         "stage": "resume_discussion",
-                        "message": f"Thanks! Let’s continue with your resume.\n\n{self.current_resume_question}"
+                        "message": self.current_resume_question,
+                        "requires_code": self.current_coding_requirement
                     }
 
                 return {
@@ -353,9 +378,18 @@ class InterviewManager:
                 return {"stage": "custom_questions", "message": "Great, let’s move on to some custom questions now."}
 
             self.current_resume_question = self.core_questions.pop(0)
+            self.current_coding_requirement = self.coding_requirement.pop(0)
+            # Skip all other answers to current question
+            self.coding_requirement = self.coding_requirement[2:]
+            # print(f"[DEBUG] Coding Requirement: {self.coding_requirement}")
             self.resume_followup_retry_count = 0  # Reset retry count for each question
             self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
-            return {"stage": "resume_discussion", "message": self.current_resume_question}
+
+            return {
+                "stage": "resume_discussion",
+                "message": self.current_resume_question,
+                "requires_code": self.current_coding_requirement
+            }
 
         # 2. Waiting for answer
         if not user_input.strip():
@@ -379,7 +413,16 @@ class InterviewManager:
 
             # Ask the next question immediately if available
             if self.core_questions:
-                self.current_resume_question = self.core_questions.pop(0)
+                self.current_resume_question_obj = self.core_questions.pop(0)
+                # Handle both string and object formats
+                if isinstance(self.current_resume_question_obj, dict):
+                    self.current_resume_question = self.current_resume_question_obj.get('question_text', '')
+                else:
+                    self.current_resume_question = self.current_resume_question_obj
+                self.current_coding_requirement = self.coding_requirement.pop(0)
+                # Skip all other answers to current question
+                self.coding_requirement = self.coding_requirement[2:]
+                # print(f"[DEBUG] Coding Requirement: {self.coding_requirement}")
                 self.resume_followup_retry_count = 0
 
                 transitions = [
@@ -397,9 +440,11 @@ class InterviewManager:
                 transition = random.choice(transitions)
 
                 self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
+
                 return {
                     "stage": "resume_discussion",
-                    "message": f"{transition}\n\n{self.current_resume_question}"
+                    "message": f"{transition}\n\n{self.current_resume_question}",
+                    "requires_code": self.current_coding_requirement
                 }
 
             # If no more resume questions, move to custom stage
@@ -427,12 +472,23 @@ class InterviewManager:
             
             # Immediately ask next question if available
             if self.core_questions:
-                self.current_resume_question = self.core_questions.pop(0)
+                self.current_resume_question_obj = self.core_questions.pop(0)
+                # Handle both string and object formats
+                if isinstance(self.current_resume_question_obj, dict):
+                    self.current_resume_question = self.current_resume_question_obj.get('question_text', '')
+                else:
+                    self.current_resume_question = self.current_resume_question_obj
+                self.current_coding_requirement = self.coding_requirement.pop(0)
+                # Skip all other answers to current question
+                self.coding_requirement = self.coding_requirement[2:]
+                # print(f"[DEBUG] Coding Requirement: {self.coding_requirement}")
                 self.resume_followup_retry_count = 0
                 self.conversation_history.append({"role": "assistant", "content": self.current_resume_question})
+
                 return {
                     "stage": "resume_discussion",
-                    "message": f"No worries — let’s move on to the next question.\n\n{self.current_resume_question}"
+                    "message": self.current_resume_question,
+                    "requires_code": self.current_coding_requirement
                 }
 
             # No more resume questions, move forward
