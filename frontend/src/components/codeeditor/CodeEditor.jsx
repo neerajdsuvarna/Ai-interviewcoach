@@ -9,7 +9,8 @@ import {
   ExclamationTriangleIcon,
   CodeBracketIcon,
   ClockIcon,
-  CpuChipIcon
+  CpuChipIcon,
+  ArrowRightEndOnRectangleIcon
 } from '@heroicons/react/24/outline';
 
 const CodeEditor = ({
@@ -18,6 +19,7 @@ const CodeEditor = ({
   onCodeChange,
   onRun,
   onTest,
+  onSave,
   isRunning = false,
   output = '',
   errors = '',
@@ -193,6 +195,10 @@ for (let i = 0; i < 10; i++) {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
       handleTest();
     });
+
+    editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => {
+      handleSave();
+    });
   };
 
   const handleCodeChange = (value) => {
@@ -216,6 +222,12 @@ for (let i = 0; i < 10; i++) {
     if (onTest) {
       onTest(code, selectedLanguage);
     }
+  };
+
+  const handleSave = () => {
+      if (onSave) {
+          onSave(code);
+      }
   };
 
   const handleClear = () => {
@@ -390,6 +402,14 @@ for (let i = 0; i < 10; i++) {
               <PlayIcon className="w-3 h-3 sm:w-4 sm:h-4" />
             )}
             <span>{isRunning ? 'Stop' : 'Run'}</span>
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isRunning}
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+          >
+            <ArrowRightEndOnRectangleIcon className="w-3 h-3 sm:w-4 sm:h-4" />
+            <span>Save</span>
           </button>
         </div>
       </div>

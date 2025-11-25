@@ -513,7 +513,7 @@ class InterviewManager:
         # 4. Ask follow-up
         followup = generate_followup_question(self.current_resume_question, user_input)
         self.conversation_history.append({"role": "assistant", "content": followup})
-        return {"stage": "resume_discussion", "message": followup}
+        return {"stage": "resume_discussion", "message": followup, "requires_code": self.current_coding_requirement}
     
 # ===== BEGGINING OF - CUSTOM QUESTIONS DISCUSSION STAGE  =====
 

@@ -557,6 +557,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
 
           if (interviewId) {
             formData.append('interview_id', interviewId);
+            if (isCodingQuestion) {
+                formData.append('code', codeToAppend);
+            } else {
+                formData.append('code', '');
+            }
           }
 
           const result = await uploadFile('/api/transcribe-audio', formData);
@@ -565,14 +570,10 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           
           if (result.success) {
             const transcription = result.data.transcription;
-            
+            const speechBlock = result.data.speechBlock;
             if (transcription && transcription.trim()) {
             // Add candidate's response to conversation
-              if (isCodingQuestion) {
-                await addMessageToConversation('candidate', (transcription + '\n\nCode: ' + codeToAppend));
-              } else {
-                  await addMessageToConversation('candidate', transcription);
-              }
+              await addMessageToConversation('candidate', transcription.substring(0,speechBlock));
               console.log('✅ Candidate message added');
               setIsLoading(false); // Stop loading immediately after user message appears
 
@@ -876,6 +877,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
 const handleSave = async (code) => {
       console.log(code);
       setCodeToAppend(code);
+      await addMessageToConversation('candidate', code);
     };
 
 

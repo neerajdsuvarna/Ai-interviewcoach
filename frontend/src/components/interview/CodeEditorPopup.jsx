@@ -67,9 +67,16 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
   };
 
 
-  const handleSave = async (code) =>{
+  const handlePopupSave = async (code) =>{
       handleEditorSave(code);
-  }
+      setCode('');
+      setOutput('');
+      setErrors('');
+      setTestResults(null);
+      setExecutionTime(0);
+      setIsTestMode(false);
+      onClose();
+  };
 
   const handleTest = async (codeToTest, languageToTest) => {
     if (!codeToTest.trim()) {
@@ -112,8 +119,6 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
   };
 
   const handleClose = () => {
-    handleSave(code);
-    setCode('');
     setOutput('');
     setErrors('');
     setTestResults(null);
@@ -152,7 +157,7 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
                 </p>
               )}
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Enter some code, then close the editor and record a verbal response
+                    Enter Some Code, Then Hit 'Save' and Record a Response
                 </p>
             </div>
             <button
@@ -173,6 +178,7 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
                 onCodeChange={handleCodeChange}
                 onRun={handleRun}
                 onTest={handleTest}
+                onSave={handlePopupSave}
                 isRunning={isRunning}
                 output={output}
                 errors={errors}
