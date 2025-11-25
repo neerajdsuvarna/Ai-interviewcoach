@@ -844,7 +844,7 @@ def transcribe_audio():
         print(f"[DEBUG] Received audio file: {file.filename}")
         code = (request.args.get('code') or request.form.get('code'))
         if code != '':
-            code = "  ``` \n\n" + code + "\n\n```"
+            code = "\n``` \n\n" + code + "\n\n```\n"
             print(f"[DEBUG] Received code: {code}")
         
         # Process the audio file
@@ -2045,7 +2045,7 @@ def execute_python(code, test_mode=False):
                 ['python', temp_file],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
             )
             output = result.stdout
             error = result.stderr if result.returncode != 0 else None

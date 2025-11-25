@@ -20,6 +20,7 @@ const CodeEditor = ({
   onRun,
   onTest,
   onSave,
+  saveLang,
   isRunning = false,
   output = '',
   errors = '',
@@ -27,6 +28,8 @@ const CodeEditor = ({
   executionTime = 0
 }) => {
   const [code, setCode] = useState(initialCode);
+  const [canRun, setCanRun] = useState(true);
+  const [canTest, setCanTest] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState(language);
   const [fontSize, setFontSize] = useState(14);
   const [theme, setTheme] = useState('vs-dark');
@@ -40,7 +43,8 @@ const CodeEditor = ({
     { value: 'csharp', label: 'C#', extension: '.cs' },
     { value: 'go', label: 'Go', extension: '.go' },
     { value: 'rust', label: 'Rust', extension: '.rs' },
-    { value: 'typescript', label: 'TypeScript', extension: '.ts' }
+    { value: 'typescript', label: 'TypeScript', extension: '.ts' },
+    { value: 'sql', label: 'SQL', extension: '.sql'}
   ];
 
   const themes = [
@@ -159,7 +163,10 @@ function fibonacci(n: number): number {
 console.log("Fibonacci sequence:");
 for (let i = 0; i < 10; i++) {
     console.log(\`F(\${i}) = \${fibonacci(i)}\`);
-}`
+}`,
+    sql: `SELECT *
+    FROM table
+    WHERE attribute = condition`
   };
 
   useEffect(() => {
@@ -207,9 +214,17 @@ for (let i = 0; i < 10; i++) {
 
   const handleLanguageChange = (newLanguage) => {
     setSelectedLanguage(newLanguage);
-    if (defaultCode[newLanguage]) {
+    if (defaultCode[newLanguage] && (initialCode == '')) {
       setCode(defaultCode[newLanguage]);
     }
+    if(newLanguage == 'sql') {
+          setCanRun(false);
+          setCanTest(false);
+    } else {
+        setCanRun(true);
+        setCanTest(true);
+    }
+    saveLang(newLanguage);
   };
 
   const handleRun = () => {
@@ -233,7 +248,6 @@ for (let i = 0; i < 10; i++) {
   const handleClear = () => {
     setCode('');
   };
-
 
 
   const handleReset = () => {
@@ -261,6 +275,7 @@ for (let i = 0; i < 10; i++) {
     if (testResults && testResults.passed > 0) return 'Tests Passed';
     return 'Ready';
   };
+
 
   return (
     <div className="h-full flex flex-col bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg overflow-hidden">
@@ -383,17 +398,20 @@ for (let i = 0; i < 10; i++) {
         </div>
 
         <div className="flex items-center space-x-2 sm:space-x-3 w-full sm:w-auto">
+            {canTest && (
           <button
             onClick={handleTest}
-            disabled={isRunning}
+            disabled={isRunning || !canTest}
             className="flex-1 sm:flex-none flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
           >
             <BugAntIcon className="w-3 h-3 sm:w-4 sm:h-4" />
             <span>Test</span>
           </button>
+          )}
+          {canRun && (
           <button
             onClick={handleRun}
-            disabled={isRunning}
+            disabled={isRunning || !canRun}
             className="flex-1 sm:flex-none flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
           >
             {isRunning ? (
@@ -403,6 +421,7 @@ for (let i = 0; i < 10; i++) {
             )}
             <span>{isRunning ? 'Stop' : 'Run'}</span>
           </button>
+          )}
           <button
             onClick={handleSave}
             disabled={isRunning}

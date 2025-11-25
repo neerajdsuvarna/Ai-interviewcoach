@@ -38,6 +38,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [isCodingQuestion, setIsCodingQuestion] = useState(false);
   const [codeToAppend, setCodeToAppend] = useState('');
+  const [language, setLanguage] = useState('javascript');
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
@@ -144,6 +145,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           setCurrentQuestion(null);
           setIsCodingQuestion(false);
           setCodeToAppend('');
+          setLanguage('javascript');
       }
 
         // ✅ NEW: Update interview stage and control End Interview button
@@ -571,6 +573,8 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           if (result.success) {
             const transcription = result.data.transcription;
             const speechBlock = result.data.speechBlock;
+            setCodeToAppend('');
+            setLanguage('javascript');
             if (transcription && transcription.trim()) {
             // Add candidate's response to conversation
               await addMessageToConversation('candidate', transcription.substring(0,speechBlock));
@@ -874,10 +878,17 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // The callInterviewManager function already uses addMessageToConversation internally
   // The handleEndInterview function already uses addMessageToConversation internally
 
-const handleSave = async (code) => {
+    const handleSave = async (code) => {
       console.log(code);
       setCodeToAppend(code);
       await addMessageToConversation('candidate', code);
+    };
+
+    const handleEditorClose = async (code, newLanguage) => {
+        console.log("Code to Append: ",code);
+        setCodeToAppend(code);
+        console.log(newLanguage);
+        setLanguage(newLanguage);
     };
 
 
@@ -1156,9 +1167,11 @@ const handleSave = async (code) => {
           <CodeEditorPopup
             isOpen={showCodeEditor}
             onClose={() => setShowCodeEditor(false)}
-            initialLanguage={currentQuestion?.code_language || 'javascript'}
+            initialLanguage={currentQuestion?.code_language || language}
             questionText={currentQuestion?.question_text}
             handleEditorSave = {handleSave}
+            maintainCodeAndLang = {handleEditorClose}
+            initialEditorCode = {codeToAppend}
           />
         )}
       </AnimatePresence>

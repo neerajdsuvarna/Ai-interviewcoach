@@ -5,7 +5,7 @@ import CodeEditor from '../codeeditor/CodeEditor';
 import OutputPanel from '../codeeditor/OutputPanel';
 import { apiPost } from '../../api';
 
-const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', questionText, handleEditorSave }) => {
+const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', questionText, handleEditorSave, maintainCodeAndLang, initialEditorCode }) => {
   const [code, setCode] = useState('');
   const [codeToSave, setCodeToSave] = useState('');
   const [language, setLanguage] = useState(initialLanguage);
@@ -118,13 +118,14 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
     }
   };
 
-  const handleClose = () => {
-    setOutput('');
-    setErrors('');
-    setTestResults(null);
-    setExecutionTime(0);
-    setIsTestMode(false);
-    onClose();
+  const handleClose = async () => {
+      maintainCodeAndLang(code, language);
+      setOutput('');
+      setErrors('');
+      setTestResults(null);
+      setExecutionTime(0);
+      setIsTestMode(false);
+      onClose();
   };
 
   if (!isOpen) return null;
@@ -173,12 +174,13 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
             {/* Code Editor */}
             <div className="flex-1 min-h-0">
               <CodeEditor
-                initialCode={code}
+                initialCode={initialEditorCode}
                 language={language}
                 onCodeChange={handleCodeChange}
                 onRun={handleRun}
                 onTest={handleTest}
                 onSave={handlePopupSave}
+                saveLang = {setLanguage}
                 isRunning={isRunning}
                 output={output}
                 errors={errors}
