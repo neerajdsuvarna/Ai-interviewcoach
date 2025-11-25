@@ -2040,12 +2040,15 @@ def execute_python(code, test_mode=False):
             temp_file = f.name
 
         try:
+            # This line is used to install python packages to be used by the Code Editor
+            # subprocess.run(['pip', 'install', '-r', 'requirements.txt'], check=True)
             # Execute Python
+            # For access to our virtual environment, change 'python' to sys.executable
             result = subprocess.run(
                 ['python', temp_file],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=10
             )
             output = result.stdout
             error = result.stderr if result.returncode != 0 else None
