@@ -842,10 +842,6 @@ def transcribe_audio():
             }), 400
         
         print(f"[DEBUG] Received audio file: {file.filename}")
-        code = (request.args.get('code') or request.form.get('code'))
-        if code != '':
-            code = "\n``` \n\n" + code + "\n\n```\n"
-            print(f"[DEBUG] Received code: {code}")
         
         # Process the audio file
         result = process_audio_file(file)
@@ -857,8 +853,6 @@ def transcribe_audio():
             }), 500
 
         transcription = result.get('transcription', '')
-        speechBlock = len(transcription)
-        transcription = transcription + code
 
         # ✅ NEW: Store user audio file permanently
         if transcription:  # Only store if transcription was successful
@@ -896,8 +890,7 @@ def transcribe_audio():
             "message": "Audio transcribed successfully",
             "data": {
                 "transcription": transcription,
-                "word_count": len(transcription.split()) if transcription else 0,
-                "speechBlock": speechBlock
+                "word_count": len(transcription.split()) if transcription else 0
             }
         })
         

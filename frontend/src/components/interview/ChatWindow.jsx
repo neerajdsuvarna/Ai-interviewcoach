@@ -559,11 +559,6 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
 
           if (interviewId) {
             formData.append('interview_id', interviewId);
-            if (isCodingQuestion) {
-                formData.append('code', codeToAppend);
-            } else {
-                formData.append('code', '');
-            }
           }
 
           const result = await uploadFile('/api/transcribe-audio', formData);
@@ -572,12 +567,11 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           
           if (result.success) {
             const transcription = result.data.transcription;
-            const speechBlock = result.data.speechBlock;
             setCodeToAppend('');
             setLanguage('javascript');
             if (transcription && transcription.trim()) {
             // Add candidate's response to conversation
-              await addMessageToConversation('candidate', transcription.substring(0,speechBlock));
+              await addMessageToConversation('candidate', transcription);
               console.log('✅ Candidate message added');
               setIsLoading(false); // Stop loading immediately after user message appears
 
@@ -881,7 +875,24 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
     const handleSave = async (code) => {
       console.log(code);
       setCodeToAppend(code);
+      code = '\n``` \n\n' + code + '\n\n```\n'
       await addMessageToConversation('candidate', code);
+      console.log('✅ Candidate message added');
+      setIsLoading(false); // Stop loading immediately after user message appears
+
+      // Add thinking indicator before backend call
+      const thinkingMessage = {
+          id: `thinking-${Date.now()}`,
+          speaker: 'interviewer',
+          message: 'Thinking...',
+          timestamp: new Date().toLocaleTimeString(),
+          isThinking: true
+      };
+      setConversation(prev => [...prev, thinkingMessage]);
+
+      // Call Interview Manager API to get the next question/response
+      setIsResponseInProgress(true); // ✅ NEW: Start response process
+      await callInterviewManager(code);
     };
 
     const handleEditorClose = async (code, newLanguage) => {

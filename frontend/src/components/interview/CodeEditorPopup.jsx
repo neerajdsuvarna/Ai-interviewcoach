@@ -158,7 +158,7 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
                 </p>
               )}
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Enter Some Code, Then Hit 'Save' and Record a Response
+                    Enter Some Code, Then Hit 'Save'
                 </p>
             </div>
             <button
