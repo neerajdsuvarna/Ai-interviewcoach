@@ -20,6 +20,7 @@ interface Database {
           title: string
           description: string
           file_url: string | null
+          technical: boolean  // ✅ ADD
           created_at: string
         }
         Insert: {
@@ -28,6 +29,7 @@ interface Database {
           title: string
           description: string
           file_url?: string | null
+          technical?: boolean  // ✅ ADD
           created_at?: string
         }
         Update: {
@@ -36,6 +38,7 @@ interface Database {
           title?: string
           description?: string
           file_url?: string | null
+          technical?: boolean  // ✅ ADD
           created_at?: string
         }
       }
@@ -47,12 +50,14 @@ interface JobDescriptionRequest {
   title: string
   description: string
   file_url?: string | null
+  technical?: boolean  // ✅ ADD: Optional technical field
 }
 
 interface UpdateJobDescriptionRequest {
   title?: string
   description?: string
   file_url?: string | null
+  technical?: boolean  // ✅ ADD
 }
 
 serve(async (req) => {
@@ -290,7 +295,7 @@ async function handleGetJobDescription(supabaseClient: any, user: any, jobDescri
 async function handleCreateJobDescription(supabaseClient: any, req: Request, user: any) {
   try {
     const body = await req.json()
-    const { title, description, file_url }: JobDescriptionRequest = body
+    const { title, description, file_url, technical }: JobDescriptionRequest = body  // ✅ ADD technical
 
     // Validate required fields
     if (!title || !description) {
@@ -313,7 +318,8 @@ async function handleCreateJobDescription(supabaseClient: any, req: Request, use
         user_id: user.id,
         title: title.trim(),
         description: description.trim(),
-        file_url: file_url || null
+        file_url: file_url || null,
+        technical: technical !== undefined ? technical : true  // ✅ ADD: Default to true if not provided
       })
       .select()
       .single()
@@ -361,13 +367,14 @@ async function handleCreateJobDescription(supabaseClient: any, req: Request, use
 async function handleUpdateJobDescription(supabaseClient: any, req: Request, user: any, jobDescriptionId: string) {
   try {
     const body = await req.json()
-    const { title, description, file_url }: UpdateJobDescriptionRequest = body
+    const { title, description, file_url, technical }: UpdateJobDescriptionRequest = body  // ✅ ADD technical
 
     // Build update object with only provided fields
     const updateData: any = {}
     if (title !== undefined) updateData.title = title.trim()
     if (description !== undefined) updateData.description = description.trim()
     if (file_url !== undefined) updateData.file_url = file_url
+    if (technical !== undefined) updateData.technical = technical  // ✅ ADD
 
     if (Object.keys(updateData).length === 0) {
       return new Response(

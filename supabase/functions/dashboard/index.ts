@@ -29,6 +29,7 @@ interface Database {
           title: string
           description: string
           file_url: string | null
+          technical: boolean
           created_at: string
         }
       }
@@ -73,6 +74,7 @@ interface DashboardPairing {
   resumeUrl: string
   jobTitle: string
   jobDescription: string
+  technical: boolean
   questionSets: Array<{
     id: string
     questionSetNumber: number
@@ -324,6 +326,7 @@ async function handleGetDashboardData(supabaseClient: any, user: any) {
             resumeUrl: resume.file_url, // Add resume URL for question generation
             jobTitle: jd.title,
             jobDescription: jd.description,
+            technical: jd.technical ?? true,
             questionSets
           })
         }

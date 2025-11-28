@@ -43,7 +43,7 @@ class InterviewManager:
 
 # ========= Interview Time Limit ==================
         self.start_time = None
-        self.time_limit_seconds = config.get("time_limit_minutes", 30) * 60
+        self.time_limit_seconds = config.get("time_limit_minutes", 150) * 60  # Default: 2 hours
 
 
 # ========= Stage Flags ==================
@@ -126,12 +126,11 @@ class InterviewManager:
 
         # Check time limit
         if self.is_time_exceeded():
-            self.stage = "wrapup_evaluation"
-            print("[DEBUG] Time limit reached. Wrapping up.")
+            print("[DEBUG] Time limit reached. Returning timeout flag.")
             return {
                 "stage": "timeout",
-                "message": "We've reached the time limit for this interview. Let's wrap up.",
-                **self.handle_wrapup_evaluation()  # ✅ This already includes "interview_done": True
+                "message": "We've reached the time limit for this interview.",
+                "timeout_detected": True  # ✅ Flag for frontend to handle
             }
 
         if not self.intro_done:

@@ -28,6 +28,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   const [canEndInterview, setCanEndInterview] = useState(false); // Start disabled
   const [isResponseInProgress, setIsResponseInProgress] = useState(false);
   
+  // ✅ NEW: Add state for timeout modal
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false);
+  
   // ✅ NEW: Add state to track interview stage and resume question answers
   const [interviewStage, setInterviewStage] = useState('introduction');
   const [hasAnsweredResumeQuestion, setHasAnsweredResumeQuestion] = useState(false);
@@ -127,6 +130,14 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           console.log('📊 Interview stage updated from', interviewStage, 'to:', stage);
           setInterviewStage(stage);
           
+          // ✅ NEW: Auto-trigger end interview flow when timeout is detected
+          if (stage === 'timeout') {
+            console.log('⏰ Timeout detected - showing timeout modal...');
+            // Show timeout modal first
+            setShowTimeoutModal(true);
+            return; // Exit early to prevent normal message handling
+          }
+          
           // Enable End Interview button only when user has answered at least one resume question
           if (stage === 'resume_discussion' && hasAnsweredResumeQuestion) {
             console.log('✅ Resume question answered - enabling End Interview button');
@@ -153,8 +164,18 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           // Preload the audio
           audio.preload = 'auto';
           
+          // ✅ FIX: Add flag to prevent duplicate message addition
+          let messageAdded = false;
+          
           // Wait for audio to be ready, then show text and play simultaneously
           const playAudioWhenReady = () => {
+            // ✅ Prevent duplicate calls
+            if (messageAdded) {
+              console.log('⚠️ playAudioWhenReady already called, skipping duplicate');
+              return;
+            }
+            messageAdded = true;
+            
             // ✅ Remove thinking message right before showing the response
             setConversation(prev => {
               const filtered = prev.filter(msg => !msg.isThinking);
@@ -188,7 +209,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
             
             // Fallback: if canplaythrough doesn't fire, wait a bit then play
             setTimeout(() => {
-              if (audio.readyState >= 2) {
+              if (audio.readyState >= 2 && !messageAdded) {
                 playAudioWhenReady();
               }
             }, 100);
@@ -844,6 +865,371 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // The callInterviewManager function already uses addMessageToConversation internally
   // The handleEndInterview function already uses addMessageToConversation internally
 
+  // ✅ NEW: Auto-end interview when timeout is detected (no confirmation popup)
+  const handleEndInterviewAutomatically = async () => {
+    console.log('✅ Auto-ending interview due to timeout...');
+    
+    // ✅ NEW: Show loading state
+    setIsEndingInterview(true);
+    
+    try {
+      // ✅ Send END_INTERVIEW command to backend (same as manual end)
+      console.log('📤 Sending END_INTERVIEW command to backend...');
+      
+      const urlParams = new URLSearchParams(window.location.search);
+      const interviewId = urlParams.get('interview_id');
+      
+      if (!interviewId) {
+        console.error('❌ No interview_id found in URL');
+        setIsEndingInterview(false);
+        return;
+      }
+      
+      // ✅ Use the same apiPost function that works for normal responses
+      const response = await apiPost('/api/generate-response', {
+        message: 'END_INTERVIEW',
+        interview_id: interviewId
+      });
+      
+      // ✅ Now handle the response exactly like handleEndInterview does
+      // (Copy all the logic from handleEndInterview starting from line 316)
+      if (response.success) {
+        const { response: textResponse, audio_url, should_delete_audio, interview_done, feedback_saved_successfully } = response.data;
+        
+        // ✅ FIXED: Track events only when interview is done AND feedback is successfully saved
+        if (interview_done) {
+          console.log('🎯 Interview completed, tracking events...');
+          
+          // Track interview completion
+          console.log('📊 Tracking participatedInMockInterview...');
+          trackEvents.participatedInMockInterview({
+            interview_id: interviewId,
+            completion_timestamp: new Date().toISOString(),
+            completion_method: 'timeout_auto'
+          });
+          
+          // ✅ FIXED: Only track feedback generation when feedback is actually saved to database
+          if (feedback_saved_successfully) {
+            console.log('✅ Feedback successfully saved to database, tracking feedback generation...');
+            setTimeout(() => {
+              console.log('📊 Tracking mockInterviewFeedbackGenerated...');
+              trackEvents.mockInterviewFeedbackGenerated({
+                interview_id: interviewId,
+                generation_timestamp: new Date().toISOString(),
+                generation_method: 'timeout_auto'
+              });
+            }, 100); // 100ms delay
+          } else {
+            console.log('⚠️ Interview completed but feedback not saved yet, skipping feedback generation tracking');
+          }
+        }
+        
+        // ✅ FIXED: Preload audio first, then show text and play simultaneously
+        if (audio_url) {
+          console.log('🔊 Preloading final audio response:', audio_url);
+          const audio = new Audio(audio_url);
+          
+          // Preload the audio
+          audio.preload = 'auto';
+          
+          // Wait for audio to be ready, then show text and play simultaneously
+          const playFinalAudioWhenReady = () => {
+            // ✅ Remove thinking message right before showing the final response
+            setConversation(prev => {
+              const filtered = prev.filter(msg => !msg.isThinking);
+              return filtered;
+            });
+            
+            // Add final message and start playing at the same time
+            const finalMessage = {
+              id: Date.now(),
+              speaker: 'interviewer',
+              message: textResponse,
+              timestamp: new Date().toLocaleTimeString()
+            };
+            setConversation(prev => [...prev, finalMessage]);
+            
+            console.log('✅ Final response added, starting audio playback');
+            
+            // Track final audio playback state
+            setIsAudioPlaying(true);
+            setCurrentAudioElement(audio);
+            setCanEndInterview(false); // Disable end interview button while final audio plays
+            
+            // Start playing immediately
+            audio.play().catch(error => {
+              console.error('❌ Failed to play final audio:', error);
+              setIsAudioPlaying(false);
+              setCurrentAudioElement(null);
+              // Still redirect even if audio fails
+              if (interview_done) {
+                window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+              }
+            });
+          };
+          
+          // If audio is already loaded, play immediately
+          if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or higher
+            playFinalAudioWhenReady();
+          } else {
+            // Wait for audio to be ready
+            audio.addEventListener('canplaythrough', playFinalAudioWhenReady, { once: true });
+            
+            // Fallback: if canplaythrough doesn't fire, wait a bit then play
+            setTimeout(() => {
+              if (audio.readyState >= 2) {
+                playFinalAudioWhenReady();
+              }
+            }, 100);
+          }
+          
+          audio.onended = async () => {
+            console.log('✅ Final audio playback completed');
+            setIsAudioPlaying(false);
+            setCurrentAudioElement(null);
+            setCanEndInterview(true); // Re-enable end interview button
+            
+            if (should_delete_audio) {
+              try {
+                console.log('🗑️ Deleting final audio file after playback...');
+                console.log('🗑️ Final audio URL to delete:', audio_url);
+                
+                await apiDelete('/api/delete-audio', {
+                  body: { audio_url }
+                });
+                console.log('✅ Final audio file deleted successfully');
+              } catch (error) {
+                console.error('❌ Failed to delete final audio file:', error);
+                console.error('❌ Error details:', error.message);
+              }
+            }
+            
+            // ✅ NEW: Redirect to feedback page after audio finishes
+            if (interview_done) {
+              console.log('🎯 Interview completed, redirecting to feedback...');
+              
+              // Add a small delay to ensure audio deletion completes
+              setTimeout(() => {
+                window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+              }, 1000);
+            }
+          };
+          
+          // Handle audio errors
+          audio.onerror = (error) => {
+            console.error('❌ Final audio playback failed:', error);
+            setIsAudioPlaying(false);
+            setCurrentAudioElement(null);
+            
+            // ✅ Remove thinking message before showing text
+            setConversation(prev => {
+              const filtered = prev.filter(msg => !msg.isThinking);
+              return filtered;
+            });
+            
+            // Still show the text even if audio fails
+            const finalMessage = {
+              id: Date.now(),
+              speaker: 'interviewer',
+              message: textResponse,
+              timestamp: new Date().toLocaleTimeString()
+            };
+            setConversation(prev => [...prev, finalMessage]);
+            // Redirect if interview is done
+            if (interview_done) {
+              window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+            }
+          };
+        } else if (interview_done) {
+          // ✅ Remove thinking message before showing final message
+          setConversation(prev => {
+            const filtered = prev.filter(msg => !msg.isThinking);
+            return filtered;
+          });
+          
+          // ✅ NEW: If no audio but interview is done, show message and redirect immediately
+          const finalMessage = {
+            id: Date.now(),
+            speaker: 'interviewer',
+            message: textResponse,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setConversation(prev => [...prev, finalMessage]);
+          console.log('🎯 Interview completed (no audio), redirecting to feedback...');
+          window.location.href = `/interview-feedback?interview_id=${interviewId}`;
+        }
+        
+      } else {
+        console.error('❌ End interview API error:', response.message);
+        setIsEndingInterview(false);
+      }
+    } catch (error) {
+      console.error('❌ Error auto-ending interview:', error);
+      setIsEndingInterview(false);
+    }
+  };
+
+  // ✅ NEW: Timeout Modal Component
+  const TimeoutModal = () => {
+    if (!showTimeoutModal) return null;
+    
+    const handleContinue = () => {
+      console.log('✅ User acknowledged timeout, ending interview...');
+      setShowTimeoutModal(false);
+      // Now trigger the end interview flow
+      handleEndInterviewAutomatically();
+    };
+    
+    return (
+      <AnimatePresence>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-4"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            transition={{ type: "spring", duration: 0.5 }}
+            className="relative rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-2xl border"
+            style={{ 
+              backgroundColor: 'var(--color-card)',
+              borderColor: 'var(--color-border)'
+            }}
+          >
+            {/* Decorative corner elements */}
+            <div className="absolute top-4 right-4">
+              <div className="w-2 h-2 bg-orange-400/50 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+            </div>
+            <div className="absolute bottom-4 left-4">
+              <div className="w-2 h-2 bg-amber-400/50 rounded-full animate-pulse" style={{ animationDelay: '200ms' }}></div>
+            </div>
+            <div className="absolute top-4 left-4">
+              <div className="w-2 h-2 bg-yellow-400/50 rounded-full animate-pulse" style={{ animationDelay: '400ms' }}></div>
+            </div>
+            <div className="absolute bottom-4 right-4">
+              <div className="w-2 h-2 bg-orange-500/50 rounded-full animate-pulse" style={{ animationDelay: '600ms' }}></div>
+            </div>
+
+            <div className="text-center">
+              {/* Animated Clock Icon */}
+              <div className="relative mb-6">
+                <div className="w-20 h-20 mx-auto relative">
+                  {/* Outer pulsing ring */}
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute inset-0 rounded-full border-4 border-orange-200 dark:border-orange-900/50"
+                  />
+                  {/* Inner circle with gradient */}
+                  <div className="absolute inset-2 rounded-full bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 dark:from-orange-900/30 dark:via-amber-900/30 dark:to-yellow-900/30 flex items-center justify-center shadow-inner">
+                    {/* Clock SVG */}
+                    <svg 
+                      className="w-10 h-10 text-orange-600 dark:text-orange-400" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <circle cx="12" cy="12" r="10" strokeWidth="2" className="opacity-20"/>
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth="2.5" 
+                        d="M12 6v6l4 2" 
+                      />
+                      <motion.circle
+                        cx="12"
+                        cy="12"
+                        r="1.5"
+                        fill="currentColor"
+                        animate={{ opacity: [1, 0.5, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Title with gradient */}
+              <motion.h3
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="text-2xl sm:text-3xl font-bold mb-3 bg-gradient-to-r from-orange-600 via-amber-600 to-yellow-600 dark:from-orange-400 dark:via-amber-400 dark:to-yellow-400 bg-clip-text text-transparent"
+              >
+                Time's Up!
+              </motion.h3>
+
+              {/* Subtitle */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="text-sm font-medium mb-4"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                Interview Time Limit Reached
+              </motion.p>
+
+              {/* Message */}
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="mb-8 leading-relaxed text-sm sm:text-base px-2"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                Your interview time limit has been reached. We'll now wrap up the interview and generate your comprehensive feedback.
+              </motion.p>
+              
+              {/* Action Button with gradient */}
+              <motion.button
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                onClick={handleContinue}
+                className="w-full bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 hover:from-orange-600 hover:via-amber-600 hover:to-yellow-600 text-white font-semibold py-3.5 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 text-sm sm:text-base relative overflow-hidden group"
+              >
+                {/* Shine effect on hover */}
+                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></span>
+                
+                <span className="relative flex items-center justify-center gap-2">
+                  <svg 
+                    className="w-5 h-5" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" 
+                    />
+                  </svg>
+                  Continue to Feedback
+                </span>
+              </motion.button>
+
+              {/* Info text */}
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.6 }}
+                className="text-xs mt-4"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                Your responses have been saved
+              </motion.p>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  };
+
   return (
     <div 
       className="h-full flex flex-col p-3 sm:p-4 lg:p-6 min-h-0"
@@ -1087,6 +1473,9 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
 
       {/* ✅ NEW: Loading popup */}
       <LoadingPopup />
+      
+      {/* ✅ NEW: Timeout modal */}
+      <TimeoutModal />
     </div>
   );
 }

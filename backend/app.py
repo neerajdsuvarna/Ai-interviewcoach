@@ -1016,7 +1016,7 @@ def generate_response():
             "job_title": job_title,
             "job_description": job_description,
             "core_questions": core_questions,
-            "time_limit_minutes": 30,
+            "time_limit_minutes": 150,  # 2 hours
             "custom_questions": [],
         }
         
