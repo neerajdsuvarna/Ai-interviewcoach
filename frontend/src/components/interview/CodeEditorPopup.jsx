@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import CodeEditor from '../codeeditor/CodeEditor';
@@ -15,6 +15,18 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
   const [testResults, setTestResults] = useState(null);
   const [executionTime, setExecutionTime] = useState(0);
   const [isTestMode, setIsTestMode] = useState(false);
+
+  // Reset code when popup opens or initialEditorCode changes
+  useEffect(() => {
+    if (isOpen) {
+      setCode(initialEditorCode || '');
+      setOutput('');
+      setErrors('');
+      setTestResults(null);
+      setExecutionTime(0);
+      setIsTestMode(false);
+    }
+  }, [isOpen, initialEditorCode]);
 
   const handleCodeChange = (newCode) => {
     if (newCode !== code) {
@@ -158,7 +170,7 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
                 </p>
               )}
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                    Enter Some Code, Then Hit 'Save'
+                    Enter some code and hit "Submit"
                 </p>
             </div>
             <button

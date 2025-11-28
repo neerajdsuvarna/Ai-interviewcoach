@@ -874,7 +874,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
 
     const handleSave = async (code) => {
       console.log(code);
-      setCodeToAppend(code);
+      setCodeToAppend(''); // Clear the code for next question
       code = '\n``` \n\n' + code + '\n\n```\n'
       await addMessageToConversation('candidate', code);
       console.log('✅ Candidate message added');

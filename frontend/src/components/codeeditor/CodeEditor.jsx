@@ -53,127 +53,16 @@ const CodeEditor = ({
     { value: 'hc-black', label: 'High Contrast' }
   ];
 
-  const defaultCode = {
-    javascript: `// Welcome to the Code Editor!
-function fibonacci(n) {
-    if (n <= 1) return n;
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
-// Test the function
-console.log("Fibonacci sequence:");
-for (let i = 0; i < 10; i++) {
-    console.log(\`F(\${i}) = \${fibonacci(i)}\`);
-}`,
-    python: `# Welcome to the Code Editor!
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n - 1) + fibonacci(n - 2)
-
-# Test the function
-print("Fibonacci sequence:")
-for i in range(10):
-    print(f"F({i}) = {fibonacci(i)}")`,
-    java: `// Welcome to the Code Editor!
-public class Main {
-    public static int fibonacci(int n) {
-        if (n <= 1) return n;
-        return fibonacci(n - 1) + fibonacci(n - 2);
-    }
-
-    public static void main(String[] args) {
-        System.out.println("Fibonacci sequence:");
-        for (int i = 0; i < 10; i++) {
-            System.out.println("F(" + i + ") = " + fibonacci(i));
-        }
-    }
-}`,
-    cpp: `// Welcome to the Code Editor!
-#include <iostream>
-using namespace std;
-
-int fibonacci(int n) {
-    if (n <= 1) return n;
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
-int main() {
-    cout << "Fibonacci sequence:" << endl;
-    for (int i = 0; i < 10; i++) {
-        cout << "F(" << i << ") = " << fibonacci(i) << endl;
-    }
-    return 0;
-}`,
-    csharp: `// Welcome to the Code Editor!
-using System;
-
-class Program {
-    static int Fibonacci(int n) {
-        if (n <= 1) return n;
-        return Fibonacci(n - 1) + Fibonacci(n - 2);
-    }
-
-    static void Main() {
-        Console.WriteLine("Fibonacci sequence:");
-        for (int i = 0; i < 10; i++) {
-            Console.WriteLine($"F({i}) = {Fibonacci(i)}");
-        }
-    }
-}`,
-    go: `// Welcome to the Code Editor!
-package main
-
-import "fmt"
-
-func fibonacci(n int) int {
-    if n <= 1 {
-        return n
-    }
-    return fibonacci(n-1) + fibonacci(n-2)
-}
-
-func main() {
-    fmt.Println("Fibonacci sequence:")
-    for i := 0; i < 10; i++ {
-        fmt.Printf("F(%d) = %d\n", i, fibonacci(i))
-    }
-}`,
-    rust: `// Welcome to the Code Editor!
-fn fibonacci(n: u32) -> u32 {
-    if n <= 1 {
-        return n;
-    }
-    fibonacci(n - 1) + fibonacci(n - 2)
-}
-
-fn main() {
-    println!("Fibonacci sequence:");
-    for i in 0..10 {
-        println!("F({}) = {}", i, fibonacci(i));
-    }
-}`,
-    typescript: `// Welcome to the Code Editor!
-function fibonacci(n: number): number {
-    if (n <= 1) return n;
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
-
-// Test the function
-console.log("Fibonacci sequence:");
-for (let i = 0; i < 10; i++) {
-    console.log(\`F(\${i}) = \${fibonacci(i)}\`);
-}`,
-    sql: `SELECT *
-    FROM table
-    WHERE attribute = condition`
-  };
-
   useEffect(() => {
     if (onCodeChange) {
       onCodeChange(code);
     }
   }, [code, onCodeChange]);
+
+  // Add this new useEffect to reset code when initialCode prop changes
+  useEffect(() => {
+    setCode(initialCode);
+  }, [initialCode]);
 
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -214,9 +103,6 @@ for (let i = 0; i < 10; i++) {
 
   const handleLanguageChange = (newLanguage) => {
     setSelectedLanguage(newLanguage);
-    if (defaultCode[newLanguage] && (initialCode == '')) {
-      setCode(defaultCode[newLanguage]);
-    }
     if(newLanguage == 'sql') {
           setCanRun(false);
           setCanTest(false);
@@ -247,13 +133,6 @@ for (let i = 0; i < 10; i++) {
 
   const handleClear = () => {
     setCode('');
-  };
-
-
-  const handleReset = () => {
-    if (defaultCode[selectedLanguage]) {
-      setCode(defaultCode[selectedLanguage]);
-    }
   };
 
   const getStatusIcon = () => {
@@ -389,25 +268,9 @@ for (let i = 0; i < 10; i++) {
           >
             Clear
           </button>
-          <button
-            onClick={handleReset}
-            className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg)] rounded-md transition-colors"
-          >
-            Reset
-          </button>
         </div>
 
         <div className="flex items-center space-x-2 sm:space-x-3 w-full sm:w-auto">
-            {canTest && (
-          <button
-            onClick={handleTest}
-            disabled={isRunning || !canTest}
-            className="flex-1 sm:flex-none flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
-          >
-            <BugAntIcon className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span>Test</span>
-          </button>
-          )}
           {canRun && (
           <button
             onClick={handleRun}
@@ -428,7 +291,7 @@ for (let i = 0; i < 10; i++) {
             className="flex-1 sm:flex-none flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
           >
             <ArrowRightEndOnRectangleIcon className="w-3 h-3 sm:w-4 sm:h-4" />
-            <span>Save</span>
+            <span>Submit</span>
           </button>
         </div>
       </div>
