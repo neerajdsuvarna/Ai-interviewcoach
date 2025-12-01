@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 import UploadBox from '../components/upload/UploadBox';
 import { FiTrash2, FiLoader, FiFileText, FiCheck, FiSettings } from 'react-icons/fi';
 import { useTheme } from '../hooks/useTheme';
+import { useOperation } from '../contexts/OperationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadFile } from '../api';
 import SuccessModal from '../components/SuccessModal';
@@ -13,6 +14,7 @@ import { trackEvents } from '../services/mixpanel';
 function UploadPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const { setIsOperationInProgress } = useOperation();
 
   const [resume, setResume] = useState(null);
   const [jobDesc, setJobDesc] = useState(null);
@@ -148,6 +150,7 @@ function UploadPage() {
 
   const parseJobDescriptionFile = async (file) => {
     setParsingJobDesc(true);
+    setIsOperationInProgress(true); // ✅ Pause idle timeout during parsing
     
     try {
       // Create FormData for file upload
@@ -174,6 +177,7 @@ function UploadPage() {
       setIsTechnical(false); // Reset on error
     } finally {
       setParsingJobDesc(false);
+      setIsOperationInProgress(false); // ✅ Resume idle timeout after parsing
     }
   };
 
@@ -324,6 +328,7 @@ function UploadPage() {
     setQuestionValidationError('');
 
     setLoading(true);
+    setIsOperationInProgress(true); // ✅ Pause idle timeout during question generation
 
     try {
       console.log('[DEBUG] Starting complete workflow...');
@@ -425,6 +430,7 @@ function UploadPage() {
       alert(`Error: ${error.message}`);
     } finally {
       setLoading(false);
+      setIsOperationInProgress(false); // ✅ Resume idle timeout after generation
     }
   };
 

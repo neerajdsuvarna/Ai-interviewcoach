@@ -7,8 +7,10 @@ import OAuthCallback from './components/OAuthCallback';
 import EmailVerificationCallback from './components/EmailVerificationCallback';
 import ProtectedRoute from './components/ProtectedRoute';
 import SupportBot from './components/SupportBot';
+import IdleTimeoutModal from './components/IdleTimeoutModal';
 import { supabase } from './supabaseClient';
 import { useMixpanel } from './hooks/useMixpanel';
+import { useIdleTimeout } from './hooks/useIdleTimeout';
 import './index.css';
 import ResetPassword from './pages/ResetPassword';
 
@@ -70,6 +72,23 @@ function PasswordResetInterceptor({ children }) {
 function App() {
   // Initialize Mixpanel user identification
   useMixpanel();
+  
+  // ✅ ADD: Get current location to check if we're on interview page
+  const location = useLocation();
+  const isOnInterviewPage = location.pathname === '/interview';
+  
+  // Initialize idle timeout (24 hours idle, 30 seconds warning)
+  // ✅ CHANGE: Disable idle timeout on interview page
+  const { showWarning, timeRemaining, resetTimer } = useIdleTimeout(
+    isOnInterviewPage ? null : 1440,  // ✅ 24 hours (1440 minutes) total idle time
+    30  // Warning appears 30 seconds before logout
+  );
+  
+  // Handle logout from idle timeout modal
+  const handleIdleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+  };
   
   return (
     <>
@@ -153,6 +172,16 @@ function App() {
       
       {/* Support Bot Widget - Available on all pages */}
       <SupportBot />
+      
+      {/* Idle Timeout Warning Modal - Only show if not on interview page */}
+      {!isOnInterviewPage && (
+        <IdleTimeoutModal
+          isOpen={showWarning}
+          timeRemaining={timeRemaining}
+          onStayLoggedIn={resetTimer}
+          onLogout={handleIdleLogout}
+        />
+      )}
     </>
   );
 }

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FiFileText, FiBriefcase, FiPlay, FiEye, FiRefreshCw, FiCalendar, FiBarChart2, FiSettings } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import { useOperation } from '../contexts/OperationContext';
 import Navbar from '../components/Navbar';
 import InterviewHistoryCard from '../components/InterviewHistoryCard';
 import SuccessModal from '../components/SuccessModal';
@@ -16,6 +17,7 @@ function DashboardPage() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { setIsOperationInProgress } = useOperation();
   const [loading, setLoading] = useState(true);
   const [selectedPairings, setSelectedPairings] = useState(new Set());
   const [expandedDescriptions, setExpandedDescriptions] = useState(new Set());
@@ -191,6 +193,7 @@ function DashboardPage() {
       
       // Set loading state for this specific pairing
       setRegeneratingQuestions(prev => new Set(prev).add(pairing.id));
+      setIsOperationInProgress(true); // ✅ Pause idle timeout during question generation
       
       // Step 3: Generate questions using backend API with question settings
       const questionsResult = await generateQuestionsFromBackend(pairing, {
@@ -263,6 +266,7 @@ function DashboardPage() {
         newSet.delete(pairing.id);
         return newSet;
       });
+      setIsOperationInProgress(false); // ✅ Resume idle timeout after generation
       setSelectedPairingForRegen(null);
     }
   };
