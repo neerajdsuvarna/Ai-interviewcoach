@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FiFileText, FiBriefcase, FiPlay, FiEye, FiRefreshCw, FiCalendar, FiBarChart2 } from 'react-icons/fi';
+import { FiFileText, FiBriefcase, FiPlay, FiEye, FiRefreshCw, FiCalendar, FiBarChart2, FiSettings } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
+import { useOperation } from '../contexts/OperationContext';
 import Navbar from '../components/Navbar';
 import InterviewHistoryCard from '../components/InterviewHistoryCard';
 import SuccessModal from '../components/SuccessModal';
@@ -10,11 +11,13 @@ import { supabase } from '../supabaseClient';
 import { apiPost } from '../api';
 import { trackEvents } from '../services/mixpanel';
 import PerformanceGraph from '../components/PerformanceGraph';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function DashboardPage() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { setIsOperationInProgress } = useOperation();
   const [loading, setLoading] = useState(true);
   const [selectedPairings, setSelectedPairings] = useState(new Set());
   const [expandedDescriptions, setExpandedDescriptions] = useState(new Set());
@@ -26,6 +29,19 @@ function DashboardPage() {
   const [successModal, setSuccessModal] = useState({ isOpen: false, title: '', message: '', details: null });
   const [downloadingResume, setDownloadingResume] = useState(new Set());
   const [downloadSuccess, setDownloadSuccess] = useState(null);
+  // ✅ ADD: State for question generation modal
+  const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [selectedPairingForRegen, setSelectedPairingForRegen] = useState(null);
+  const [easyQuestions, setEasyQuestions] = useState(1);
+  const [mediumQuestions, setMediumQuestions] = useState(1);
+  const [hardQuestions, setHardQuestions] = useState(1);
+  const [codingQuestions, setCodingQuestions] = useState(0);
+  const [splitMode, setSplitMode] = useState(false);
+  const [blendMode, setBlendMode] = useState(false);
+  // ✅ ADD: Split and Blend mode percentage sliders
+  const [splitResumePercentage, setSplitResumePercentage] = useState(50);
+  const [blendResumePercentage, setBlendResumePercentage] = useState(50);
+  const [questionValidationError, setQuestionValidationError] = useState('');
   // Add state for loading overall performance
 
 
@@ -123,18 +139,75 @@ function DashboardPage() {
   };
 
   const handleRegenerateQuestions = async (pairing) => {
+    // ✅ NEW: Open modal with question settings instead of directly generating
+    setSelectedPairingForRegen(pairing);
+    // Reset question counts and modes
+    setEasyQuestions(1);
+    setMediumQuestions(1);
+    setHardQuestions(1);
+    setCodingQuestions(0);
+    setSplitMode(false);
+    setBlendMode(false);
+    setSplitResumePercentage(50);
+    setBlendResumePercentage(50);
+    setQuestionValidationError('');
+    setShowQuestionModal(true);
+  };
+
+  // ✅ NEW: Function to actually generate questions after user confirms settings
+  const handleConfirmRegenerate = async () => {
+    if (!selectedPairingForRegen) return;
+
+    const pairing = selectedPairingForRegen;
+    
+    // Validate question counts based on mode
+    // ✅ CHANGE: Only count easy, medium, hard (exclude coding questions) when both modes are enabled
+    const totalQuestions = splitMode && blendMode 
+      ? easyQuestions + mediumQuestions + hardQuestions 
+      : easyQuestions + mediumQuestions + hardQuestions + codingQuestions;
+
+    // Only validate when both split AND blend modes are enabled
+    if (splitMode && blendMode) {
+      // Both modes on - need at least 6 total questions (excluding coding)
+      if (totalQuestions < 6) {
+        // ✅ CHANGE: Use conditional message based on coding slider visibility
+        const errorMessage = pairing.technical === true
+          ? 'When both Split and Blend modes are enabled, you need at least 6 total questions, excluding coding questions.'
+          : 'When both Split and Blend modes are enabled, you need at least 6 total questions.';
+        setQuestionValidationError(errorMessage);
+        return;
+      }
+    }
+
+    // Clear any previous validation errors
+    setQuestionValidationError('');
+    
     // Prevent multiple clicks
     if (regeneratingQuestions.has(pairing.id)) {
       return;
     }
 
     try {
+      // Close modal
+      setShowQuestionModal(false);
+      
       // Set loading state for this specific pairing
       setRegeneratingQuestions(prev => new Set(prev).add(pairing.id));
+      setIsOperationInProgress(true); // ✅ Pause idle timeout during question generation
       
-      // Step 3: Generate questions using backend API
-      const questionsResult = await generateQuestionsFromBackend(pairing);
+      // Step 3: Generate questions using backend API with question settings
+      const questionsResult = await generateQuestionsFromBackend(pairing, {
+        easy: easyQuestions,
+        medium: mediumQuestions,
+        hard: hardQuestions,
+        coding: codingQuestions,
+        splitMode,
+        blendMode,
+        splitResumePercentage,
+        blendResumePercentage
+      });
       
+      // ... rest of the existing logic
       if (!questionsResult.success) {
         throw new Error(`Failed to generate questions: ${questionsResult.message}`);
       }
@@ -161,8 +234,6 @@ function DashboardPage() {
       });
 
       // Step 6: Show success message and refresh data
-      
-      // Count unique questions by grouping by question_text
       const uniqueQuestions = questionsSaveResult.data.reduce((acc, item) => {
         if (!acc.has(item.question_text)) {
           acc.add(item.question_text);
@@ -170,7 +241,6 @@ function DashboardPage() {
         return acc;
       }, new Set());
       
-      // Show success modal instead of alert
       setSuccessModal({
         isOpen: true,
         title: 'Questions Generated Successfully!',
@@ -196,6 +266,8 @@ function DashboardPage() {
         newSet.delete(pairing.id);
         return newSet;
       });
+      setIsOperationInProgress(false); // ✅ Resume idle timeout after generation
+      setSelectedPairingForRegen(null);
     }
   };
 
@@ -290,12 +362,25 @@ function DashboardPage() {
   };
 
   // Helper function to call backend API for question generation
-  const generateQuestionsFromBackend = async (pairing) => {
+  const generateQuestionsFromBackend = async (pairing, questionSettings = {}) => {
     try {
       const response = await apiPost('/api/generate-questions', {
         resume_url: pairing.resumeUrl,
         job_title: pairing.jobTitle,
-        job_description: pairing.jobDescription
+        job_description: pairing.jobDescription,
+        // ✅ FIX: Send question_counts in the correct format that backend expects
+        question_counts: {
+          beginner: questionSettings.easy || 1,  // ✅ FIX: Use 'beginner' key (not 'easy')
+          medium: questionSettings.medium || 1,
+          hard: questionSettings.hard || 1,
+          coding: questionSettings.coding || 0
+        },
+        split: questionSettings.splitMode || false,  // ✅ FIX: Use 'split' (not 'split_mode')
+        resume_pct: questionSettings.splitResumePercentage || 50,  // ✅ ADD: Missing parameter
+        jd_pct: 100 - (questionSettings.splitResumePercentage || 50),  // ✅ ADD: Missing parameter
+        blend: questionSettings.blendMode || false,  // ✅ FIX: Use 'blend' (not 'blend_mode')
+        blend_pct_resume: questionSettings.blendResumePercentage || 50,  // ✅ ADD: Missing parameter
+        blend_pct_jd: 100 - (questionSettings.blendResumePercentage || 50)  // ✅ ADD: Missing parameter
       });
 
       return response;
@@ -377,6 +462,46 @@ function DashboardPage() {
       console.error('Error saving questions:', error);
       throw error;
     }
+  };
+
+  // ✅ ADD: Validation function for question generation
+  const canGenerateQuestions = () => {
+    // Only validate when both split AND blend modes are enabled
+    if (splitMode && blendMode) {
+      // ✅ CHANGE: Only count easy, medium, hard (exclude coding questions)
+      const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+      // Both modes on - need at least 6 total questions (excluding coding)
+      return totalQuestions >= 6;
+    }
+    
+    // In all other cases, button is enabled
+    return true;
+  };
+
+  // ✅ ADD: Helper function to get the reason why button is disabled
+  const getDisabledReason = () => {
+    if (!selectedPairingForRegen) {
+      return null;
+    }
+    
+    if (regeneratingQuestions.has(selectedPairingForRegen.id)) {
+      return null; // Don't show message during generation
+    }
+    
+    if (splitMode && blendMode) {
+      // ✅ CHANGE: Only count easy, medium, hard (exclude coding questions)
+      const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+      if (totalQuestions < 6) {
+        // ✅ CHANGE: Show different message based on whether coding slider is visible
+        if (selectedPairingForRegen.technical === true) {
+          return 'When both Split and Blend modes are enabled, you need at least 6 total questions, excluding coding questions.';
+        } else {
+          return 'When both Split and Blend modes are enabled, you need at least 6 total questions.';
+        }
+      }
+    }
+    
+    return null;
   };
 
   if (loading) {
@@ -697,6 +822,326 @@ function DashboardPage() {
         </div>
       )}
 
+      {/* ✅ NEW: Question Generation Settings Modal */}
+      {showQuestionModal && selectedPairingForRegen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-[var(--color-card)] rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-[var(--color-border)] shadow-2xl"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <FiSettings className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
+                <h2 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                  Question Generation Settings
+                </h2>
+              </div>
+              <button
+                onClick={() => {
+                  setShowQuestionModal(false);
+                  setSelectedPairingForRegen(null);
+                }}
+                className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors p-1 rounded-lg hover:bg-[var(--color-hover)]"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Question Difficulty Distribution */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                    Question Difficulty Distribution
+                  </h3>
+                  <span className="text-sm font-medium px-3 py-1 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                    Total: {easyQuestions + mediumQuestions + hardQuestions + codingQuestions} questions
+                  </span>
+                </div>
+
+                {/* ✅ CHANGE: Use grid layout instead of space-y-4 for horizontal display */}
+                <div className={`grid ${selectedPairingForRegen.technical === true ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 md:grid-cols-3'} gap-4`}>
+                  {/* Easy Questions */}
+                  <div className="bg-green-50/50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-green-700 dark:text-green-300">
+                        Easy Questions
+                      </label>
+                      <span className="text-xs text-green-600 dark:text-green-400 bg-green-100/70 dark:bg-green-800/30 px-2 py-1 rounded-full">
+                        {easyQuestions}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={easyQuestions}
+                      onChange={(e) => setEasyQuestions(parseInt(e.target.value))}
+                      className="w-full h-2 bg-green-200/50 dark:bg-green-700/30 rounded-lg appearance-none cursor-pointer slider-green"
+                    />
+                    <div className="flex justify-between text-xs text-green-600/70 dark:text-green-400/70 mt-1">
+                      <span>1</span>
+                      <span>5</span>
+                    </div>
+                  </div>
+
+                  {/* Medium Questions */}
+                  <div className="bg-yellow-50/50 dark:bg-yellow-900/10 border border-yellow-200/50 dark:border-yellow-800/30 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-yellow-700 dark:text-yellow-300">
+                        Medium Questions
+                      </label>
+                      <span className="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-100/70 dark:bg-yellow-800/30 px-2 py-1 rounded-full">
+                        {mediumQuestions}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={mediumQuestions}
+                      onChange={(e) => setMediumQuestions(parseInt(e.target.value))}
+                      className="w-full h-2 bg-yellow-200/50 dark:bg-yellow-700/30 rounded-lg appearance-none cursor-pointer slider-yellow"
+                    />
+                    <div className="flex justify-between text-xs text-yellow-600/70 dark:text-yellow-400/70 mt-1">
+                      <span>1</span>
+                      <span>5</span>
+                    </div>
+                  </div>
+
+                  {/* Hard Questions */}
+                  <div className="bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-red-700 dark:text-red-300">
+                        Hard Questions
+                      </label>
+                      <span className="text-xs text-red-600 dark:text-red-400 bg-red-100/70 dark:bg-red-800/30 px-2 py-1 rounded-full">
+                        {hardQuestions}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={hardQuestions}
+                      onChange={(e) => setHardQuestions(parseInt(e.target.value))}
+                      className="w-full h-2 bg-red-200/50 dark:bg-red-700/30 rounded-lg appearance-none cursor-pointer slider-red"
+                    />
+                    <div className="flex justify-between text-xs text-red-600/70 dark:text-red-400/70 mt-1">
+                      <span>1</span>
+                      <span>5</span>
+                    </div>
+                  </div>
+
+                  {/* Coding Questions Slider - Only show if technical === true */}
+                  {selectedPairingForRegen.technical === true && (
+                    <div className="bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                          Coding Questions
+                        </label>
+                        <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100/70 dark:bg-blue-800/30 px-2 py-1 rounded-full">
+                          {codingQuestions}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        value={codingQuestions}
+                        onChange={(e) => setCodingQuestions(parseInt(e.target.value))}
+                        className="w-full h-2 bg-blue-200/50 dark:bg-blue-700/30 rounded-lg appearance-none cursor-pointer slider-blue"
+                      />
+                      <div className="flex justify-between text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">
+                        <span>0</span>
+                        <span>5</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Validation Error Message */}
+                {!canGenerateQuestions() && splitMode && blendMode && (
+                  <div className="mt-4 p-3 bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 rounded-lg">
+                    <p className="text-sm text-red-700 dark:text-red-300">
+                      {/* ✅ CHANGE: Conditional message based on coding slider visibility */}
+                      {selectedPairingForRegen.technical === true
+                        ? 'When both Split and Blend modes are enabled, you need at least 6 total questions, excluding coding questions.'
+                        : 'When both Split and Blend modes are enabled, you need at least 6 total questions.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Mode-specific validation hints */}
+                {splitMode && blendMode && (
+                  <div className="mt-4 p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200/50 dark:border-blue-800/30 rounded-lg">
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      💡 <strong>Hybrid Mode:</strong> With both modes enabled, you need at least 6 total questions to ensure a good mix of split and blended questions.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Mode Toggles */}
+              <div className="space-y-4">
+                {/* Split Mode Toggle with Slider */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                        Split Mode
+                      </label>
+                      <p className="text-xs text-[var(--color-text-secondary)]">
+                        Generate separate questions from resume vs job description
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSplitMode(!splitMode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        splitMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                      } cursor-pointer`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          splitMode ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Split Mode Slider - Directly below Split Mode toggle */}
+                  <AnimatePresence>
+                    {splitMode && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="mt-3"
+                      >
+                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                          <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-3">
+                            Split Mode Settings
+                          </h4>
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                              <span>Resume</span>
+                              <span>Job Description</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={splitResumePercentage}
+                              onChange={(e) => setSplitResumePercentage(parseInt(e.target.value))}
+                              className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                            />
+                            <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
+                              <span>{splitResumePercentage}%</span>
+                              <span>{100 - splitResumePercentage}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                {/* Blend Mode Toggle with Slider */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                        Blend Mode
+                      </label>
+                      <p className="text-xs text-[var(--color-text-secondary)]">
+                        Generate questions that blend resume and job description content
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setBlendMode(!blendMode)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        blendMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                      } cursor-pointer`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          blendMode ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Blend Mode Slider - Directly below Blend Mode toggle */}
+                  <AnimatePresence>
+                    {blendMode && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="mt-3"
+                      >
+                        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                          <h4 className="text-sm font-medium text-purple-800 dark:text-purple-200 mb-3">
+                            Blend Mode Settings
+                          </h4>
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                              <span>Resume Weight</span>
+                              <span>Job Description Weight</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={blendResumePercentage}
+                              onChange={(e) => setBlendResumePercentage(parseInt(e.target.value))}
+                              className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                            />
+                            <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
+                              <span>{blendResumePercentage}%</span>
+                              <span>{100 - blendResumePercentage}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowQuestionModal(false);
+                  setSelectedPairingForRegen(null);
+                }}
+                className="flex-1 py-3 px-4 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-hover)] transition-colors font-semibold"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmRegenerate}
+                disabled={!canGenerateQuestions() || regeneratingQuestions.has(selectedPairingForRegen.id)}
+                title={!canGenerateQuestions() && !regeneratingQuestions.has(selectedPairingForRegen.id) ? getDisabledReason() : ''}  // ✅ ADD: Show tooltip when disabled
+                className="flex-1 py-3 px-4 rounded-lg bg-[var(--color-primary)] text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
+              >
+                {regeneratingQuestions.has(selectedPairingForRegen.id) ? 'Generating...' : 'Generate Questions'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
 
       {/* Success Modal */}

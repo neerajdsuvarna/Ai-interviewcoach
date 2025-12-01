@@ -16,6 +16,21 @@ function EmailVerificationCallback() {
 
   useEffect(() => {
     const processVerification = async () => {
+      // Check if this is a password reset (recovery) link
+      const type = searchParams.get('type');
+      const accessToken = searchParams.get('access_token');
+      const hash = window.location.hash;
+      
+      // If it's a password reset, redirect to reset password page with the hash
+      if (type === 'recovery' || (hash && hash.includes('type=recovery'))) {
+        // Preserve the hash/tokens and redirect to reset password page
+        const hashParams = new URLSearchParams(hash.substring(1)); // Remove #
+        const redirectUrl = `/reset-password${hash ? `#${hash.substring(1)}` : ''}${accessToken ? `?access_token=${accessToken}` : ''}`;
+        navigate(redirectUrl, { replace: true });
+        return;
+      }
+
+      // Otherwise, handle as email verification
       const result = await handleEmailVerification(searchParams);
       if (result.success && !hasTrackedEvent.current) {
         // Track email verification success (only once)

@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 import UploadBox from '../components/upload/UploadBox';
 import { FiTrash2, FiLoader, FiFileText, FiCheck, FiSettings } from 'react-icons/fi';
 import { useTheme } from '../hooks/useTheme';
+import { useOperation } from '../contexts/OperationContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadFile } from '../api';
 import SuccessModal from '../components/SuccessModal';
@@ -13,6 +14,7 @@ import { trackEvents } from '../services/mixpanel';
 function UploadPage() {
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const { setIsOperationInProgress } = useOperation();
 
   const [resume, setResume] = useState(null);
   const [jobDesc, setJobDesc] = useState(null);
@@ -148,6 +150,7 @@ function UploadPage() {
 
   const parseJobDescriptionFile = async (file) => {
     setParsingJobDesc(true);
+    setIsOperationInProgress(true); // ✅ Pause idle timeout during parsing
     
     try {
       // Create FormData for file upload
@@ -174,6 +177,7 @@ function UploadPage() {
       setIsTechnical(false); // Reset on error
     } finally {
       setParsingJobDesc(false);
+      setIsOperationInProgress(false); // ✅ Resume idle timeout after parsing
     }
   };
 
@@ -262,7 +266,8 @@ function UploadPage() {
         body: JSON.stringify({
           title: jobTitle,
           description: jobDescription,
-          file_url: jobDescUrl
+          file_url: jobDescUrl,
+          technical: isTechnical  // ✅ ADD: Set technical based on whether coding slider is visible
         })
       });
 
@@ -310,7 +315,11 @@ function UploadPage() {
     if (splitMode && blendMode) {
       // Both modes on - need at least 6 total questions
       if (totalQuestions < 6) {
-        setQuestionValidationError('When both Split and Blend modes are enabled, you need at least 6 total questions.');
+        // ✅ CHANGE: Use conditional message based on coding slider visibility
+        const errorMessage = isTechnical === true && jobTitle.trim() && jobDescription.trim()
+          ? 'When both Split and Blend modes are enabled, you need at least 6 total questions, excluding coding questions.'
+          : 'When both Split and Blend modes are enabled, you need at least 6 total questions.';
+        setQuestionValidationError(errorMessage);
         return;
       }
     }
@@ -319,6 +328,7 @@ function UploadPage() {
     setQuestionValidationError('');
 
     setLoading(true);
+    setIsOperationInProgress(true); // ✅ Pause idle timeout during question generation
 
     try {
       console.log('[DEBUG] Starting complete workflow...');
@@ -420,6 +430,7 @@ function UploadPage() {
       alert(`Error: ${error.message}`);
     } finally {
       setLoading(false);
+      setIsOperationInProgress(false); // ✅ Resume idle timeout after generation
     }
   };
 
@@ -537,8 +548,6 @@ function UploadPage() {
 
   // Check if generate questions button should be enabled
   const canGenerateQuestions = () => {
-    const totalQuestions = easyQuestions + mediumQuestions + hardQuestions + codingQuestions;
-    
     // Basic requirements
     if (!resume || !jobTitle.trim() || !jobDescription.trim() || !jobDescParsed || loading || parsingJobDesc) {
       return false;
@@ -546,7 +555,9 @@ function UploadPage() {
     
     // Only validate when both split AND blend modes are enabled
     if (splitMode && blendMode) {
-      // Both modes on - need at least 6 total questions
+      // ✅ CHANGE: Only count easy, medium, hard (exclude coding questions)
+      const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
+      // Both modes on - need at least 6 total questions (excluding coding)
       return totalQuestions >= 6;
     }
     
@@ -577,9 +588,15 @@ function UploadPage() {
     }
     
     if (splitMode && blendMode) {
-      const totalQuestions = easyQuestions + mediumQuestions + hardQuestions + codingQuestions;
+      // ✅ CHANGE: Only count easy, medium, hard (exclude coding questions)
+      const totalQuestions = easyQuestions + mediumQuestions + hardQuestions;
       if (totalQuestions < 6) {
-        return 'When both Split and Blend modes are enabled, you need at least 6 total questions.';
+        // ✅ CHANGE: Show different message based on whether coding slider is visible
+        if (isTechnical === true && jobTitle.trim() && jobDescription.trim()) {
+          return 'When both Split and Blend modes are enabled, you need at least 6 total questions, excluding coding questions.';
+        } else {
+          return 'When both Split and Blend modes are enabled, you need at least 6 total questions.';
+        }
       }
     }
     
@@ -891,7 +908,10 @@ function UploadPage() {
                         {!canGenerateQuestions() && splitMode && blendMode && (
                           <div className="p-3 bg-red-50/50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30 rounded-lg">
                             <p className="text-sm text-red-700 dark:text-red-300">
-                              When both Split and Blend modes are enabled, you need at least 6 total questions.
+                              {/* ✅ CHANGE: Conditional message based on coding slider visibility */}
+                              {isTechnical === true && jobTitle.trim() && jobDescription.trim()
+                                ? 'When both Split and Blend modes are enabled, you need at least 6 total questions, excluding coding questions.'
+                                : 'When both Split and Blend modes are enabled, you need at least 6 total questions.'}
                             </p>
                           </div>
                         )}
@@ -1063,6 +1083,7 @@ function UploadPage() {
                 <button
                 type="submit"
                 disabled={!canGenerateQuestions()}
+                title={!canGenerateQuestions() ? getDisabledReason() : ''}  // ✅ ADD: Show tooltip when disabled
                 className="w-full py-3 text-base sm:text-lg font-semibold bg-[var(--color-primary)] text-white rounded-xl transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {loading ? (
