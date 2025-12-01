@@ -2034,7 +2034,7 @@ def execute_python(code, test_mode=False):
             if not os.path.isfile(venv_editor_executable): #Check if Virtual Environment has already been created
                 venv = ['python', "-m", "venv", venv_editor_path]
                 subprocess.run(venv, capture_output=True, text=True, check=True)
-                print(f"Virtual environment '{venv_editor_name}' created successfully at {venv_editor_path}")
+                print(f"[INFO] Virtual environment '{venv_editor_name}' created successfully at {venv_editor_path}")
 
                 pip_executable = os.path.join(venv_editor_path, "bin", "pip")
 
