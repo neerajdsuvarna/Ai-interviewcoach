@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Square } from 'lucide-react'; // ✅ Add Square icon for end button
+import { Mic, MicOff, Square, Code } from 'lucide-react'; // ✅ Add Square icon for end button
 import { uploadFile, apiPost, apiDelete } from '../../api';
 import { useAuth } from '../../contexts/AuthContext'; // ✅ Use useAuth hook
 import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
@@ -8,7 +8,7 @@ import { supabase } from '../../supabaseClient'; // ✅ Import supabase client
 import { useChatHistory } from '../../hooks/useChatHistory';
 
 import { trackEvents } from '../../services/mixpanel';
-
+import CodeEditorPopup from './CodeEditorPopup';
 
 function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, isAudioPlaying, setIsAudioPlaying, onStateChange }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -34,6 +34,12 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // ✅ NEW: Add state to track interview stage and resume question answers
   const [interviewStage, setInterviewStage] = useState('introduction');
   const [hasAnsweredResumeQuestion, setHasAnsweredResumeQuestion] = useState(false);
+
+  const [showCodeEditor, setShowCodeEditor] = useState(false);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [isCodingQuestion, setIsCodingQuestion] = useState(false);
+  const [codeToAppend, setCodeToAppend] = useState('');
+  const [language, setLanguage] = useState('javascript');
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = () => {
@@ -110,7 +116,7 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       console.log('📥 Interview Manager response:', response);
       
       if (response.success) {
-        const { response: textResponse, audio_url, should_delete_audio, stage, interview_done } = response.data;
+        const { response: textResponse, audio_url, should_delete_audio, stage, interview_done, requires_code, code_language } = response.data;
         
         console.log('🔍 Response data:', {
           stage,
@@ -118,11 +124,29 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           userInput: userInput.trim(),
           currentInterviewStage: interviewStage
         });
+
+        console.log('Question Requires Code: ', requires_code);
         
         // ✅ NEW: Track when user answers resume questions (check current stage before updating)
         if (interviewStage === 'resume_discussion' && userInput.trim().length > 0) {
           console.log('✅ User answered resume question - marking as answered');
           setHasAnsweredResumeQuestion(true);
+        }
+
+        if (requires_code) {
+            console.log('🔧 Coding question detected, auto-opening code editor');
+            setCurrentQuestion({
+                question_text: textResponse,
+                requires_code: true,
+                code_language: code_language
+            });
+            setIsCodingQuestion(true);
+            setShowCodeEditor(true);
+        } else {
+            setCurrentQuestion(null);
+            setIsCodingQuestion(false);
+            setCodeToAppend('');
+            setLanguage('javascript');
         }
         
         // ✅ NEW: Update interview stage and control End Interview button
@@ -561,7 +585,8 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
           
           if (result.success) {
             const transcription = result.data.transcription;
-            
+            setCodeToAppend('');
+            setLanguage('javascript');
             if (transcription && transcription.trim()) {
               // Add candidate's response to conversation
               await addMessageToConversation('candidate', transcription);
@@ -864,6 +889,36 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // Update your existing message handling functions to use addMessageToConversation
   // The callInterviewManager function already uses addMessageToConversation internally
   // The handleEndInterview function already uses addMessageToConversation internally
+
+  const handleSave = async (code) => {
+      console.log(code);
+      setCodeToAppend(''); // Clear the code for next question
+      code = '\n``` \n\n' + code + '\n\n```\n'
+      await addMessageToConversation('candidate', code);
+      console.log('✅ Candidate message added');
+      setIsLoading(false); // Stop loading immediately after user message appears
+
+      // Add thinking indicator before backend call
+      const thinkingMessage = {
+          id: `thinking-${Date.now()}`,
+          speaker: 'interviewer',
+          message: 'Thinking...',
+          timestamp: new Date().toLocaleTimeString(),
+          isThinking: true
+      };
+      setConversation(prev => [...prev, thinkingMessage]);
+
+      // Call Interview Manager API to get the next question/response
+      setIsResponseInProgress(true); // ✅ NEW: Start response process
+      await callInterviewManager(code);
+  };
+
+  const handleEditorClose = async (code, newLanguage) => {
+        console.log("Code to Append: ", code);
+        setCodeToAppend(code);
+        console.log(newLanguage);
+        setLanguage(newLanguage);
+  };
 
   // ✅ NEW: Auto-end interview when timeout is detected (no confirmation popup)
   const handleEndInterviewAutomatically = async () => {
@@ -1471,9 +1526,49 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       >
       </div>
 
+      {/* Code Editor Button - Only show when current question requires code */}
+      {isCodingQuestion && (
+        <div className="pt-3 sm:pt-4">
+          <button
+            onClick={() => setShowCodeEditor(true)}
+            disabled={isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress}
+            className={`w-full px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 text-white font-semibold transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 ${
+              isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? 'bg-gray-400 cursor-not-allowed opacity-60'
+                : 'bg-purple-500 hover:bg-purple-600'
+            }`}
+            title={
+              isButtonDisabled || isAudioPlaying || isLoading || isResponseInProgress
+                ? 'Please wait...'
+                : `Open Code Editor`
+            }
+          >
+            <Code size={18} className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              Open Code Editor {currentQuestion.code_language && `(${currentQuestion.code_language.toUpperCase()})`}
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* ✅ NEW: Loading popup */}
       <LoadingPopup />
-      
+
+      {/* ✅ NEW: Code Editor Popup */}
+      <AnimatePresence>
+        {showCodeEditor && (
+          <CodeEditorPopup
+            isOpen={showCodeEditor}
+            onClose={() => setShowCodeEditor(false)}
+            initialLanguage={currentQuestion?.code_language || language}
+            questionText={currentQuestion?.question_text}
+            handleEditorSave = {handleSave}
+            maintainCodeAndLang = {handleEditorClose}
+            initialEditorCode = {codeToAppend}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ✅ NEW: Timeout modal */}
       <TimeoutModal />
     </div>

@@ -879,6 +879,7 @@ def transcribe_audio():
                         print(f"[INFO] User audio stored successfully: {user_file_path}")
                     else:
                         print(f"[WARNING] Failed to store user audio")
+                print(f"[DEBUG] Transcription: {transcription}")
                         
             except Exception as e:
                 print(f"[ERROR] Failed to store user audio: {e}")
@@ -993,6 +994,7 @@ def generate_response():
                 if question_text not in seen_questions:
                     seen_questions.add(question_text)
                     core_questions.append(question_text)
+            coding_requirement = [q['requires_code'] for q in questions]
             
             print(f"[DEBUG] Fetched interview config: job_title='{job_title}', questions_count={len(questions)}, unique_questions={len(core_questions)}")
             
@@ -1016,6 +1018,7 @@ def generate_response():
             "job_title": job_title,
             "job_description": job_description,
             "core_questions": core_questions,
+            "coding_requirement": coding_requirement,
             "time_limit_minutes": 150,  # 2 hours
             "custom_questions": [],
         }
@@ -1043,6 +1046,12 @@ def generate_response():
         # ✅ NEW: Generate audio for the interview response
         audio_url = None
         audio_file_path = None
+
+        code_requirement = response.get('requires_code')
+        stage = response.get('stage')
+
+        if stage == 'resume_discussion':
+            print(f"[INFO] Code Requirement: {code_requirement}")
         
         if response.get("message") and not response.get("interview_done", False):
             try:
@@ -1236,7 +1245,8 @@ def generate_response():
                 "feedback_saved_successfully": feedback_saved_successfully,  # ✅ NEW: Include feedback save status
                 "audio_url": audio_url,  # ✅ NEW: Include audio URL
                 "audio_file_path": file_path if audio_url else None,  # ✅ NEW: Include file path for deletion
-                "should_delete_audio": False  # ✅ NEW: Keep audio files for merging later
+                "should_delete_audio": False,  # ✅ NEW: Keep audio files for merging later
+                "requires_code": code_requirement
             }
         })
         
@@ -1897,6 +1907,577 @@ def preload_support_bot_model():
         import traceback
         traceback.print_exc()
         return False
+
+# ========= Code Execution API Endpoints ==================
+
+@app.route('/api/execute', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def execute_code():
+    """Execute code in various programming languages"""
+
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+
+    try:
+        data = request.get_json()
+        code = data.get('code', '').strip()
+        language = data.get('language', 'javascript').lower()
+        test_mode = data.get('test', False)
+
+        if not code:
+            return jsonify({
+                "success": False,
+                "message": "No code provided"
+            }), 400
+
+        # Execute code based on language
+        if language == 'javascript':
+            return execute_javascript(code, test_mode)
+        elif language == 'python':
+            return execute_python(code, test_mode)
+        elif language == 'java':
+            return execute_java(code, test_mode)
+        elif language == 'cpp':
+            return execute_cpp(code, test_mode)
+        elif language == 'csharp':
+            return execute_csharp(code, test_mode)
+        elif language == 'go':
+            return execute_go(code, test_mode)
+        elif language == 'rust':
+            return execute_rust(code, test_mode)
+        elif language == 'typescript':
+            return execute_typescript(code, test_mode)
+        else:
+            return jsonify({
+                "success": False,
+                "message": f"Unsupported language: {language}"
+            }), 400
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Execution error: {str(e)}"
+        }), 500
+
+
+def execute_javascript(code, test_mode=False):
+    """Execute JavaScript code"""
+
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute JavaScript with Node.js
+            result = subprocess.run(
+                ['node', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None  # TODO: Add test framework support
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"JavaScript execution error: {str(e)}"
+        }), 500
+
+
+def execute_python(code, test_mode=False):
+    """Execute Python code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        venv_editor_name = "CodeEditorVenv"
+        venv_editor_path = os.path.join(os.getcwd(), venv_editor_name)
+        packages_to_install = ["numpy", "pandas"]  # Add packages to Editor Virtual Environment here
+
+        try:
+            venv_editor_executable = os.path.join(venv_editor_path, "bin", "python")
+            if not os.path.isfile(venv_editor_executable): #Check if Virtual Environment has already been created
+                venv = ['python', "-m", "venv", venv_editor_path]
+                subprocess.run(venv, capture_output=True, text=True, check=True)
+                print(f"Virtual environment '{venv_editor_name}' created successfully at {venv_editor_path}")
+
+                pip_executable = os.path.join(venv_editor_path, "bin", "pip")
+
+                try:
+                    for package in packages_to_install:
+                        subprocess.run([pip_executable, "install", package], check=True, capture_output=True, text=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"[ERROR] Failed to install pip package: {e}")
+            else:
+                print(f"[INFO] Virtual environment '{venv_editor_name}' is already installed with Packages: {packages_to_install}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error creating virtual environment: {e}")
+            return jsonify({
+                "success": False,
+                "message": f"Error creating virtual environment: {str(e)}"
+            }), 500
+
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return jsonify({
+                "success": False,
+                "message": f"An unexpected error occurred: {str(e)}"
+            }), 500
+
+
+        try:
+            venv_editor = os.path.join(venv_editor_path, "bin", "python")
+            # Execute Python
+            result = subprocess.run(
+                [venv_editor, temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None  # TODO: Add test framework support
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Python execution error: {str(e)}"
+        }), 500
+
+
+def execute_java(code, test_mode=False):
+    """Execute Java code"""
+
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.java', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Compile Java
+            compile_result = subprocess.run(
+                ['javac', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if compile_result.returncode != 0:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "output": "",
+                        "error": compile_result.stderr,
+                        "testResults": None
+                    }
+                })
+
+            # Execute compiled class
+            class_name = os.path.splitext(os.path.basename(temp_file))[0]
+            class_dir = os.path.dirname(temp_file)
+
+            result = subprocess.run(
+                ['java', '-cp', class_dir, class_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+            class_file = temp_file.replace('.java', '.class')
+
+            if os.path.exists(class_file):
+                os.unlink(class_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Java execution error: {str(e)}"
+        }), 500
+
+
+def execute_cpp(code, test_mode=False):
+    """Execute C++ code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Compile C++
+            compile_result = subprocess.run(
+                ['g++', '-o', temp_file.replace('.cpp', ''), temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if compile_result.returncode != 0:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "output": "",
+                        "error": compile_result.stderr,
+                        "testResults": None
+                    }
+                })
+
+            # Execute compiled binary
+            result = subprocess.run(
+                [temp_file.replace('.cpp', '')],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+            binary_file = temp_file.replace('.cpp', '')
+
+            if os.path.exists(binary_file):
+                os.unlink(binary_file)
+
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"C++ execution error: {str(e)}"
+        }), 500
+
+
+def execute_csharp(code, test_mode=False):
+    """Execute C# code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.cs', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Compile and execute C#
+            result = subprocess.run(
+                ['dotnet', 'script', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"C# execution error: {str(e)}"
+        }), 500
+
+
+def execute_go(code, test_mode=False):
+    """Execute Go code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.go', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute Go
+            result = subprocess.run(
+                ['go', 'run', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Go execution error: {str(e)}"
+        }), 500
+
+
+def execute_rust(code, test_mode=False):
+    """Execute Rust code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.rs', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute Rust
+            result = subprocess.run(
+                ['rustc', temp_file, '-o', temp_file.replace('.rs', '')],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "output": "",
+                        "error": result.stderr,
+                        "testResults": None
+                    }
+                })
+
+            # Execute compiled binary
+            exec_result = subprocess.run(
+                [temp_file.replace('.rs', '')],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = exec_result.stdout
+            error = exec_result.stderr if exec_result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+            binary_file = temp_file.replace('.rs', '')
+            if os.path.exists(binary_file):
+                os.unlink(binary_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Rust execution error: {str(e)}"
+        }), 500
+
+
+def execute_typescript(code, test_mode=False):
+    """Execute TypeScript code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+        # Create temporary file
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ts', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute TypeScript with ts-node
+            result = subprocess.run(
+                ['npx', 'ts-node', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"TypeScript execution error: {str(e)}"
+        }), 500
 
 # Preload the support bot model at startup
 print("[INFO] Starting model preloading...")
