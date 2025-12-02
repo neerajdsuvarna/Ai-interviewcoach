@@ -400,11 +400,132 @@ def is_blank_audio(audio_path, rms_threshold=0.005):
         print(f"[ERROR] Failed to read audio: {e}")
         return False
 
+def sanitize_and_validate_transcription(transcription):
+    """
+    Validate transcription and detect if model corruption (exclamation marks) occurred.
+    Returns: (is_valid, cleaned_transcription, reason, needs_retry)
+    needs_retry=True means we detected corruption and should re-initialize model
+    """
+    if not transcription or not transcription.strip():
+        return False, "", "empty", False
+    
+    # Remove trailing whitespace first
+    transcription = transcription.strip()
+    
+    # Check if it's ONLY exclamation marks (no valid text at all)
+    text_without_exclamations = transcription.replace("!", "").replace(" ", "").replace(".", "").replace(",", "").replace("?", "")
+    if not text_without_exclamations:
+        return False, "", "only_exclamation_marks", True  # ✅ Needs retry
+    
+    # Find trailing exclamation marks pattern
+    last_valid_char_pos = -1
+    consecutive_exclamations = 0
+    max_consecutive_exclamations = 0
+    trailing_exclamation_start = -1
+    
+    # Scan from end to find where exclamation marks begin
+    for i in range(len(transcription) - 1, -1, -1):
+        char = transcription[i]
+        if char == '!' or char == ' ':
+            if trailing_exclamation_start == -1:
+                trailing_exclamation_start = i
+            consecutive_exclamations += 1
+            max_consecutive_exclamations = max(max_consecutive_exclamations, consecutive_exclamations)
+        else:
+            # Found a non-exclamation character
+            last_valid_char_pos = i
+            break
+    
+    # ✅ KEY CHANGE: If we detect trailing exclamation marks (>10), treat as corruption
+    # This indicates model state corruption, so we should retry with fresh model
+    if max_consecutive_exclamations > 5:  # More than 10 consecutive ! marks
+        print(f"[WARNING] Detected trailing exclamation marks ({max_consecutive_exclamations} consecutive) - indicates model corruption")
+        print(f"[DEBUG] Original transcription: {transcription[:100]}...")
+        
+        # Check if there's valid text before the exclamation marks
+        if last_valid_char_pos >= 0:
+            # There IS valid text, but model corrupted - needs retry
+            cleaned = transcription[:last_valid_char_pos + 1].rstrip().rstrip(".,!? ")
+            
+            # Validate the cleaned portion has substantial content
+            if cleaned and len(cleaned.strip()) > 0:
+                alphanumeric_chars = sum(1 for c in cleaned if c.isalnum())
+                total_chars = len(cleaned.replace(" ", ""))
+                
+                if total_chars > 0:
+                    alphanumeric_ratio = alphanumeric_chars / total_chars
+                    if alphanumeric_ratio >= 0.3:  # At least 30% alphanumeric
+                        # Valid text exists but model corrupted - return needs_retry=True
+                        return False, cleaned, f"trailing_exclamation_marks ({max_consecutive_exclamations} chars)", True
+                    else:
+                        # Not enough valid content even after cleaning
+                        return False, "", "insufficient_valid_content", True
+            else:
+                # No valid content found
+                return False, "", "no_valid_content_after_cleaning", True
+        else:
+            # No valid text found at all
+            return False, "", "only_exclamation_marks", True
+    
+    # If no excessive trailing exclamations, validate the whole transcription
+    # Check overall alphanumeric ratio
+    text_clean = transcription.replace(" ", "").replace(".", "").replace(",", "").replace("?", "").replace("!", "")
+    if not text_clean:
+        return False, "", "only_punctuation", True  # Needs retry
+    
+    alphanumeric_count = sum(1 for c in text_clean if c.isalnum())
+    total_chars = len(text_clean)
+    
+    if total_chars > 0:
+        alphanumeric_ratio = alphanumeric_count / total_chars
+        if alphanumeric_ratio < 0.2:  # Less than 20% alphanumeric
+            return False, transcription, f"too_many_special_chars (ratio: {alphanumeric_ratio:.2f})", True  # Needs retry
+    
+    # Valid transcription - no corruption detected
+    return True, transcription, "valid", False
+
+def reinitialize_whisper_model():
+    """Re-initialize the Whisper model (clean up old one first)"""
+    global whisper_model
+    try:
+        if whisper_model is not None:
+            print("[INFO] Releasing old Whisper model...")
+            del whisper_model
+            whisper_model = None
+        
+        print("[INFO] Re-initializing Whisper model...")
+        whisper_device = "cpu" if device == "mps" else device
+        whisper_model = WhisperModel("large-v3", device=whisper_device)
+        print(f"[DONE] Whisper model re-initialized on {whisper_device}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to re-initialize Whisper model: {e}")
+        import traceback
+        traceback.print_exc()
+        whisper_model = None
+        return False
+
+def transcribe_with_whisper(wav_path):
+    """Helper function to transcribe audio with current model"""
+    segments, info = whisper_model.transcribe(
+        wav_path,
+        beam_size=5,
+        language="en",
+        task="transcribe"
+    )
+    segment_list = list(segments)
+    transcription = " ".join([segment.text for segment in segment_list])
+    return transcription, info
+
 def process_audio_file(file):
-    """Process uploaded audio file and return transcription"""
+    """Process uploaded audio file and return transcription with retry logic"""
+    global whisper_model
+    
     if whisper_model is None:
-        print("[ERROR] Whisper model not loaded")
-        return {"success": False, "error": "Speech recognition model not available"}
+        print("[ERROR] Whisper model not loaded, initializing...")
+        initialize_whisper_model()
+        if whisper_model is None:
+            return {"success": False, "error": "Speech recognition model not available"}
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_file:
         original_path = temp_file.name
@@ -421,20 +542,76 @@ def process_audio_file(file):
             print("[INFO] Blank audio detected — skipping transcription.")
             return {"success": True, "transcription": ""}
 
-        segments, info = whisper_model.transcribe(
-            wav_path,
-            beam_size=5,
-            language="en",
-            task="transcribe"
-        )
-
-        transcription = " ".join([segment.text for segment in segments])
-        print(f"[INFO] Transcription completed: {transcription[:50]}...")
+        # Try transcription with up to 2 retries
+        max_retries = 10
         
-        return {"success": True, "transcription": transcription}
+        for attempt in range(max_retries + 1):  # 0, 1, 2 = 3 total attempts
+            try:
+                transcription, info = transcribe_with_whisper(wav_path)
+                
+                # Validate transcription and check if retry is needed
+                is_valid, cleaned_transcription, validation_reason, needs_retry = sanitize_and_validate_transcription(transcription)
+                
+                if is_valid and not needs_retry:
+                    # ✅ Valid transcription with no corruption - return immediately
+                    print(f"[INFO] Transcription completed (attempt {attempt + 1}): {cleaned_transcription[:50]}...")
+                    return {"success": True, "transcription": cleaned_transcription}
+                
+                # Invalid transcription OR corruption detected (trailing exclamation marks)
+                if needs_retry:
+                    print(f"[WARNING] Model corruption detected on attempt {attempt + 1}: {validation_reason}")
+                    print(f"[DEBUG] Raw transcription: {transcription[:100]}...")
+                    
+                    # ✅ ALWAYS retry when corruption is detected (even if we have valid text)
+                    if attempt < max_retries:
+                        print(f"[INFO] Re-initializing Whisper model due to corruption and retrying (attempt {attempt + 2}/{max_retries + 1})...")
+                        if reinitialize_whisper_model():
+                            continue  # Retry with fresh model
+                        else:
+                            print("[ERROR] Failed to re-initialize model, cannot retry")
+                            # If we had valid text before corruption, return it as fallback
+                            if cleaned_transcription and len(cleaned_transcription.strip()) > 0:
+                                print(f"[INFO] Returning cleaned transcription as fallback: {cleaned_transcription[:50]}...")
+                                return {"success": True, "transcription": cleaned_transcription}
+                            return {"success": True, "transcription": ""}  # Return empty to prevent API call
+                    else:
+                        # Last attempt failed - use cleaned version if available, otherwise empty
+                        if cleaned_transcription and len(cleaned_transcription.strip()) > 0:
+                            print(f"[WARNING] All retries exhausted, using cleaned transcription: {cleaned_transcription[:50]}...")
+                            return {"success": True, "transcription": cleaned_transcription}
+                        else:
+                            print(f"[ERROR] All {max_retries + 1} attempts failed. Returning empty transcription.")
+                            return {"success": True, "transcription": ""}  # Empty = won't call AI interviewer API
+                else:
+                    # Invalid but doesn't need retry (shouldn't happen, but handle it)
+                    print(f"[WARNING] Invalid transcription detected: {validation_reason}")
+                    if attempt < max_retries:
+                        print(f"[INFO] Re-initializing Whisper model and retrying (attempt {attempt + 2}/{max_retries + 1})...")
+                        if reinitialize_whisper_model():
+                            continue
+                    return {"success": True, "transcription": ""}
+                
+            except Exception as transcribe_error:
+                print(f"[ERROR] Transcription attempt {attempt + 1} failed: {transcribe_error}")
+                import traceback
+                traceback.print_exc()
+                
+                # If this is not the last attempt, re-initialize and retry
+                if attempt < max_retries:
+                    print(f"[INFO] Re-initializing Whisper model after error and retrying (attempt {attempt + 2}/{max_retries + 1})...")
+                    if reinitialize_whisper_model():
+                        continue  # Retry with fresh model
+                    else:
+                        print("[ERROR] Failed to re-initialize model after error")
+                        return {"success": False, "error": f"Transcription failed and model recovery failed: {str(transcribe_error)}"}
+                else:
+                    # Last attempt - return error
+                    return {"success": False, "error": f"Transcription failed after {max_retries + 1} attempts: {str(transcribe_error)}"}
 
     except Exception as e:
-        print(f"[ERROR] Transcription failed: {e}")
+        print(f"[ERROR] Audio processing failed: {e}")
+        import traceback
+        traceback.print_exc()
         return {"success": False, "error": str(e)}
     finally:
         # Clean up temporary files
