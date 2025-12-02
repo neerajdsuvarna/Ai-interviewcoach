@@ -928,132 +928,138 @@ function UploadPage() {
 
                       {/* Mode Toggles */}
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-sm font-medium text-[var(--color-text-primary)]">
-                              Split Mode
-                            </label>
-                            <p className="text-xs text-[var(--color-text-secondary)]">
-                              Generate separate questions from resume vs job description
-                            </p>
+                        {/* Split Mode Section */}
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                                Split Mode
+                              </label>
+                              <p className="text-xs text-[var(--color-text-secondary)]">
+                                Generate separate questions from resume vs job description
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSplitMode(!splitMode)}
+                              disabled={loading}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                splitMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                              } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                  splitMode ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setSplitMode(!splitMode)}
-                            disabled={loading}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              splitMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
-                            } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                splitMode ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
+
+                          {/* Split Mode Slider */}
+                          <AnimatePresence>
+                            {splitMode && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="mt-4"
+                              >
+                                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                                  <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-3">
+                                    Split Mode Settings
+                                  </h4>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                                      <span>Resume</span>
+                                      <span>Job Description</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      value={splitResumePercentage}
+                                      onChange={(e) => setSplitResumePercentage(parseInt(e.target.value))}
+                                      disabled={loading}
+                                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                    />
+                                    <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
+                                      <span>{splitResumePercentage}%</span>
+                                      <span>{100 - splitResumePercentage}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
 
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <label className="text-sm font-medium text-[var(--color-text-primary)]">
-                              Blend Mode
-                            </label>
-                            <p className="text-xs text-[var(--color-text-secondary)]">
-                              Generate questions that blend resume and job description content
-                            </p>
+                        {/* Blend Mode Section */}
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-sm font-medium text-[var(--color-text-primary)]">
+                                Blend Mode
+                              </label>
+                              <p className="text-xs text-[var(--color-text-secondary)]">
+                                Generate questions that blend resume and job description content
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setBlendMode(!blendMode)}
+                              disabled={loading}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                blendMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
+                              } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                  blendMode ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setBlendMode(!blendMode)}
-                            disabled={loading}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              blendMode ? 'bg-[var(--color-primary)]' : 'bg-gray-200 dark:bg-gray-700'
-                            } ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                blendMode ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
+
+                          {/* Blend Mode Slider */}
+                          <AnimatePresence>
+                            {blendMode && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.3 }}
+                                className="mt-4"
+                              >
+                                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                                  <h4 className="text-sm font-medium text-purple-800 dark:text-purple-200 mb-3">
+                                    Blend Mode Settings
+                                  </h4>
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+                                      <span>Resume Weight</span>
+                                      <span>Job Description Weight</span>
+                                    </div>
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      value={blendResumePercentage}
+                                      onChange={(e) => setBlendResumePercentage(parseInt(e.target.value))}
+                                      disabled={loading}
+                                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                                    />
+                                    <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
+                                      <span>{blendResumePercentage}%</span>
+                                      <span>{100 - blendResumePercentage}%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       </div>
-
-                      {/* Split Mode Slider */}
-                      <AnimatePresence>
-                        {splitMode && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="mt-4"
-                          >
-                            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                              <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-3">
-                                Split Mode Settings
-                              </h4>
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
-                                  <span>Resume</span>
-                                  <span>Job Description</span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="100"
-                                  value={splitResumePercentage}
-                                  onChange={(e) => setSplitResumePercentage(parseInt(e.target.value))}
-                                  disabled={loading}
-                                  className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                                />
-                                <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
-                                  <span>{splitResumePercentage}%</span>
-                                  <span>{100 - splitResumePercentage}%</span>
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* Blend Mode Slider */}
-                      <AnimatePresence>
-                        {blendMode && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.3 }}
-                            className="mt-4"
-                          >
-                            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-                              <h4 className="text-sm font-medium text-purple-800 dark:text-purple-200 mb-3">
-                                Blend Mode Settings
-                              </h4>
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
-                                  <span>Resume Weight</span>
-                                  <span>Job Description Weight</span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="100"
-                                  value={blendResumePercentage}
-                                  onChange={(e) => setBlendResumePercentage(parseInt(e.target.value))}
-                                  disabled={loading}
-                                  className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                                />
-                                <div className="flex justify-between text-sm font-medium text-[var(--color-text-primary)]">
-                                  <span>{blendResumePercentage}%</span>
-                                  <span>{100 - blendResumePercentage}%</span>
-                                </div>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
 
                     </div>
                   </motion.div>

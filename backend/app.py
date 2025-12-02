@@ -400,11 +400,132 @@ def is_blank_audio(audio_path, rms_threshold=0.005):
         print(f"[ERROR] Failed to read audio: {e}")
         return False
 
+def sanitize_and_validate_transcription(transcription):
+    """
+    Validate transcription and detect if model corruption (exclamation marks) occurred.
+    Returns: (is_valid, cleaned_transcription, reason, needs_retry)
+    needs_retry=True means we detected corruption and should re-initialize model
+    """
+    if not transcription or not transcription.strip():
+        return False, "", "empty", False
+    
+    # Remove trailing whitespace first
+    transcription = transcription.strip()
+    
+    # Check if it's ONLY exclamation marks (no valid text at all)
+    text_without_exclamations = transcription.replace("!", "").replace(" ", "").replace(".", "").replace(",", "").replace("?", "")
+    if not text_without_exclamations:
+        return False, "", "only_exclamation_marks", True  # ✅ Needs retry
+    
+    # Find trailing exclamation marks pattern
+    last_valid_char_pos = -1
+    consecutive_exclamations = 0
+    max_consecutive_exclamations = 0
+    trailing_exclamation_start = -1
+    
+    # Scan from end to find where exclamation marks begin
+    for i in range(len(transcription) - 1, -1, -1):
+        char = transcription[i]
+        if char == '!' or char == ' ':
+            if trailing_exclamation_start == -1:
+                trailing_exclamation_start = i
+            consecutive_exclamations += 1
+            max_consecutive_exclamations = max(max_consecutive_exclamations, consecutive_exclamations)
+        else:
+            # Found a non-exclamation character
+            last_valid_char_pos = i
+            break
+    
+    # ✅ KEY CHANGE: If we detect trailing exclamation marks (>10), treat as corruption
+    # This indicates model state corruption, so we should retry with fresh model
+    if max_consecutive_exclamations > 5:  # More than 10 consecutive ! marks
+        print(f"[WARNING] Detected trailing exclamation marks ({max_consecutive_exclamations} consecutive) - indicates model corruption")
+        print(f"[DEBUG] Original transcription: {transcription[:100]}...")
+        
+        # Check if there's valid text before the exclamation marks
+        if last_valid_char_pos >= 0:
+            # There IS valid text, but model corrupted - needs retry
+            cleaned = transcription[:last_valid_char_pos + 1].rstrip().rstrip(".,!? ")
+            
+            # Validate the cleaned portion has substantial content
+            if cleaned and len(cleaned.strip()) > 0:
+                alphanumeric_chars = sum(1 for c in cleaned if c.isalnum())
+                total_chars = len(cleaned.replace(" ", ""))
+                
+                if total_chars > 0:
+                    alphanumeric_ratio = alphanumeric_chars / total_chars
+                    if alphanumeric_ratio >= 0.3:  # At least 30% alphanumeric
+                        # Valid text exists but model corrupted - return needs_retry=True
+                        return False, cleaned, f"trailing_exclamation_marks ({max_consecutive_exclamations} chars)", True
+                    else:
+                        # Not enough valid content even after cleaning
+                        return False, "", "insufficient_valid_content", True
+            else:
+                # No valid content found
+                return False, "", "no_valid_content_after_cleaning", True
+        else:
+            # No valid text found at all
+            return False, "", "only_exclamation_marks", True
+    
+    # If no excessive trailing exclamations, validate the whole transcription
+    # Check overall alphanumeric ratio
+    text_clean = transcription.replace(" ", "").replace(".", "").replace(",", "").replace("?", "").replace("!", "")
+    if not text_clean:
+        return False, "", "only_punctuation", True  # Needs retry
+    
+    alphanumeric_count = sum(1 for c in text_clean if c.isalnum())
+    total_chars = len(text_clean)
+    
+    if total_chars > 0:
+        alphanumeric_ratio = alphanumeric_count / total_chars
+        if alphanumeric_ratio < 0.2:  # Less than 20% alphanumeric
+            return False, transcription, f"too_many_special_chars (ratio: {alphanumeric_ratio:.2f})", True  # Needs retry
+    
+    # Valid transcription - no corruption detected
+    return True, transcription, "valid", False
+
+def reinitialize_whisper_model():
+    """Re-initialize the Whisper model (clean up old one first)"""
+    global whisper_model
+    try:
+        if whisper_model is not None:
+            print("[INFO] Releasing old Whisper model...")
+            del whisper_model
+            whisper_model = None
+        
+        print("[INFO] Re-initializing Whisper model...")
+        whisper_device = "cpu" if device == "mps" else device
+        whisper_model = WhisperModel("large-v3", device=whisper_device)
+        print(f"[DONE] Whisper model re-initialized on {whisper_device}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to re-initialize Whisper model: {e}")
+        import traceback
+        traceback.print_exc()
+        whisper_model = None
+        return False
+
+def transcribe_with_whisper(wav_path):
+    """Helper function to transcribe audio with current model"""
+    segments, info = whisper_model.transcribe(
+        wav_path,
+        beam_size=5,
+        language="en",
+        task="transcribe"
+    )
+    segment_list = list(segments)
+    transcription = " ".join([segment.text for segment in segment_list])
+    return transcription, info
+
 def process_audio_file(file):
-    """Process uploaded audio file and return transcription"""
+    """Process uploaded audio file and return transcription with retry logic"""
+    global whisper_model
+    
     if whisper_model is None:
-        print("[ERROR] Whisper model not loaded")
-        return {"success": False, "error": "Speech recognition model not available"}
+        print("[ERROR] Whisper model not loaded, initializing...")
+        initialize_whisper_model()
+        if whisper_model is None:
+            return {"success": False, "error": "Speech recognition model not available"}
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_file:
         original_path = temp_file.name
@@ -421,20 +542,76 @@ def process_audio_file(file):
             print("[INFO] Blank audio detected — skipping transcription.")
             return {"success": True, "transcription": ""}
 
-        segments, info = whisper_model.transcribe(
-            wav_path,
-            beam_size=5,
-            language="en",
-            task="transcribe"
-        )
-
-        transcription = " ".join([segment.text for segment in segments])
-        print(f"[INFO] Transcription completed: {transcription[:50]}...")
+        # Try transcription with up to 2 retries
+        max_retries = 10
         
-        return {"success": True, "transcription": transcription}
+        for attempt in range(max_retries + 1):  # 0, 1, 2 = 3 total attempts
+            try:
+                transcription, info = transcribe_with_whisper(wav_path)
+                
+                # Validate transcription and check if retry is needed
+                is_valid, cleaned_transcription, validation_reason, needs_retry = sanitize_and_validate_transcription(transcription)
+                
+                if is_valid and not needs_retry:
+                    # ✅ Valid transcription with no corruption - return immediately
+                    print(f"[INFO] Transcription completed (attempt {attempt + 1}): {cleaned_transcription[:50]}...")
+                    return {"success": True, "transcription": cleaned_transcription}
+                
+                # Invalid transcription OR corruption detected (trailing exclamation marks)
+                if needs_retry:
+                    print(f"[WARNING] Model corruption detected on attempt {attempt + 1}: {validation_reason}")
+                    print(f"[DEBUG] Raw transcription: {transcription[:100]}...")
+                    
+                    # ✅ ALWAYS retry when corruption is detected (even if we have valid text)
+                    if attempt < max_retries:
+                        print(f"[INFO] Re-initializing Whisper model due to corruption and retrying (attempt {attempt + 2}/{max_retries + 1})...")
+                        if reinitialize_whisper_model():
+                            continue  # Retry with fresh model
+                        else:
+                            print("[ERROR] Failed to re-initialize model, cannot retry")
+                            # If we had valid text before corruption, return it as fallback
+                            if cleaned_transcription and len(cleaned_transcription.strip()) > 0:
+                                print(f"[INFO] Returning cleaned transcription as fallback: {cleaned_transcription[:50]}...")
+                                return {"success": True, "transcription": cleaned_transcription}
+                            return {"success": True, "transcription": ""}  # Return empty to prevent API call
+                    else:
+                        # Last attempt failed - use cleaned version if available, otherwise empty
+                        if cleaned_transcription and len(cleaned_transcription.strip()) > 0:
+                            print(f"[WARNING] All retries exhausted, using cleaned transcription: {cleaned_transcription[:50]}...")
+                            return {"success": True, "transcription": cleaned_transcription}
+                        else:
+                            print(f"[ERROR] All {max_retries + 1} attempts failed. Returning empty transcription.")
+                            return {"success": True, "transcription": ""}  # Empty = won't call AI interviewer API
+                else:
+                    # Invalid but doesn't need retry (shouldn't happen, but handle it)
+                    print(f"[WARNING] Invalid transcription detected: {validation_reason}")
+                    if attempt < max_retries:
+                        print(f"[INFO] Re-initializing Whisper model and retrying (attempt {attempt + 2}/{max_retries + 1})...")
+                        if reinitialize_whisper_model():
+                            continue
+                    return {"success": True, "transcription": ""}
+                
+            except Exception as transcribe_error:
+                print(f"[ERROR] Transcription attempt {attempt + 1} failed: {transcribe_error}")
+                import traceback
+                traceback.print_exc()
+                
+                # If this is not the last attempt, re-initialize and retry
+                if attempt < max_retries:
+                    print(f"[INFO] Re-initializing Whisper model after error and retrying (attempt {attempt + 2}/{max_retries + 1})...")
+                    if reinitialize_whisper_model():
+                        continue  # Retry with fresh model
+                    else:
+                        print("[ERROR] Failed to re-initialize model after error")
+                        return {"success": False, "error": f"Transcription failed and model recovery failed: {str(transcribe_error)}"}
+                else:
+                    # Last attempt - return error
+                    return {"success": False, "error": f"Transcription failed after {max_retries + 1} attempts: {str(transcribe_error)}"}
 
     except Exception as e:
-        print(f"[ERROR] Transcription failed: {e}")
+        print(f"[ERROR] Audio processing failed: {e}")
+        import traceback
+        traceback.print_exc()
         return {"success": False, "error": str(e)}
     finally:
         # Clean up temporary files
@@ -879,6 +1056,7 @@ def transcribe_audio():
                         print(f"[INFO] User audio stored successfully: {user_file_path}")
                     else:
                         print(f"[WARNING] Failed to store user audio")
+                print(f"[DEBUG] Transcription: {transcription}")
                         
             except Exception as e:
                 print(f"[ERROR] Failed to store user audio: {e}")
@@ -993,6 +1171,7 @@ def generate_response():
                 if question_text not in seen_questions:
                     seen_questions.add(question_text)
                     core_questions.append(question_text)
+            coding_requirement = [q['requires_code'] for q in questions]
             
             print(f"[DEBUG] Fetched interview config: job_title='{job_title}', questions_count={len(questions)}, unique_questions={len(core_questions)}")
             
@@ -1016,6 +1195,7 @@ def generate_response():
             "job_title": job_title,
             "job_description": job_description,
             "core_questions": core_questions,
+            "coding_requirement": coding_requirement,
             "time_limit_minutes": 150,  # 2 hours
             "custom_questions": [],
         }
@@ -1043,6 +1223,12 @@ def generate_response():
         # ✅ NEW: Generate audio for the interview response
         audio_url = None
         audio_file_path = None
+
+        code_requirement = response.get('requires_code')
+        stage = response.get('stage')
+
+        if stage == 'resume_discussion':
+            print(f"[INFO] Code Requirement: {code_requirement}")
         
         if response.get("message") and not response.get("interview_done", False):
             try:
@@ -1236,7 +1422,8 @@ def generate_response():
                 "feedback_saved_successfully": feedback_saved_successfully,  # ✅ NEW: Include feedback save status
                 "audio_url": audio_url,  # ✅ NEW: Include audio URL
                 "audio_file_path": file_path if audio_url else None,  # ✅ NEW: Include file path for deletion
-                "should_delete_audio": False  # ✅ NEW: Keep audio files for merging later
+                "should_delete_audio": False,  # ✅ NEW: Keep audio files for merging later
+                "requires_code": code_requirement
             }
         })
         
@@ -1897,6 +2084,577 @@ def preload_support_bot_model():
         import traceback
         traceback.print_exc()
         return False
+
+# ========= Code Execution API Endpoints ==================
+
+@app.route('/api/execute', methods=['POST', 'OPTIONS'])
+@verify_supabase_token
+def execute_code():
+    """Execute code in various programming languages"""
+
+    if request.method == 'OPTIONS':
+        return jsonify({"message": "OK"}), 200
+
+    try:
+        data = request.get_json()
+        code = data.get('code', '').strip()
+        language = data.get('language', 'javascript').lower()
+        test_mode = data.get('test', False)
+
+        if not code:
+            return jsonify({
+                "success": False,
+                "message": "No code provided"
+            }), 400
+
+        # Execute code based on language
+        if language == 'javascript':
+            return execute_javascript(code, test_mode)
+        elif language == 'python':
+            return execute_python(code, test_mode)
+        elif language == 'java':
+            return execute_java(code, test_mode)
+        elif language == 'cpp':
+            return execute_cpp(code, test_mode)
+        elif language == 'csharp':
+            return execute_csharp(code, test_mode)
+        elif language == 'go':
+            return execute_go(code, test_mode)
+        elif language == 'rust':
+            return execute_rust(code, test_mode)
+        elif language == 'typescript':
+            return execute_typescript(code, test_mode)
+        else:
+            return jsonify({
+                "success": False,
+                "message": f"Unsupported language: {language}"
+            }), 400
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Execution error: {str(e)}"
+        }), 500
+
+
+def execute_javascript(code, test_mode=False):
+    """Execute JavaScript code"""
+
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute JavaScript with Node.js
+            result = subprocess.run(
+                ['node', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None  # TODO: Add test framework support
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"JavaScript execution error: {str(e)}"
+        }), 500
+
+
+def execute_python(code, test_mode=False):
+    """Execute Python code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        venv_editor_name = "CodeEditorVenv"
+        venv_editor_path = os.path.join(os.getcwd(), venv_editor_name)
+        packages_to_install = ["numpy", "pandas"]  # Add packages to Editor Virtual Environment here
+
+        try:
+            venv_editor_executable = os.path.join(venv_editor_path, "bin", "python")
+            if not os.path.isfile(venv_editor_executable): #Check if Virtual Environment has already been created
+                venv = ['python', "-m", "venv", venv_editor_path]
+                subprocess.run(venv, capture_output=True, text=True, check=True)
+                print(f"[INFO] Virtual environment '{venv_editor_name}' created successfully at {venv_editor_path}")
+
+                pip_executable = os.path.join(venv_editor_path, "bin", "pip")
+
+                try:
+                    for package in packages_to_install:
+                        subprocess.run([pip_executable, "install", package], check=True, capture_output=True, text=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"[ERROR] Failed to install pip package: {e}")
+            else:
+                print(f"[INFO] Virtual environment '{venv_editor_name}' is already installed with Packages: {packages_to_install}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error creating virtual environment: {e}")
+            return jsonify({
+                "success": False,
+                "message": f"Error creating virtual environment: {str(e)}"
+            }), 500
+
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return jsonify({
+                "success": False,
+                "message": f"An unexpected error occurred: {str(e)}"
+            }), 500
+
+
+        try:
+            venv_editor = os.path.join(venv_editor_path, "bin", "python")
+            # Execute Python
+            result = subprocess.run(
+                [venv_editor, temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None  # TODO: Add test framework support
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Python execution error: {str(e)}"
+        }), 500
+
+
+def execute_java(code, test_mode=False):
+    """Execute Java code"""
+
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.java', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Compile Java
+            compile_result = subprocess.run(
+                ['javac', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if compile_result.returncode != 0:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "output": "",
+                        "error": compile_result.stderr,
+                        "testResults": None
+                    }
+                })
+
+            # Execute compiled class
+            class_name = os.path.splitext(os.path.basename(temp_file))[0]
+            class_dir = os.path.dirname(temp_file)
+
+            result = subprocess.run(
+                ['java', '-cp', class_dir, class_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+            class_file = temp_file.replace('.java', '.class')
+
+            if os.path.exists(class_file):
+                os.unlink(class_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Java execution error: {str(e)}"
+        }), 500
+
+
+def execute_cpp(code, test_mode=False):
+    """Execute C++ code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Compile C++
+            compile_result = subprocess.run(
+                ['g++', '-o', temp_file.replace('.cpp', ''), temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if compile_result.returncode != 0:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "output": "",
+                        "error": compile_result.stderr,
+                        "testResults": None
+                    }
+                })
+
+            # Execute compiled binary
+            result = subprocess.run(
+                [temp_file.replace('.cpp', '')],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+            binary_file = temp_file.replace('.cpp', '')
+
+            if os.path.exists(binary_file):
+                os.unlink(binary_file)
+
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"C++ execution error: {str(e)}"
+        }), 500
+
+
+def execute_csharp(code, test_mode=False):
+    """Execute C# code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.cs', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Compile and execute C#
+            result = subprocess.run(
+                ['dotnet', 'script', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"C# execution error: {str(e)}"
+        }), 500
+
+
+def execute_go(code, test_mode=False):
+    """Execute Go code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.go', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute Go
+            result = subprocess.run(
+                ['go', 'run', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Go execution error: {str(e)}"
+        }), 500
+
+
+def execute_rust(code, test_mode=False):
+    """Execute Rust code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.rs', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute Rust
+            result = subprocess.run(
+                ['rustc', temp_file, '-o', temp_file.replace('.rs', '')],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "output": "",
+                        "error": result.stderr,
+                        "testResults": None
+                    }
+                })
+
+            # Execute compiled binary
+            exec_result = subprocess.run(
+                [temp_file.replace('.rs', '')],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = exec_result.stdout
+            error = exec_result.stderr if exec_result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary files
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+            binary_file = temp_file.replace('.rs', '')
+            if os.path.exists(binary_file):
+                os.unlink(binary_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Rust execution error: {str(e)}"
+        }), 500
+
+
+def execute_typescript(code, test_mode=False):
+    """Execute TypeScript code"""
+    try:
+        import subprocess
+        import tempfile
+        import os
+        # Create temporary file
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ts', delete=False) as f:
+            f.write(code)
+            temp_file = f.name
+
+        try:
+            # Execute TypeScript with ts-node
+            result = subprocess.run(
+                ['npx', 'ts-node', temp_file],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout
+            error = result.stderr if result.returncode != 0 else None
+
+            return jsonify({
+                "success": True,
+                "data": {
+                    "output": output,
+                    "error": error,
+                    "testResults": None
+                }
+            })
+
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "success": False,
+            "message": "Code execution timed out"
+        }), 408
+
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"TypeScript execution error: {str(e)}"
+        }), 500
 
 # Preload the support bot model at startup
 print("[INFO] Starting model preloading...")
