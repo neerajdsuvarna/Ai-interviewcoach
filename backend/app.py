@@ -543,7 +543,7 @@ def process_audio_file(file):
             return {"success": True, "transcription": ""}
 
         # Try transcription with up to 2 retries
-        max_retries = 10
+        max_retries = 3
         
         for attempt in range(max_retries + 1):  # 0, 1, 2 = 3 total attempts
             try:
