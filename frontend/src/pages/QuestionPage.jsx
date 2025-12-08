@@ -141,28 +141,214 @@ const SyntaxHighlightedCode = ({ code, language = 'python' }) => {
 
 // ... rest of the component remains the same ...
 
-const AnswerContent = ({ answer }) => {
-  // Split the answer into text and code blocks - now supports any language
-  const parts = answer.split(/(```[\w]*\n[\s\S]*?```)/);
+// Helper function to detect if a line looks like code
+const isCodeLine = (line) => {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
   
+  // Common code patterns
+  const codePatterns = [
+    /^(def|class|import|from|if|elif|else|for|while|try|except|with|async|await|return|yield|break|continue|pass|raise|assert|del|global|nonlocal)\s/, // Python keywords
+    /^(function|const|let|var|class|import|export|if|else|for|while|try|catch|async|await|return|yield|break|continue|throw|switch|case|default)\s/, // JavaScript/TypeScript
+    /^(public|private|protected|static|final|abstract|class|interface|extends|implements|import|package|if|else|for|while|try|catch|return|throw|switch|case|default)\s/, // Java
+    /^[a-zA-Z_][a-zA-Z0-9_]*\s*[=:]\s*/, // Variable assignment
+    /^\s*[{}[\]();]/, // Code brackets/punctuation at start
+    /^\s*\/\/|\/\*|\*\/|#/, // Comments
+    /^\s*\d+\s*[=:]/, // Number followed by assignment
+  ];
+  
+  return codePatterns.some(pattern => pattern.test(trimmed));
+};
+
+// Helper function to detect language from code content
+const detectLanguage = (code) => {
+  const codeLower = code.toLowerCase();
+  
+  if (codeLower.includes('def ') || codeLower.includes('import ') || codeLower.includes('from ') || codeLower.includes('print(')) {
+    return 'python';
+  }
+  if (codeLower.includes('function ') || codeLower.includes('const ') || codeLower.includes('let ') || codeLower.includes('=>')) {
+    return 'javascript';
+  }
+  if (codeLower.includes('public class') || codeLower.includes('System.out') || codeLower.includes('@Override')) {
+    return 'java';
+  }
+  if (codeLower.includes('SELECT ') || codeLower.includes('FROM ') || codeLower.includes('WHERE ')) {
+    return 'sql';
+  }
+  if (codeLower.includes('#include') || codeLower.includes('std::')) {
+    return 'cpp';
+  }
+  
+  return 'python'; // Default to Python
+};
+
+const AnswerContent = ({ answer }) => {
+  if (!answer) return null;
+  
+  // First, try to split by markdown code blocks
+  const markdownParts = answer.split(/(```[\w]*\n[\s\S]*?```)/);
+  
+  // If we found markdown blocks, use them
+  if (markdownParts.length > 1) {
+    return (
+      <div className="space-y-4">
+        {markdownParts.map((part, index) => {
+          if (part.startsWith('```')) {
+            // Extract the language and code from the markdown code block
+            const codeMatch = part.match(/```(\w*)\n([\s\S]*?)```/);
+            if (codeMatch) {
+              const language = codeMatch[1] || 'text';
+              const code = codeMatch[2].trim();
+              return <SyntaxHighlightedCode key={index} code={code} language={language} />;
+            }
+            return null;
+          } else {
+            // Process text parts - check if they contain code patterns
+            return processTextWithCode(part, index);
+          }
+        })}
+      </div>
+    );
+  }
+  
+  // No markdown blocks found - try to detect code in plain text
+  return processTextWithCode(answer, 0);
+};
+
+// Function to process text and detect code blocks
+const processTextWithCode = (text, baseIndex) => {
+  if (!text.trim()) return null;
+  
+  const lines = text.split('\n');
+  const result = [];
+  let currentText = [];
+  let currentCode = [];
+  let inCodeBlock = false;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    const isCode = isCodeLine(line);
+    const isIndented = line.match(/^\s{2,}/); // At least 2 spaces of indentation
+    const isEmpty = trimmed === '';
+    
+    // Check if we're starting a code block
+    if (!inCodeBlock && isCode) {
+      // Save any accumulated text
+      if (currentText.length > 0) {
+        result.push({
+          type: 'text',
+          content: currentText.join('\n')
+        });
+        currentText = [];
+      }
+      inCodeBlock = true;
+      currentCode = [line];
+    } 
+    // Continue code block
+    else if (inCodeBlock) {
+      // Continue code block if:
+      // 1. Line looks like code
+      // 2. Line is empty (blank lines are common in code)
+      // 3. Line is indented (indentation suggests continuation of code)
+      // 4. Line has code-like characters (brackets, operators, etc.)
+      const hasCodeChars = /[{}[\]();=<>!&|+\-*/%]/.test(trimmed);
+      
+      if (isCode || isEmpty || isIndented || (hasCodeChars && currentCode.length > 0)) {
+        currentCode.push(line);
+      } else {
+        // Check if next few lines are also non-code to confirm end of code block
+        let nonCodeCount = 0;
+        for (let j = i; j < Math.min(i + 3, lines.length); j++) {
+          if (!isCodeLine(lines[j]) && lines[j].trim() && !lines[j].match(/^\s{2,}/)) {
+            nonCodeCount++;
+          }
+        }
+        
+        // If we have clear non-code text ahead, end the code block
+        if (nonCodeCount >= 1) {
+          // End of code block - save it
+          if (currentCode.length > 0) {
+            const codeContent = currentCode.join('\n').trim();
+            if (codeContent.length > 0) {
+              result.push({
+                type: 'code',
+                content: codeContent
+              });
+            }
+            currentCode = [];
+          }
+          inCodeBlock = false;
+          currentText.push(line);
+        } else {
+          // Still might be code, continue
+          currentCode.push(line);
+        }
+      }
+    } 
+    // Regular text
+    else {
+      currentText.push(line);
+    }
+  }
+  
+  // Handle remaining content
+  if (inCodeBlock && currentCode.length > 0) {
+    const codeContent = currentCode.join('\n').trim();
+    if (codeContent.length > 0) {
+      result.push({
+        type: 'code',
+        content: codeContent
+      });
+    }
+  }
+  
+  if (currentText.length > 0) {
+    result.push({
+      type: 'text',
+      content: currentText.join('\n')
+    });
+  }
+  
+  // If no code blocks detected, return as plain text
+  if (result.length === 0 || (result.length === 1 && result[0].type === 'text')) {
+    return (
+      <div className="space-y-4">
+        {result.length > 0 ? (
+          <div className="text-[var(--color-text-primary)] leading-relaxed">
+            {result[0].content.split('\n').map((line, lineIndex) => (
+              <p key={lineIndex} className="mb-2 text-sm sm:text-base">
+                {line || '\u00A0'}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <div className="text-[var(--color-text-primary)] leading-relaxed">
+            {text.split('\n').map((line, lineIndex) => (
+              <p key={lineIndex} className="mb-2 text-sm sm:text-base">
+                {line || '\u00A0'}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Render mixed content
   return (
     <div className="space-y-4">
-      {parts.map((part, index) => {
-        if (part.startsWith('```')) {
-          // Extract the language and code from the markdown code block
-          const codeMatch = part.match(/```(\w*)\n([\s\S]*?)```/);
-          if (codeMatch) {
-            const language = codeMatch[1] || 'text'; // Default to 'text' if no language specified
-            const code = codeMatch[2];
-            return <SyntaxHighlightedCode key={index} code={code} language={language} />;
-          }
-          return null;
+      {result.map((item, index) => {
+        if (item.type === 'code') {
+          const language = detectLanguage(item.content);
+          return <SyntaxHighlightedCode key={`code-${baseIndex}-${index}`} code={item.content} language={language} />;
         } else {
           return (
-            <div key={index} className="text-[var(--color-text-primary)] leading-relaxed">
-              {part.split('\n').map((line, lineIndex) => (
+            <div key={`text-${baseIndex}-${index}`} className="text-[var(--color-text-primary)] leading-relaxed">
+              {item.content.split('\n').map((line, lineIndex) => (
                 <p key={lineIndex} className="mb-2 text-sm sm:text-base">
-                  {line}
+                  {line || '\u00A0'}
                 </p>
               ))}
             </div>

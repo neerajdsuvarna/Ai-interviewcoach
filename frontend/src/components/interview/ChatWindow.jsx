@@ -891,11 +891,54 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
   // The handleEndInterview function already uses addMessageToConversation internally
 
   const handleSave = async (code) => {
-      console.log(code);
+      // ✅ ADD: Validate code is not empty
+      if (!code || !code.trim()) {
+        console.error('❌ Cannot save empty code');
+        // Show error to user
+        const errorMessage = {
+          id: `error-${Date.now()}`,
+          speaker: 'system',
+          message: 'Please enter some code before submitting.',
+          timestamp: new Date().toLocaleTimeString(),
+          isError: true
+        };
+        setConversation(prev => [...prev, errorMessage]);
+        return;
+      }
+      
+      // ✅ ADD: Validate code is not just whitespace or comments
+      const codeWithoutComments = code
+        .replace(/\/\/.*$/gm, '') // Remove single-line comments
+        .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+        .trim();
+      
+      if (!codeWithoutComments) {
+        console.error('❌ Code contains only comments');
+        const errorMessage = {
+          id: `error-${Date.now()}`,
+          speaker: 'system',
+          message: 'Please enter actual code, not just comments.',
+          timestamp: new Date().toLocaleTimeString(),
+          isError: true
+        };
+        setConversation(prev => [...prev, errorMessage]);
+        return;
+      }
+      
+      console.log('💾 Saving code:', code);
+      
+      // Trim the code
+      const trimmedCode = code.trim();
+      
       setCodeToAppend(''); // Clear the code for next question
-      code = '\n``` \n\n' + code + '\n\n```\n'
-      await addMessageToConversation('candidate', code);
+      
+      // Format code with markdown
+      const formattedCode = '\n``` \n\n' + trimmedCode + '\n\n```\n';
+      
+      // Add user message to conversation
+      await addMessageToConversation('candidate', formattedCode);
       console.log('✅ Candidate message added');
+      
       setIsLoading(false); // Stop loading immediately after user message appears
 
       // Add thinking indicator before backend call
@@ -908,9 +951,26 @@ function ChatWindow({ conversation, setConversation, isLoading, setIsLoading, is
       };
       setConversation(prev => [...prev, thinkingMessage]);
 
-      // Call Interview Manager API to get the next question/response
-      setIsResponseInProgress(true); // ✅ NEW: Start response process
-      await callInterviewManager(code);
+      // ✅ ENSURE: Call Interview Manager API to get the next question/response
+      setIsResponseInProgress(true);
+      
+      try {
+        await callInterviewManager(formattedCode);
+        console.log('✅ Interview Manager API called successfully');
+      } catch (error) {
+        console.error('❌ Error calling Interview Manager:', error);
+        // Remove thinking message and show error
+        setConversation(prev => prev.filter(msg => !msg.isThinking));
+        const errorMessage = {
+          id: `error-${Date.now()}`,
+          speaker: 'system',
+          message: 'Failed to submit code. Please try again.',
+          timestamp: new Date().toLocaleTimeString(),
+          isError: true
+        };
+        setConversation(prev => [...prev, errorMessage]);
+        setIsResponseInProgress(false);
+      }
   };
 
   const handleEditorClose = async (code, newLanguage) => {
