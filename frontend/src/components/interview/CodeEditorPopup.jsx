@@ -81,8 +81,31 @@ const CodeEditorPopup = ({ isOpen, onClose, initialLanguage = 'javascript', ques
   };
 
 
-  const handlePopupSave = async (code) =>{
-      handleEditorSave(code);
+  const handlePopupSave = async (code) => {
+      // ✅ Validate code is not empty
+      if (!code || !code.trim()) {
+        setErrors('Please enter some code before submitting.');
+        return;
+      }
+      
+      // ✅ Validate code is not just whitespace or comments
+      const codeWithoutComments = code
+        .replace(/\/\/.*$/gm, '') // Remove single-line comments
+        .replace(/\/\*[\s\S]*?\*\//g, '') // Remove multi-line comments
+        .trim();
+      
+      if (!codeWithoutComments) {
+        setErrors('Please enter actual code, not just comments.');
+        return;
+      }
+      
+      // Clear any previous errors
+      setErrors('');
+      
+      // ✅ Call the submit handler (changed comment from "save handler")
+      handleEditorSave(code.trim());
+      
+      // Reset state
       setCode('');
       setOutput('');
       setErrors('');

@@ -126,8 +126,15 @@ const CodeEditor = ({
   };
 
   const handleSave = () => {
+      // ✅ Validate code is not empty
+      if (!code || !code.trim()) {
+        // Show error in the editor (you might want to add an error state prop)
+        console.warn('Cannot submit empty code');
+        return;
+      }
+      
       if (onSave) {
-          onSave(code);
+          onSave(code.trim());
       }
   };
 
@@ -287,8 +294,15 @@ const CodeEditor = ({
           )}
           <button
             onClick={handleSave}
-            disabled={isRunning}
-            className="flex-1 sm:flex-none flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+            disabled={!code || !code.trim() || isRunning} // ✅ ADD: Disable if empty or running
+            className={`
+              px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200
+              ${!code || !code.trim() || isRunning
+                ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700 text-white shadow-md hover:shadow-lg'
+              }
+            `}
+            title={!code || !code.trim() ? 'Please enter code to submit' : 'Submit code (Shift+Enter)'}
           >
             <ArrowRightEndOnRectangleIcon className="w-3 h-3 sm:w-4 sm:h-4" />
             <span>Submit</span>

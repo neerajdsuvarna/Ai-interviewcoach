@@ -69,6 +69,144 @@ function InterviewPage() {
   const calibrationInProgressRef = useRef(false);
   
   const streamRef = useRef(null);
+  const [cameraError, setCameraError] = useState(null);
+  const [isCameraLoading, setIsCameraLoading] = useState(true);
+  const cameraRetryCountRef = useRef(0);
+  const MAX_RETRIES = 3;
+
+  // Initialize camera with retry logic and proper error handling
+  useEffect(() => {
+    const startCamera = async (retryCount = 0) => {
+      try {
+        // Wait for video element to be mounted
+        if (!videoRef.current) {
+          console.log('⏳ Waiting for video element to mount...');
+          // Retry after a short delay
+          setTimeout(() => {
+            if (retryCount < MAX_RETRIES) {
+              startCamera(retryCount + 1);
+            } else {
+              setCameraError('Video element not found. Please refresh the page.');
+              setIsCameraLoading(false);
+            }
+          }, 500);
+          return;
+        }
+
+        console.log('🎥 Requesting camera access...');
+        setIsCameraLoading(true);
+        setCameraError(null);
+
+        // Stop any existing stream first
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            facingMode: 'user'
+          }, 
+          audio: false
+        });
+
+        // Double-check video element is still available
+        if (!videoRef.current) {
+          stream.getTracks().forEach(track => track.stop());
+          throw new Error('Video element was removed');
+        }
+
+        // Set stream and wait for video to be ready
+        videoRef.current.srcObject = stream;
+        streamRef.current = stream;
+
+        // Wait for video to actually load
+        await new Promise((resolve, reject) => {
+          if (!videoRef.current) {
+            reject(new Error('Video element not available'));
+            return;
+          }
+
+          const video = videoRef.current;
+          
+          const handleLoadedMetadata = () => {
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            video.removeEventListener('error', handleError);
+            console.log('✅ Camera stream loaded successfully');
+            setIsCameraLoading(false);
+            setCameraError(null);
+            cameraRetryCountRef.current = 0;
+            resolve();
+          };
+
+          const handleError = (e) => {
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            video.removeEventListener('error', handleError);
+            reject(new Error('Video element failed to load stream'));
+          };
+
+          if (video.readyState >= 1) {
+            // Video already has metadata
+            handleLoadedMetadata();
+          } else {
+            video.addEventListener('loadedmetadata', handleLoadedMetadata);
+            video.addEventListener('error', handleError);
+            
+            // Timeout after 5 seconds
+            setTimeout(() => {
+              video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+              video.removeEventListener('error', handleError);
+              reject(new Error('Video load timeout'));
+            }, 5000);
+          }
+        });
+
+      } catch (error) {
+        console.error('❌ Error accessing camera:', error);
+        cameraRetryCountRef.current = retryCount + 1;
+
+        // Handle specific error types
+        let errorMessage = 'Failed to access camera. ';
+        
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          errorMessage += 'Please allow camera permissions and refresh the page.';
+          setCameraError(errorMessage);
+          setIsCameraLoading(false);
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          errorMessage += 'No camera found. Please connect a camera and refresh the page.';
+          setCameraError(errorMessage);
+          setIsCameraLoading(false);
+        } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+          errorMessage += 'Camera is being used by another application. Please close other apps and refresh.';
+          setCameraError(errorMessage);
+          setIsCameraLoading(false);
+        } else if (retryCount < MAX_RETRIES) {
+          // Retry for other errors
+          console.log(`🔄 Retrying camera access (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+          setTimeout(() => {
+            startCamera(retryCount + 1);
+          }, 1000 * (retryCount + 1)); // Exponential backoff
+        } else {
+          errorMessage += 'Please refresh the page and try again.';
+          setCameraError(errorMessage);
+          setIsCameraLoading(false);
+        }
+      }
+    };
+
+    // Only start camera after validation is complete
+    if (isValidated && !isValidating) {
+      startCamera();
+    }
+
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [isValidated, isValidating]); // ✅ Changed dependency - wait for validation
 
   // Handle calibration success
   const handleCalibrationSuccess = useCallback(() => {
@@ -117,36 +255,6 @@ function InterviewPage() {
       setShowHeadTrackingPopup(true);
     }
   }, [headTrackingEnabled, headTrackingStarted]);
-
-  // Initialize camera
-  useEffect(() => {
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-            facingMode: 'user'
-          }, 
-          audio: false // No audio needed for video only
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        streamRef.current = stream;
-      } catch (error) {
-        console.error('Error accessing camera:', error);
-      }
-    };
-
-    startCamera();
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [videoRef]);
 
   // Handle warning modal display - show warnings immediately
   useEffect(() => {
@@ -777,7 +885,49 @@ function InterviewPage() {
                   className="w-full h-full object-cover"
                 />
 
-                
+                {/* Camera Loading Indicator */}
+                {isCameraLoading && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                      <p className="text-white text-sm">Loading camera...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Camera Error Message */}
+                {cameraError && !isCameraLoading && (
+                  <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4">
+                    <div className="text-center max-w-md">
+                      <div className="text-red-400 mb-4">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                      </div>
+                      <p className="text-white text-sm mb-4">{cameraError}</p>
+                      <button
+                        onClick={() => {
+                          setCameraError(null);
+                          setIsCameraLoading(true);
+                          cameraRetryCountRef.current = 0;
+                          // Trigger camera restart
+                          if (streamRef.current) {
+                            streamRef.current.getTracks().forEach(track => track.stop());
+                            streamRef.current = null;
+                          }
+                          // Force re-render to trigger useEffect
+                          setTimeout(() => {
+                            window.location.reload();
+                          }, 100);
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+                      >
+                        Retry Camera
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* User Camera Label */}
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 sm:p-4 md:p-6">
                   <h3 
@@ -788,15 +938,17 @@ function InterviewPage() {
                 </div>
 
                 {/* Connection Status */}
-                <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
-                  <div 
-                    className="flex items-center gap-1 sm:gap-2 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold shadow-lg border border-white/20 backdrop-blur-sm"
-                    style={{ backgroundColor: 'var(--color-primary)' }}
-                  >
-                    <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full"></div>
-                    <span className="tracking-wide text-xs">CONNECTED</span>
+                {!cameraError && !isCameraLoading && (
+                  <div className="absolute top-2 sm:top-4 left-2 sm:left-4">
+                    <div 
+                      className="flex items-center gap-1 sm:gap-2 text-white px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold shadow-lg border border-white/20 backdrop-blur-sm"
+                      style={{ backgroundColor: 'var(--color-primary)' }}
+                    >
+                      <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-white rounded-full"></div>
+                      <span className="tracking-wide text-xs">CONNECTED</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
