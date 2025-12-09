@@ -12,261 +12,263 @@ This **AI-powered interview coaching platform** provides comprehensive mock inte
 - **Analytics Tracking** – Mixpanel integration for user behavior and conversion tracking
 - **Head Tracking** – Real-time eye contact and attention monitoring
 - **Audio Enhancement** – Noise removal and audio quality improvement
-- **One-Click Setup** – Fully automated dependency installation
 - **GPU Acceleration** – Supports **CUDA, MPS, or CPU**  
 
 ---
 
-## 📂 **Project Structure**
-```
-interviewcoach/
-├── backend/                          # Backend Flask API and AI services
-│   ├── app.py                        # Main Flask application with interview logic
-│   ├── common/                       # Shared utilities and models
-│   │   ├── auth.py                   # Supabase authentication utilities
-│   │   └── GPU_Check.py              # Auto-detect GPU/CPU (CUDA, MPS, etc.)
-│   ├── INTERVIEW/                    # Interview processing modules
-│   │   ├── Resumeparser.py           # Resume parsing and question generation
-│   │   ├── Interview_functions.py    # Interview management functions
-│   │   ├── Interview_manager.py      # Interview orchestration and evaluation
-│   │   ├── interview_config.json     # Interview configuration
-│   │   └── INTERVIEWBOT_CLI.py       # Command-line interview interface
-│   ├── Piper/                        # Text-to-Speech (Piper TTS)
-│   │   ├── voiceCloner.py            # Voice synthesis and TTS processing
-│   │   ├── en_US-kusal-medium.onnx   # Piper TTS model files
-│   │   └── en_US-kusal-medium.onnx.json
-│   └── README.md                     # Backend documentation
-├── frontend/                         # React-based web application
-│   ├── src/                          # React source code
-│   │   ├── components/               # React components
-│   │   │   ├── Navbar.jsx            # Navigation component
-│   │   │   ├── ThemeToggle.jsx       # Theme switching
-│   │   │   ├── InterviewHistoryCard.jsx # Interview history display
-│   │   │   ├── interview/            # Interview-related components
-│   │   │   │   └── ChatWindow.jsx    # Main interview chat interface
-│   │   │   ├── landing/              # Landing page components
-│   │   │   ├── upload/               # File upload components
-│   │   │   └── ui/                   # UI components
-│   │   ├── pages/                    # Page components
-│   │   │   ├── InterviewPage.jsx     # Interview interface
-│   │   │   ├── InterviewFeedbackPage.jsx # Interview feedback display
-│   │   │   ├── PaymentsStatus.jsx    # Payment status handling
-│   │   │   ├── Landing.jsx           # Landing page
-│   │   │   ├── Login.jsx             # Login page
-│   │   │   ├── ProfilePage.jsx       # User profile and history
-│   │   │   ├── QuestionPage.jsx      # Question management and payment
-│   │   │   ├── SignUp.jsx            # Registration page
-│   │   │   └── UploadPage.jsx        # File upload page
-│   │   ├── contexts/                 # React contexts
-│   │   │   └── AuthContext.jsx       # Authentication context
-│   │   ├── hooks/                    # Custom React hooks
-│   │   │   ├── useTheme.js           # Theme management hook
-│   │   │   ├── useMixpanel.js        # Mixpanel analytics hook
-│   │   │   ├── useHeadTracking.js    # Head tracking integration
-│   │   │   └── useEmailVerification.js # Email verification hook
-│   │   ├── services/                 # External services
-│   │   │   └── mixpanel.js           # Mixpanel analytics service
-│   │   ├── utils/                    # Utility functions
-│   │   ├── api.js                    # API integration
-│   │   ├── supabaseClient.js         # Supabase client configuration
-│   │   ├── App.jsx                   # Main App component
-│   │   ├── main.jsx                  # Application entry point
-│   │   └── index.css                 # Global styles
-│   ├── public/                       # Public assets
-│   │   ├── assets/                   # Static assets
-│   │   │   ├── interview/            # Interview-related assets
-│   │   │   └── landing/              # Landing page assets
-│   │   └── vite.svg                  # Vite logo
-│   ├── package.json                  # Node.js dependencies
-│   ├── vite.config.js                # Vite configuration
-│   ├── tailwindcss.config.js         # Tailwind CSS configuration
-│   ├── eslint.config.js              # ESLint configuration
-│   └── README.md                     # Frontend documentation
-├── supabase/                         # Supabase backend services
-│   ├── config.toml                   # Supabase configuration
-│   ├── migrations/                   # Database migrations
-│   └── functions/                    # Edge functions
-│       ├── create-user/              # User creation function
-│       ├── dodo-webhook/             # Payment webhook handler
-│       ├── interview-feedback/       # Interview feedback processing
-│       ├── interview-setup/          # Interview initialization
-│       ├── interviews/               # Interview management
-│       ├── job-descriptions/         # Job description handling
-│       ├── payments/                 # Payment processing
-│       ├── questions/                # Question management
-│       ├── resumes/                  # Resume processing
-│       ├── transcripts/              # Transcript management
-│       └── upload-file/              # File upload handling
-├── install_dependencies_windows.bat  # Windows dependency installer
-├── install_dependencies_linux.sh     # Linux dependency installer
-├── install_dependencies_macos.sh     # macOS dependency installer
-├── start_dev.bat                     # Windows development server starter
-├── start_dev.sh                      # Linux/macOS development server starter
-└── README.md                         # This file
-```
+## 🚀 **Production Deployment (Vast.AI)**
 
-## **Installation & Setup**
+This guide covers deploying the application to a Vast.AI instance with Apache2 as a reverse proxy.
 
 ### **Prerequisites**
+- Vast.AI instance with Ubuntu/Debian
+- Domain name configured (e.g., `dev.ugaanlabs.com`)
+- SSL certificates (fullchain.pem, privkey.pem, chain.pem)
+- SSH access to the instance
 
-Ensure you have **Python 3.10** installed on your system.
+### **1. Vast.AI Instance Setup**
 
-### **1. Clone the Repository**
+Use the following template when creating your Vast.AI instance:
+
+![Instance Template](Instance%20Template.png)
+
+**Port Forwarding Configuration:**
+- **Port 40585** → **443/tcp** (HTTPS)
+- **Port 40594** → **80/tcp** (HTTP)
+- **Port 40591** → **22/tcp** (SSH)
+- **Port 40584** → **5000/tcp** (Flask backend - optional, for direct access)
+
+### **2. DNS Configuration**
+
+Configure your DNS records as shown in the image below:
+
+![DNS Record](DNS%20Record.png)
+
+**DNS Setup:**
+- In the **Advanced** section of your domain settings, add:
+  - **Host**: `dev`
+  - **Value**: Your instance public IP (e.g., `65.93.186.85`)
+
+**Update Frontend Environment:**
+- Update the frontend `.env` file with:
+  ```env
+  VITE_API_BASE_URL=https://dev.ugaanlabs.com:40585
+  ```
+- Make the changes and push to the `Vast-Deployement-Branch` branch
+
+### **3. Connect to Instance**
+
 ```bash
-git clone https://github.com/moback-ai/interviewcoach.git
+ssh -p 40591 root@65.93.186.85
+```
+
+(Replace `40591` with your SSH port and `65.93.186.85` with your instance IP)
+
+### **4. Clone Repository**
+
+```bash
+git clone <your-repo-url>
 cd interviewcoach
+git checkout feat/Vast-Deployement-Branch
 ```
 
-### **2. Create Virtual Environment**
+### **5. Install Backend Dependencies**
 
-#### **For Windows:**
-```bash
-py -3.10 -m venv test1
-```
-
-#### **For Linux/macOS:**
-```bash
-python3.10 -m venv test1
-```
-
-### **3. Activate Virtual Environment**
-
-#### **For Windows:**
-```bash
-.\test1\Scripts\activate
-```
-
-#### **For Linux/macOS:**
-```bash
-source test1/bin/activate
-```
-
-### **4. Install Dependencies**
-
-#### **For Windows:**
-```bash
-.\install_dependencies_windows.bat
-```
-
-#### **For Linux:**
 ```bash
 chmod +x install_dependencies_linux.sh
 ./install_dependencies_linux.sh
 ```
 
-#### **For macOS:**
+### **6. Install and Configure Apache2**
+
+#### **Step 1: Install Build Dependencies**
 ```bash
-chmod +x install_dependencies_macos.sh
-./install_dependencies_macos.sh
+sudo apt update
+sudo apt install -y build-essential wget libtool autoconf automake
+sudo apt install -y libapr1-dev libaprutil1-dev libpcre2-dev libssl-dev libexpat1-dev
 ```
 
-### **5. Install Ollama**
-Ollama is required for AI model inference. Follow these steps:
-
-#### Step 1: Visit the Official Ollama Website
-- Open your browser and navigate to: [https://ollama.ai](https://ollama.ai)
-
-#### Step 2: Download and Install
-- Select your operating system (Windows, macOS, or Linux).
-- Follow the installation instructions provided on the website.
-
-#### Step 3: Pull Required Models
-After installing Ollama, pull the required models:
+#### **Step 2: Download APR and APR-util**
 ```bash
-ollama pull llama3
+cd /tmp
+wget https://archive.apache.org/dist/apr/apr-1.7.4.tar.gz
+wget https://archive.apache.org/dist/apr/apr-util-1.6.3.tar.gz
 ```
 
-#### Step 4: Verify Installation
-- Open a terminal and run the following command:
+#### **Step 3: Install APR**
 ```bash
-ollama --version
+tar -xzf apr-1.7.4.tar.gz
+cd apr-1.7.4
+./configure --prefix=/usr/local/apr
+make && sudo make install
 ```
-- If the command returns a version number, Ollama has been installed successfully.
 
-### **6. Install FFmpeg**
-The application uses `pydub` for audio processing, which requires **FFmpeg**. Install it by following these steps:
-
-#### **For Windows:**
-
-**Download FFmpeg**  
-- Open a web browser.  
-- Navigate to **[Windows build from gyan.dev](https://www.gyan.dev/ffmpeg/builds/)**.  
-- Under **"Git Master Builds,"** locate and download:  
-    ```text
-    ffmpeg-git-full.7z
-    ```
-
-**Extract and Move FFmpeg**  
-- Once downloaded, extract the `.7z` file using **WinRAR** or **7-Zip**.  
-- Move the extracted folder to:  
-    ```text
-    C:\Program Files\
-    ```
-- Open the extracted folder, navigate to the **bin** directory, and copy the full path. Example:  
-    ```text
-    C:\Program Files\ffmpeg-7.1-full_build\bin
-    ```
-
-**Set Up Environment Variables**  
-- In the **Windows Search Bar**, type:  
-    ```text
-    Edit the system environment variables
-    ```  
-- Click on **Environment Variables** at the bottom of the window.  
-- Under **User Variables**, locate and select **Path**, then click **Edit**.  
-- In the **Edit Environment Variable** window, click **New**, paste the copied FFmpeg **bin** path, and click **OK**.  
-- Click **OK** on all open windows to save the changes.  
-
-#### **For Linux/macOS:**
+#### **Step 4: Install APR-util**
 ```bash
-sudo apt install ffmpeg   # Ubuntu/Debian
-brew install ffmpeg       # macOS (Homebrew)
+cd /tmp
+tar -xzf apr-util-1.6.3.tar.gz
+cd apr-util-1.6.3
+./configure --prefix=/usr/local/apr-util --with-apr=/usr/local/apr
+make && sudo make install
 ```
 
-**Verify FFmpeg Installation:**
+#### **Step 5: Install Apache HTTP Server**
 ```bash
-ffmpeg -version
+cd /tmp
+wget https://archive.apache.org/dist/httpd/httpd-2.4.58.tar.gz
+tar -xzf httpd-2.4.58.tar.gz
+cd httpd-2.4.58
+./configure --prefix=/usr/local/apache2 --with-apr=/usr/local/apr --with-apr-util=/usr/local/apr-util --enable-ssl --enable-rewrite --enable-proxy --enable-proxy-http --enable-proxy-wstunnel --enable-headers --enable-deflate
+make && sudo make install
 ```
 
-### **7. Environment Setup**
-Ensure your `.env` file in the backend directory contains the following variables:
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-DODO_WEBHOOK_SECRET=your_dodo_webhook_secret
-MIXPANEL_TOKEN=your_mixpanel_token
-```
-
-**Note**: The `.env` file should already exist in your backend directory. If you need to update any values, edit the existing file rather than creating a new one.
-
-### **8. Start Development Server**
-
-#### **For Windows:**
+#### **Step 6: Create Apache User**
 ```bash
-start_dev.bat
+sudo groupadd apache
+sudo useradd -g apache -r -s /bin/false apache
+sudo chown -R apache:apache /usr/local/apache2
 ```
 
-#### **For Linux/macOS:**
+### **7. Copy SSL Certificates**
+
+From your local machine (Windows), copy certificates to the server:
+
+**Note**: `65.93.186.85` is the public IP of the instance (replace with your actual IP).
+
 ```bash
-chmod +x start_dev.sh
-./start_dev.sh
+# Copy fullchain.pem
+scp -P 40591 "C:\path\to\your\certificates\fullchain.pem" root@65.93.186.85:/etc/letsencrypt/live/dev.ugaanlabs.com/
+
+# Copy privkey.pem
+scp -P 40591 "C:\path\to\your\certificates\privkey.pem" root@65.93.186.85:/etc/letsencrypt/live/dev.ugaanlabs.com/
+
+# Copy chain.pem
+scp -P 40591 "C:\path\to\your\certificates\chain.pem" root@65.93.186.85:/etc/letsencrypt/live/dev.ugaanlabs.com/
 ```
 
----
+**On the server**, create the directory and set permissions:
 
-## **Running the Application**
+```bash
+# Create directory if it doesn't exist
+sudo mkdir -p /etc/letsencrypt/live/dev.ugaanlabs.com/
 
-After completing the installation and setup steps above, the development server will automatically start and you can access the application through your web browser.
+```
 
-The application includes:
-- **Frontend**: React-based web interface with interview coaching features
-- **Backend**: Flask API server with AI interview processing
-- **Database**: Supabase integration with user management and interview storage
-- **AI Services**: Ollama-powered interview questions and feedback generation
-- **Payment Processing**: Dodo Payments integration for interview access
-- **Analytics**: Mixpanel tracking for user behavior and conversion analytics
-- **Audio Processing**: Piper TTS for voice synthesis and Whisper for transcription
+### **8. Copy Apache Configuration Files**
+
+Copy the configuration files from the repository to Apache:
+
+**Easiest method (using nano):**
+
+1. Remove existing configs:
+   ```bash
+   sudo rm /usr/local/apache2/conf/httpd.conf
+   sudo rm /usr/local/apache2/conf/extra/httpd-ssl.conf
+   sudo rm /usr/local/apache2/conf/extra/httpd-vhosts.conf
+   ```
+
+2. Edit each file:
+   ```bash
+   sudo nano /usr/local/apache2/conf/httpd.conf
+   sudo nano /usr/local/apache2/conf/extra/httpd-ssl.conf
+   sudo nano /usr/local/apache2/conf/extra/httpd-vhosts.conf
+   ```
+
+3. Copy contents from repository files:
+   - **Inside terminal**: `Ctrl+Insert` (copy), `Shift+Insert` (paste)
+   - **On Windows**: `Ctrl+C`, then inside nano `Shift+Insert` (paste)
+
+**Alternative method (using cp):**
+```bash
+sudo cp ~/interviewcoach/httpd.conf /usr/local/apache2/conf/
+sudo cp ~/interviewcoach/httpd-ssl.conf /usr/local/apache2/conf/extra/
+sudo cp ~/interviewcoach/httpd-vhosts.conf /usr/local/apache2/conf/extra/
+```
+
+### **9. Build and Deploy Frontend**
+
+```bash
+cd ~/interviewcoach/frontend
+npm install
+npm install @monaco-editor/react
+npm run build
+
+# Copy build files to Apache
+sudo cp -r dist/* /usr/local/apache2/htdocs/
+```
+
+### **10. Start Apache**
+
+```bash
+# Start Apache
+sudo /usr/local/apache2/bin/apachectl start
+
+# To restart Apache
+sudo /usr/local/apache2/bin/apachectl restart
+```
+
+**If rebuilding**, clear old files first:
+```bash
+cd ~/interviewcoach/frontend
+npm install
+npm install @monaco-editor/react
+npm run build
+sudo rm -rf /usr/local/apache2/htdocs/*
+sudo cp -r dist/* /usr/local/apache2/htdocs/
+sudo /usr/local/apache2/bin/apachectl restart
+```
+
+### **11. Start Backend**
+
+```bash
+cd ~/interviewcoach/backend
+
+# Start backend with Python
+python app.py
+
+# Or run in background
+nohup python app.py > /tmp/backend.log 2>&1 &
+```
+
+### **12. Verify Deployment**
+
+Access your site:
+- **HTTPS**: `https://dev.ugaanlabs.com:40585`
+
+**Check Apache status:**
+```bash
+sudo /usr/local/apache2/bin/apachectl status
+```
+
+**Check if services are running:**
+```bash
+sudo netstat -tlnp | grep -E '(httpd|5000)'
+```
+
+### **13. Useful Apache Commands**
+
+```bash
+# Test configuration
+sudo /usr/local/apache2/bin/apachectl configtest
+
+# Start Apache
+sudo /usr/local/apache2/bin/apachectl start
+
+# Stop Apache
+sudo /usr/local/apache2/bin/apachectl stop
+
+# Restart Apache
+sudo /usr/local/apache2/bin/apachectl restart
+
+# Check status
+sudo /usr/local/apache2/bin/apachectl status
+
+# View error logs
+sudo tail -f /usr/local/apache2/logs/error_log
+
+# View access logs
+sudo tail -f /usr/local/apache2/logs/access_log
+```
 
 ---
 
@@ -287,10 +289,7 @@ The application includes:
 ### **Technical Stack**
 - **Frontend**: React with Vite, Tailwind CSS, Framer Motion
 - **Backend**: Flask with Socket.IO for real-time communication
-- **Database**: Supabase with PostgreSQL
 - **AI Models**: Ollama (Llama3), Piper TTS, Whisper STT
-- **Authentication**: Supabase Auth with JWT tokens
-- **File Storage**: Supabase Storage for audio files and documents
 
 ---
 
@@ -298,24 +297,18 @@ The application includes:
 
 ### **Common Issues:**
 
-1. **Virtual Environment Not Activated**: Make sure you see `(test1)` at the beginning of your command prompt/terminal
-2. **Python Version**: Ensure you're using Python 3.10
-3. **FFmpeg Not Found**: Verify FFmpeg is properly installed and added to your system PATH
-4. **Ollama Not Running**: Start Ollama service and ensure llama3 model is pulled
-5. **Environment Variables**: Verify all required environment variables are set in `.env` file
-6. **Supabase Connection**: Check that Supabase URL and keys are correct
-7. **Payment Issues**: Ensure Dodo webhook secret is properly configured
-8. **Audio Processing**: Verify Piper TTS model files are in the correct directory
+1. **Apache Not Starting**: Check error logs with `sudo tail -f /usr/local/apache2/logs/error_log`
+2. **SSL Certificate Issues**: Verify certificate paths and permissions in `httpd-ssl.conf`
+3. **Backend Not Responding**: Check if Python app is running with `ps aux | grep python`
+4. **Frontend Not Loading**: Verify files are copied to `/usr/local/apache2/htdocs/`
+5. **Port Forwarding**: Ensure Vast.AI port mappings match the configuration
+6. **DNS Issues**: Verify DNS records are properly configured and propagated
+7. **Environment Variables**: Check that `.env` files have correct values
 
 ### **Getting Help:**
-- Check the logs in the terminal for specific error messages
-- Ensure all dependencies are properly installed
-- Verify that all required environment variables are set
-- Check Supabase dashboard for database connection issues
+- Check Apache error logs: `sudo tail -f /usr/local/apache2/logs/error_log`
+- Check backend logs: `tail -f /tmp/backend.log`
+- Verify port forwarding in Vast.AI dashboard
+- Check DNS propagation with `nslookup dev.ugaanlabs.com`
 - Review browser console for frontend errors
-
-### **Development Tips:**
-- Use browser developer tools to debug frontend issues
-- Check backend logs for API errors
-- Verify Mixpanel events in the Mixpanel dashboard
-- Test payment flow in Dodo's test environment
+- Check backend process: `ps aux | grep python`
