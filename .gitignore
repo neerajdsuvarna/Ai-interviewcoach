@@ -169,3 +169,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# --- Secrets / env files (DO NOT COMMIT) ---
+.env
+.env.*
+**/.env
+**/.env.*
